@@ -106,6 +106,12 @@ class MapPainter extends CustomPainter {
     ..strokeWidth = 0.02
     ..color = Colors.green.withOpacity(0.6)
     ..style = PaintingStyle.stroke;
+  final _currentAreaOverlayPaint = Paint()
+    ..strokeWidth = 0.12
+    ..color = Colors.black
+    ..style = PaintingStyle.stroke
+    ..strokeJoin = StrokeJoin.round
+    ..strokeCap = StrokeCap.round;
   final _navigationFillPaint = Paint()
     ..color = const Color.fromRGBO(250, 250, 250, 1.0)
     ..style = PaintingStyle.fill;
@@ -319,6 +325,8 @@ class MapPainter extends CustomPainter {
       }
     }
 
+    _drawCurrentAreaOverlay(canvas);
+
     for (final path in mapModel.obstacles) {
       canvas.drawPath(path, _obstaclePaint);
     }
@@ -360,6 +368,19 @@ class MapPainter extends CustomPainter {
       canvas.scale(0.5);
       canvas.translate(-0.5, -0.5);
       canvas.drawPath(path_0, _robotPaint);
+    }
+  }
+
+  void _drawCurrentAreaOverlay(Canvas canvas) {
+    if (robotState.currentArea == -1 || robotState.currentAreaId.isEmpty) {
+      return;
+    }
+
+    for (final area in mapModel.mowingAreas) {
+      if (area.id == robotState.currentAreaId) {
+        canvas.drawPath(area.outline, _currentAreaOverlayPaint);
+        return;
+      }
     }
   }
 
@@ -435,7 +456,8 @@ class MapPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) {
     if (oldDelegate is MapPainter) {
       if (oldDelegate.robotState != robotState ||
-          oldDelegate.mapModel != mapModel) {
+          oldDelegate.mapModel != mapModel ||
+          oldDelegate.mapOverlayModel != mapOverlayModel) {
         // print("new map model, should repaint!");
         return true;
       } else {

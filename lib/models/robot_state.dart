@@ -9,6 +9,7 @@ class RobotState {
   String currentSubState = "Unknown";
 
   int currentArea = -1;
+  String currentAreaId = "";
   int currentPath = 0;
   int currentPathIndex = 0;
 

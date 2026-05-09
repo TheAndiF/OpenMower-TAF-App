@@ -180,6 +180,7 @@ class MqttConnection  {
         mapModel.mowingAreas.add(MapArea(
           outline: convertJsonPolygon(area["outline"]),
           labelPosition: getPolygonCenter(area["outline"]),
+          id: area["id"]?.toString() ?? "",
           mowingEnabled: parseMowingEnabled(properties["mowing_enabled"]),
           mowingOrder: parseIntProperty(properties["mowing_order"]),
         ));
@@ -282,6 +283,7 @@ class MqttConnection  {
     state.gpsPercent        = obj["d"]["gps_percentage"];
     state.batteryPercent    = obj["d"]["battery_percentage"];
     state.currentArea       = obj["d"]["current_area"];
+    state.currentAreaId     = obj["d"]["current_area_id"]?.toString() ?? "";
     state.currentPath       = obj["d"]["current_path"];
     state.currentPathIndex  = obj["d"]["current_path_index"];
     robotStateController.robotState.value = state;

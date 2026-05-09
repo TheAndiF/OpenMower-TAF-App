@@ -4,12 +4,14 @@ class MapArea {
   MapArea({
     required this.outline,
     required this.labelPosition,
+    this.id = "",
     this.mowingEnabled = true,
     this.mowingOrder,
   });
 
   final Path outline;
   final Offset labelPosition;
+  final String id;
   final bool mowingEnabled;
   final int? mowingOrder;
 }
