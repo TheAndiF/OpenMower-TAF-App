@@ -1,43 +1,194 @@
+# Name des GitHub-Actions-Workflows.
+# Dieser Name erscheint später im GitHub-Reiter "Actions".
 name: Build OpenMowerApp image
 
+# Wann der Workflow grundsätzlich gestartet wird.
 on:
+  # Wird bei jedem git push ausgelöst.
+  # Ob dann wirklich ein Docker-Image gebaut wird,
+  # entscheidet weiter unten die if-Bedingung im Job.
   push:
-    branches:
-      - main
+
+  # Erlaubt zusätzlich das manuelle Starten über GitHub
+  # oder per Kommando:
+  #
+  # gh workflow run build-container.yml
+  #
+  # Manueller Start bedeutet hier:
+  # kompletter Build ohne Cache.
   workflow_dispatch:
 
+# Rechte für den Workflow.
+# contents: read  = Repository-Inhalt lesen
+# packages: write = Docker-Image nach GHCR hochladen
 permissions:
   contents: read
   packages: write
 
 jobs:
   build:
+    # Der Build-Job läuft nur in diesen Fällen:
+    #
+    # 1. Manueller Start:
+    #    github.event_name == 'workflow_dispatch'
+    #
+    # 2. Commit-Nachricht beginnt mit BS_
+    #    Beispiel:
+    #    git commit -m "BS_ kleine App-Aenderung"
+    #
+    #    BS_ bedeutet:
+    #    schneller Build mit Cache.
+    #
+    # 3. Commit-Nachricht beginnt mit BL_
+    #    Beispiel:
+    #    git commit -m "BL_ kompletter App-Neubuild"
+    #
+    #    BL_ bedeutet:
+    #    kompletter Build ohne Cache.
+    #
+    # Alle anderen Commit-Nachrichten starten zwar den Workflow,
+    # aber dieser Build-Job wird übersprungen.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.event.head_commit.message, 'BS_') ||
+      startsWith(github.event.head_commit.message, 'BL_')
+
+    # GitHub stellt einen Ubuntu-Rechner für den Build bereit.
     runs-on: ubuntu-latest
 
     steps:
+      # Lädt den Quellcode deines Repositories in den GitHub-Actions-Runner.
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Erstellt einen Zeitstempel, der später als zusätzlicher Image-Tag genutzt wird.
+      #
+      # Beispiel:
+      # ghcr.io/theandif/openmowerapp:2026-05-09-1245
+      #
+      # Vorteil:
+      # latest und test werden immer überschrieben,
+      # der Datums-Tag bleibt aber als feste Version erhalten.
+      - name: Set build date
+        shell: bash
+        run: echo "BUILD_DATE=$(date -u +'%Y-%m-%d-%H%M')" >> $GITHUB_ENV
+
+      # Aktiviert QEMU.
+      # Das ist nötig, damit GitHub auf einem normalen x86_64-Runner
+      # ein ARM64-Image bauen kann.
+      #
+      # Dein Mower läuft typischerweise auf ARM64,
+      # deshalb wird weiter unten platforms: linux/arm64 verwendet.
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
+      # Aktiviert Docker Buildx.
+      # Buildx ist die moderne Docker-Build-Umgebung,
+      # die Multi-Plattform-Builds und Cache unterstützt.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GitHub Container Registry
+      # Meldet sich bei der GitHub Container Registry an.
+      #
+      # GHCR = GitHub Container Registry.
+      # Dort wird dein fertiges Docker-Image gespeichert.
+      #
+      # github.actor ist dein GitHub-Benutzer.
+      # secrets.GITHUB_TOKEN wird automatisch von GitHub bereitgestellt.
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push ARM64 image
+      # Dieser Schritt läuft nur, wenn die Commit-Nachricht mit BS_ beginnt.
+      #
+      # BS_ = Build Schnell
+      #
+      # Hier wird der GitHub-Actions-Cache verwendet.
+      # Dadurch können spätere Builds schneller sein,
+      # weil Docker-Schichten wiederverwendet werden.
+      - name: Build and push Docker image with cache
+        if: startsWith(github.event.head_commit.message, 'BS_')
         uses: docker/build-push-action@v6
         with:
+          # Build-Kontext ist das Hauptverzeichnis des Repositories.
           context: .
+
+          # Bei OpenMowerApp liegt der Dockerfile direkt im Hauptverzeichnis.
+          # Deshalb:
+          # file: ./Dockerfile
+          #
+          # Achtung:
+          # Beim ROS-Repo war es anders:
+          # file: ./docker/Dockerfile
           file: ./Dockerfile
+
+          # Zielplattform für den Mower.
           platforms: linux/arm64
+
+          # true bedeutet:
+          # Das Image wird nicht nur gebaut,
+          # sondern auch nach GHCR hochgeladen.
           push: true
+
+          # Vorhandenen GitHub-Actions-Cache verwenden.
+          cache-from: type=gha
+
+          # Neuen Cache speichern.
+          # mode=max speichert möglichst viele Docker-Schichten.
+          cache-to: type=gha,mode=max
+
+          # Diese drei Namen bekommt dasselbe fertige Image.
+          #
+          # latest:
+          #   Standard-Tag, wird bei jedem erfolgreichen Build aktualisiert.
+          #
+          # test:
+          #   Praktisch für deinen Mower-Testbetrieb.
+          #
+          # BUILD_DATE:
+          #   Fester nachvollziehbarer Versions-Tag.
           tags: |
             ghcr.io/theandif/openmowerapp:latest
             ghcr.io/theandif/openmowerapp:test
+            ghcr.io/theandif/openmowerapp:${{ env.BUILD_DATE }}
+
+      # Dieser Schritt läuft bei:
+      #
+      # 1. Commit-Nachricht beginnt mit BL_
+      # 2. manuellem Start über GitHub / gh workflow run
+      #
+      # BL_ = Build Langsam / kompletter Neubuild
+      #
+      # Hier wird no-cache: true verwendet.
+      # Dadurch baut Docker alles frisch und verwendet keine alten Cache-Schichten.
+      - name: Build and push Docker image without cache
+        if: |
+          startsWith(github.event.head_commit.message, 'BL_') ||
+          github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v6
+        with:
+          # Build-Kontext ist das Hauptverzeichnis des Repositories.
+          context: .
+
+          # Dockerfile der OpenMowerApp.
+          file: ./Dockerfile
+
+          # Zielplattform für den Mower.
+          platforms: linux/arm64
+
+          # Image nach GHCR hochladen.
+          push: true
+
+          # Kein Cache verwenden.
+          # Das dauert länger, ist aber sauberer,
+          # wenn du sicher sein willst, dass wirklich alles neu gebaut wird.
+          no-cache: true
+
+          # Dieselben drei Tags wie beim schnellen Build.
+          tags: |
+            ghcr.io/theandif/openmowerapp:latest
+            ghcr.io/theandif/openmowerapp:test
+            ghcr.io/theandif/openmowerapp:${{ env.BUILD_DATE }}
