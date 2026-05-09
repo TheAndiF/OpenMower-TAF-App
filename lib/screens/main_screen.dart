@@ -6,6 +6,7 @@ import 'package:open_mower_app/controllers/robot_state_controller.dart';
 import 'package:open_mower_app/screens/dashboard.dart';
 import 'package:open_mower_app/screens/advanced_options.dart';
 import 'package:open_mower_app/screens/sensor_values.dart';
+import 'package:open_mower_app/screens/timetable.dart';
 import 'package:open_mower_app/screens/settings.dart';
 import 'package:open_mower_app/views/logo_widget.dart';
 import 'package:open_mower_app/views/logo_widget_drawer.dart';
@@ -14,7 +15,7 @@ class MainScreen extends GetView<RobotStateController> {
   MainScreen({super.key});
 
   final widgetList = <Widget>[
-    Dashboard(), AdvancedOptions(), const SensorValues(),const Settings()
+    Dashboard(), AdvancedOptions(), const SensorValues(), const TimetableScreen(), const Settings()
   ];
 
   final _index = 0.obs;
@@ -79,6 +80,14 @@ class MainScreen extends GetView<RobotStateController> {
           _index.value= 2;
         },
       ),
+      ListTile(
+        leading: n.Icon(Icons.event_note),
+        title: const Text('Timetable'),
+        onTap: () {
+          Get.back();
+          _index.value= 3;
+        },
+      ),
     ];
 
     if(!kReleaseMode || !kIsWeb) {
@@ -88,7 +97,7 @@ class MainScreen extends GetView<RobotStateController> {
         title: const Text('Settings'),
         onTap: () {
           Get.back();
-          _index.value= 3;
+          _index.value= 4;
         },
       ));
     }
