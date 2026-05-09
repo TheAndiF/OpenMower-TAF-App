@@ -86,6 +86,55 @@ class MqttConnection  {
     return pathPoly;
   }
 
+  Offset getPolygonCenter(path) {
+    if (path == null || path.isEmpty) {
+      return Offset.zero;
+    }
+
+    double sumX = 0;
+    double sumY = 0;
+
+    for (final pt in path) {
+      sumX += (pt["x"] as num).toDouble();
+      sumY += -((pt["y"] as num).toDouble());
+    }
+
+    return Offset(sumX / path.length, sumY / path.length);
+  }
+
+  int? parseIntProperty(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+
+    if (value is int) {
+      return value;
+    }
+
+    if (value is num) {
+      return value.toInt();
+    }
+
+    return int.tryParse(value.toString());
+  }
+
+  bool parseMowingEnabled(dynamic value) {
+    if (value == null) {
+      return true;
+    }
+
+    if (value is bool) {
+      return value;
+    }
+
+    if (value is num) {
+      return value != 0;
+    }
+
+    final lower = value.toString().toLowerCase();
+    return lower != "false" && lower != "0" && lower != "disabled";
+  }
+
   void parseMap(obj) {
     final mapModel = MapModel();
 
@@ -125,9 +174,15 @@ class MqttConnection  {
     }
 
     for (final area in obj["d"]["areas"]) {
-      final type = area["properties"]["type"];
+      final properties = area["properties"] ?? {};
+      final type = properties["type"];
       if (type == "mow") {
-        mapModel.mowingAreas.add(convertJsonPolygon(area["outline"]));
+        mapModel.mowingAreas.add(MapArea(
+          outline: convertJsonPolygon(area["outline"]),
+          labelPosition: getPolygonCenter(area["outline"]),
+          mowingEnabled: parseMowingEnabled(properties["mowing_enabled"]),
+          mowingOrder: parseIntProperty(properties["mowing_order"]),
+        ));
       } else if (type == "nav") {
         mapModel.navigationAreas.add(convertJsonPolygon(area["outline"]));
       } else if (type == "obstacle") {
@@ -157,7 +212,10 @@ class MqttConnection  {
     final wa = obj["d"]["working_areas"];
     if(wa != null) {
       for(final area in wa) {
-        mapModel.mowingAreas.add(convertJsonPolygon(area["outline"]));
+        mapModel.mowingAreas.add(MapArea(
+          outline: convertJsonPolygon(area["outline"]),
+          labelPosition: getPolygonCenter(area["outline"]),
+        ));
         for (final obstacle in area["obstacles"] ?? []) {
           mapModel.obstacles.add(convertJsonPolygon(obstacle));
         }

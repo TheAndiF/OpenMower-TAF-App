@@ -98,6 +98,13 @@ class MapPainter extends CustomPainter {
   final _mowFillPaint = Paint()
     ..color = Colors.lightGreen
     ..style = PaintingStyle.fill;
+  final _mowDisabledFillPaint = Paint()
+    ..color = const Color.fromRGBO(160, 160, 160, 0.45)
+    ..style = PaintingStyle.fill;
+  final _mowDisabledOutlinePaint = Paint()
+    ..strokeWidth = 0.04
+    ..color = const Color.fromRGBO(198, 40, 40, 1.0)
+    ..style = PaintingStyle.stroke;
   final _navigationFillPaint = Paint()
     ..color = const Color.fromRGBO(250, 250, 250, 1.0)
     ..style = PaintingStyle.fill;
@@ -292,10 +299,24 @@ class MapPainter extends CustomPainter {
     }
 
     for (final area in mapModel.mowingAreas) {
-      canvas.drawPath(area, _mowFillPaint);
+      final fillPaint =
+          area.mowingEnabled ? _mowFillPaint : _mowDisabledFillPaint;
+      final outlinePaint =
+          area.mowingEnabled ? _mowOutlinePaint : _mowDisabledOutlinePaint;
+
+      canvas.drawPath(area.outline, fillPaint);
       // grassPattern.paintOnPath(canvas, Size(mapWidth, mapHeight), area.outline);
-      canvas.drawPath(area, _mowOutlinePaint);
+      canvas.drawPath(area.outline, outlinePaint);
+
+      if (area.mowingOrder != null) {
+        _drawMowingOrderLabel(
+          canvas,
+          area.labelPosition,
+          area.mowingOrder!,
+          area.mowingEnabled,
+        );
       }
+    }
 
     for (final path in mapModel.obstacles) {
       canvas.drawPath(path, _obstaclePaint);
@@ -339,6 +360,54 @@ class MapPainter extends CustomPainter {
       canvas.translate(-0.5, -0.5);
       canvas.drawPath(path_0, _robotPaint);
     }
+  }
+
+  void _drawMowingOrderLabel(
+    Canvas canvas,
+    Offset position,
+    int order,
+    bool enabled,
+  ) {
+    const double radius = 0.35;
+
+    canvas.drawCircle(
+      position,
+      radius,
+      Paint()
+        ..color = const Color.fromRGBO(255, 255, 255, 0.90)
+        ..style = PaintingStyle.fill,
+    );
+
+    canvas.drawCircle(
+      position,
+      radius,
+      Paint()
+        ..color = enabled
+            ? const Color.fromRGBO(46, 125, 50, 1.0)
+            : const Color.fromRGBO(198, 40, 40, 1.0)
+        ..strokeWidth = 0.05
+        ..style = PaintingStyle.stroke,
+    );
+
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: order.toString(),
+        style: TextStyle(
+          color: enabled
+              ? const Color.fromRGBO(27, 94, 32, 1.0)
+              : const Color.fromRGBO(120, 30, 30, 1.0),
+          fontSize: 0.42,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    textPainter.paint(
+      canvas,
+      position - Offset(textPainter.width / 2, textPainter.height / 2),
+    );
   }
 
   Paint getOverlayPaint(OverlayPolygon overlay) {
