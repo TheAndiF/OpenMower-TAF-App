@@ -51,6 +51,20 @@ class MqttConnection  {
   static const String timetableResponseTopic = "timetable/response/json";
   static const String timetableAckTopic = "timetable/ack/json";
 
+  static const String timetableStatusTopic = "/openmower/timetable/status/json";
+  static const String timetableSetJsonTopic = "/openmower/timetable/config/set/json";
+  static const String timetableActionResultTopic = "/openmower/timetable/action_result/json";
+
+  static const String timeStatusJsonTopic = "/openmower/time/status/json";
+  static const String timeStatusBsonTopic = "/openmower/time/status/bson";
+  static const String timeActionJsonTopic = "/openmower/time/action/json";
+  static const String timeActionBsonTopic = "/openmower/time/action/bson";
+  static const String timeActionResultJsonTopic = "/openmower/time/action_result/json";
+  static const String timeActionResultBsonTopic = "/openmower/time/action_result/bson";
+  static const String timeConfigSetJsonTopic = "/openmower/time/config/set/json";
+  static const String timeConfigStatusJsonTopic = "/openmower/time/config/status/json";
+  static const String timeConfigStatusBsonTopic = "/openmower/time/config/status/bson";
+
   List<int>? _payloadBytes(MqttPublishMessage payload) {
     return payload.payload.message?.toList(growable: false);
   }
@@ -66,24 +80,47 @@ class MqttConnection  {
     return null;
   }
 
-  void parseTimetableMessage(MqttPublishMessage payload) {
+  Map<String, dynamic>? _decodeBsonMap(List<int>? bytes) {
+    if (bytes == null || bytes.isEmpty) {
+      return null;
+    }
+    final decoded = BsonCodec.deserialize(BsonBinary.from(bytes));
+    if (decoded is Map) {
+      return Map<String, dynamic>.from(decoded);
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _decodeMap(MqttPublishMessage payload, {bool bson = false}) {
+    return bson ? _decodeBsonMap(_payloadBytes(payload)) : _decodeJsonMap(_payloadBytes(payload));
+  }
+
+  void parseTimetableMessage(MqttPublishMessage payload, {bool bson = false}) {
     try {
-      final map = _decodeJsonMap(_payloadBytes(payload));
+      final map = _decodeMap(payload, bson: bson);
       if (map == null) {
         timetableController.setError("Leere oder ungültige Timetable-Nachricht empfangen.");
         return;
       }
-      timetableController.setTimetable(map);
+      timetableController.setTimetablePayload(map);
     } catch (e) {
       timetableController.setError("Timetable konnte nicht gelesen werden: $e");
     }
   }
 
-  void parseTimetableResponse(MqttPublishMessage payload) {
+  void parseTimetableResponse(MqttPublishMessage payload, {bool bson = false}) {
     try {
-      final map = _decodeJsonMap(_payloadBytes(payload));
+      final map = _decodeMap(payload, bson: bson);
       if (map == null) {
         timetableController.setError("Leere oder ungültige Timetable-Antwort empfangen.");
+        return;
+      }
+      if (map.containsKey("timetable")) {
+        timetableController.setTimetablePayload(map);
+        return;
+      }
+      if (map.containsKey("valid") || map.containsKey("remarks") || map.containsKey("time_state") || map.containsKey("robot_state")) {
+        timetableController.setActionResult(map);
         return;
       }
       final accepted = map["accepted"] == true || map["ok"] == true || map["status"] == "accepted" || map["status"] == "ok";
@@ -94,11 +131,57 @@ class MqttConnection  {
     }
   }
 
-  void requestTimetable() {
-    final builder = MqttPayloadBuilder();
-    builder.addString('{"request":"timetable"}');
+  void parseTimeStatus(MqttPublishMessage payload, {bool bson = false}) {
     try {
-      client.publishMessage(timetableRequestTopic, MqttQos.atLeastOnce, builder.payload!);
+      final map = _decodeMap(payload, bson: bson);
+      if (map == null) {
+        timetableController.setError("Leere oder ungültige Zeitstatus-Nachricht empfangen.");
+        return;
+      }
+      timetableController.setTimeStatus(map);
+    } catch (e) {
+      timetableController.setError("Zeitstatus konnte nicht gelesen werden: $e");
+    }
+  }
+
+  void parseTimeActionResult(MqttPublishMessage payload, {bool bson = false}) {
+    try {
+      final map = _decodeMap(payload, bson: bson);
+      if (map == null) {
+        timetableController.setError("Leere oder ungültige Zeitservice-Antwort empfangen.");
+        return;
+      }
+      timetableController.setActionResult(map);
+    } catch (e) {
+      timetableController.setError("Zeitservice-Antwort konnte nicht gelesen werden: $e");
+    }
+  }
+
+  void parseTimeConfigStatus(MqttPublishMessage payload, {bool bson = false}) {
+    try {
+      final map = _decodeMap(payload, bson: bson);
+      if (map == null) {
+        timetableController.setError("Leere oder ungültige Zeit-Konfigurationsantwort empfangen.");
+        return;
+      }
+      timetableController.setTimeConfigStatus(map);
+    } catch (e) {
+      timetableController.setError("Zeit-Konfiguration konnte nicht gelesen werden: $e");
+    }
+  }
+
+  String _requestId(String prefix) => "$prefix-${DateTime.now().millisecondsSinceEpoch}-$clientId";
+
+  void _publishJson(String topic, Map<String, dynamic> map, {MqttQos qos = MqttQos.atLeastOnce}) {
+    final builder = MqttPayloadBuilder();
+    builder.addString(jsonEncode(map));
+    client.publishMessage(topic, qos, builder.payload!);
+  }
+
+  void requestTimetable() {
+    try {
+      _publishJson(timetableRequestTopic, {"request": "timetable"});
+      _publishJson(timetableStatusTopic, {"request_id": _requestId("timetable_req"), "action": "get_status"});
     } catch(e) {
       debugPrint("error requesting timetable via mqtt");
       timetableController.setError("Timetable-Anfrage konnte nicht gesendet werden.");
@@ -106,13 +189,66 @@ class MqttConnection  {
   }
 
   void publishTimetable(Map<String, dynamic> timetable) {
-    final builder = MqttPayloadBuilder();
-    builder.addString(jsonEncode(timetable));
     try {
-      client.publishMessage(timetableSetTopic, MqttQos.exactlyOnce, builder.payload!);
+      _publishJson(timetableSetTopic, timetable, qos: MqttQos.exactlyOnce);
+      _publishJson(timetableSetJsonTopic, timetable, qos: MqttQos.exactlyOnce);
     } catch(e) {
       debugPrint("error publishing timetable to mqtt");
       timetableController.setError("Timetable konnte nicht gesendet werden.");
+    }
+  }
+
+  void requestTimeStatus() {
+    try {
+      _publishJson(timeActionJsonTopic, {"request_id": _requestId("time_req"), "action": "get_status"});
+    } catch(e) {
+      debugPrint("error requesting time status via mqtt");
+      timetableController.setError("Zeitstatus-Anfrage konnte nicht gesendet werden.");
+    }
+  }
+
+  void requestTimeResync({String preferredSource = "ntp"}) {
+    try {
+      _publishJson(timeActionJsonTopic, {"request_id": _requestId("time_req"), "action": "resync", "preferred_source": preferredSource});
+    } catch(e) {
+      debugPrint("error requesting time resync via mqtt");
+      timetableController.setError("Resync-Anfrage konnte nicht gesendet werden.");
+    }
+  }
+
+  void setTimeTimezone(String timezone) {
+    try {
+      _publishJson(timeActionJsonTopic, {"request_id": _requestId("time_req"), "action": "set_timezone", "timezone": timezone});
+    } catch(e) {
+      debugPrint("error setting timezone via mqtt");
+      timetableController.setError("Zeitzone konnte nicht gesendet werden.");
+    }
+  }
+
+  void setManualTime({required String timezone, required String localTime}) {
+    try {
+      _publishJson(timeActionJsonTopic, {"request_id": _requestId("time_req"), "action": "set_manual_time", "timezone": timezone, "local_time": localTime});
+    } catch(e) {
+      debugPrint("error setting manual time via mqtt");
+      timetableController.setError("Manuelle Zeit konnte nicht gesendet werden.");
+    }
+  }
+
+  void clearManualTime() {
+    try {
+      _publishJson(timeActionJsonTopic, {"request_id": _requestId("time_req"), "action": "clear_manual_time"});
+    } catch(e) {
+      debugPrint("error clearing manual time via mqtt");
+      timetableController.setError("Manuelle Zeit konnte nicht verworfen werden.");
+    }
+  }
+
+  void publishTimeConfig(Map<String, dynamic> timeConfig) {
+    try {
+      _publishJson(timeConfigSetJsonTopic, {"time": timeConfig}, qos: MqttQos.exactlyOnce);
+    } catch(e) {
+      debugPrint("error publishing time config to mqtt");
+      timetableController.setError("Zeit-Konfiguration konnte nicht gesendet werden.");
     }
   }
 
@@ -426,13 +562,39 @@ class MqttConnection  {
           debugPrint("got message on ${msg.topic}");
           final payload = msg.payload as MqttPublishMessage;
           switch(msg.topic) {
-            case timetableTopic: {
+            case timetableTopic:
+            case timetableStatusTopic: {
               parseTimetableMessage(payload);
             }
             break;
             case timetableResponseTopic:
-            case timetableAckTopic: {
+            case timetableAckTopic:
+            case timetableActionResultTopic: {
               parseTimetableResponse(payload);
+            }
+            break;
+            case timeStatusJsonTopic: {
+              parseTimeStatus(payload);
+            }
+            break;
+            case timeStatusBsonTopic: {
+              parseTimeStatus(payload, bson: true);
+            }
+            break;
+            case timeActionResultJsonTopic: {
+              parseTimeActionResult(payload);
+            }
+            break;
+            case timeActionResultBsonTopic: {
+              parseTimeActionResult(payload, bson: true);
+            }
+            break;
+            case timeConfigStatusJsonTopic: {
+              parseTimeConfigStatus(payload);
+            }
+            break;
+            case timeConfigStatusBsonTopic: {
+              parseTimeConfigStatus(payload, bson: true);
             }
             break;
             case "version": {
@@ -526,8 +688,16 @@ class MqttConnection  {
     client.subscribe("sensors/+/bson", MqttQos.atMostOnce);
     client.subscribe("version", MqttQos.atLeastOnce);
     client.subscribe(timetableTopic, MqttQos.atLeastOnce);
+    client.subscribe(timetableStatusTopic, MqttQos.atLeastOnce);
     client.subscribe(timetableResponseTopic, MqttQos.atLeastOnce);
     client.subscribe(timetableAckTopic, MqttQos.atLeastOnce);
+    client.subscribe(timetableActionResultTopic, MqttQos.atLeastOnce);
+    client.subscribe(timeStatusJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(timeStatusBsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(timeActionResultJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(timeActionResultBsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(timeConfigStatusJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(timeConfigStatusBsonTopic, MqttQos.atLeastOnce);
   }
 
   void onDisconnected() {
