@@ -96,7 +96,7 @@ class MapPainter extends CustomPainter {
     ..color = const Color.fromRGBO(50, 50, 50, 1.0)
     ..style = PaintingStyle.stroke;
   final _mowFillPaint = Paint()
-    ..color = Colors.lightGreen
+    ..color = Colors.purple
     ..style = PaintingStyle.fill;
   final _mowDisabledFillPaint = Paint()
     ..color = const Color.fromRGBO(160, 160, 160, 0.45)
