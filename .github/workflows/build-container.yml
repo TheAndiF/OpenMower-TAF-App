@@ -151,9 +151,9 @@ jobs:
           # BUILD_DATE:
           #   Fester nachvollziehbarer Versions-Tag.
           tags: |
-            ghcr.io/theandif/openmowerapp:latest
-            ghcr.io/theandif/openmowerapp:test
-            ghcr.io/theandif/openmowerapp:${{ env.BUILD_DATE }}
+            ghcr.io/theandif/openmowerapp:taf_latest
+            ghcr.io/theandif/openmowerapp:taf_test
+            ghcr.io/theandif/openmowerapp:taf_${{ env.BUILD_DATE }}
 
       # Dieser Schritt läuft bei:
       #
@@ -189,6 +189,6 @@ jobs:
 
           # Dieselben drei Tags wie beim schnellen Build.
           tags: |
-            ghcr.io/theandif/openmowerapp:AF_latest
-            ghcr.io/theandif/openmowerapp:AF_test
-            ghcr.io/theandif/openmowerapp:AF_${{ env.BUILD_DATE }}
+            ghcr.io/theandif/openmowerapp:taf_latest
+            ghcr.io/theandif/openmowerapp:taf_test
+            ghcr.io/theandif/openmowerapp:taf_${{ env.BUILD_DATE }}
