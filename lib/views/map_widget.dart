@@ -96,16 +96,15 @@ class MapPainter extends CustomPainter {
     ..color = const Color.fromRGBO(50, 50, 50, 1.0)
     ..style = PaintingStyle.stroke;
   final _mowFillPaint = Paint()
-    ..color = Colors.purple
+    ..color = Colors.lightGreen
     ..style = PaintingStyle.fill;
   final _mowDisabledFillPaint = Paint()
-    // Disabled mowing areas are shown similar to navigation areas,
-    // but with a subtle green tint so they remain distinguishable.
-    ..color = const Color.fromRGBO(210, 245, 214, 0.72)
+    // Disabled mowing areas are shown in green with 60% opacity.
+    ..color = Colors.green.withOpacity(0.6)
     ..style = PaintingStyle.fill;
   final _mowDisabledOutlinePaint = Paint()
     ..strokeWidth = 0.02
-    ..color = const Color.fromRGBO(129, 199, 132, 0.85)
+    ..color = Colors.green.withOpacity(0.6)
     ..style = PaintingStyle.stroke;
   final _navigationFillPaint = Paint()
     ..color = const Color.fromRGBO(250, 250, 250, 1.0)
