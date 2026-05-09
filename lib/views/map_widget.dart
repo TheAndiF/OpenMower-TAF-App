@@ -99,11 +99,13 @@ class MapPainter extends CustomPainter {
     ..color = Colors.purple
     ..style = PaintingStyle.fill;
   final _mowDisabledFillPaint = Paint()
-    ..color = const Color.fromRGBO(160, 160, 160, 0.45)
+    // Disabled mowing areas are shown similar to navigation areas,
+    // but with a subtle green tint so they remain distinguishable.
+    ..color = const Color.fromRGBO(210, 245, 214, 0.72)
     ..style = PaintingStyle.fill;
   final _mowDisabledOutlinePaint = Paint()
-    ..strokeWidth = 0.04
-    ..color = const Color.fromRGBO(198, 40, 40, 1.0)
+    ..strokeWidth = 0.02
+    ..color = const Color.fromRGBO(129, 199, 132, 0.85)
     ..style = PaintingStyle.stroke;
   final _navigationFillPaint = Paint()
     ..color = const Color.fromRGBO(250, 250, 250, 1.0)
@@ -369,17 +371,12 @@ class MapPainter extends CustomPainter {
     bool enabled,
   ) {
     const double radius = 0.35;
-    final labelColor = enabled
-        ? const Color.fromRGBO(46, 125, 50, 1.0)
-        : const Color.fromRGBO(198, 40, 40, 1.0);
 
-    // Semi-transparent fill lets the mowing area stay visible through the label,
-    // while the border and number use the same color for a cleaner web view.
     canvas.drawCircle(
       position,
       radius,
       Paint()
-        ..color = const Color.fromRGBO(255, 255, 255, 0.58)
+        ..color = const Color.fromRGBO(255, 255, 255, 0.90)
         ..style = PaintingStyle.fill,
     );
 
@@ -387,7 +384,9 @@ class MapPainter extends CustomPainter {
       position,
       radius,
       Paint()
-        ..color = labelColor
+        ..color = enabled
+            ? const Color.fromRGBO(46, 125, 50, 1.0)
+            : const Color.fromRGBO(129, 199, 132, 0.85)
         ..strokeWidth = 0.05
         ..style = PaintingStyle.stroke,
     );
@@ -396,7 +395,9 @@ class MapPainter extends CustomPainter {
       text: TextSpan(
         text: order.toString(),
         style: TextStyle(
-          color: labelColor,
+          color: enabled
+              ? const Color.fromRGBO(27, 94, 32, 1.0)
+              : const Color.fromRGBO(129, 199, 132, 1.0),
           fontSize: 0.42,
           fontWeight: FontWeight.bold,
         ),
