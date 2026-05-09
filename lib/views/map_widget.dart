@@ -369,12 +369,17 @@ class MapPainter extends CustomPainter {
     bool enabled,
   ) {
     const double radius = 0.35;
+    final labelColor = enabled
+        ? const Color.fromRGBO(46, 125, 50, 1.0)
+        : const Color.fromRGBO(198, 40, 40, 1.0);
 
+    // Semi-transparent fill lets the mowing area stay visible through the label,
+    // while the border and number use the same color for a cleaner web view.
     canvas.drawCircle(
       position,
       radius,
       Paint()
-        ..color = const Color.fromRGBO(255, 255, 255, 0.90)
+        ..color = const Color.fromRGBO(255, 255, 255, 0.58)
         ..style = PaintingStyle.fill,
     );
 
@@ -382,9 +387,7 @@ class MapPainter extends CustomPainter {
       position,
       radius,
       Paint()
-        ..color = enabled
-            ? const Color.fromRGBO(46, 125, 50, 1.0)
-            : const Color.fromRGBO(198, 40, 40, 1.0)
+        ..color = labelColor
         ..strokeWidth = 0.05
         ..style = PaintingStyle.stroke,
     );
@@ -393,9 +396,7 @@ class MapPainter extends CustomPainter {
       text: TextSpan(
         text: order.toString(),
         style: TextStyle(
-          color: enabled
-              ? const Color.fromRGBO(27, 94, 32, 1.0)
-              : const Color.fromRGBO(120, 30, 30, 1.0),
+          color: labelColor,
           fontSize: 0.42,
           fontWeight: FontWeight.bold,
         ),
