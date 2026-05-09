@@ -39,6 +39,12 @@ permissions:
 
 jobs:
   meta:
+    # Build nur bei manuellem Start oder Commit-Nachricht mit BS_ / BL_.
+    # BS_ = schneller Build mit Cache, BL_ = kompletter Build ohne Cache.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.event.head_commit.message, 'BS_') ||
+      startsWith(github.event.head_commit.message, 'BL_')
     runs-on: ubuntu-latest
     outputs:
       base_tags: ${{ steps.compute.outputs.base_tags }}
@@ -56,23 +62,30 @@ jobs:
           BRANCH_SAFE="${BRANCH_RAW,,}"
           BRANCH_SAFE="${BRANCH_SAFE//\//-}"
           BRANCH_SAFE="${BRANCH_SAFE//[^a-z0-9._-]/-}"
+          BUILD_DATE="$(date -u +'%Y-%m-%d-%H%M')"
+
+          # Gemeinsame Tags für Docker Compose und nachvollziehbare Versionen.
+          # docker-compose kann ghcr.io/<owner>/openmowerapp:taf_latest verwenden.
+          # Zusätzlich bleiben die bisherigen Tags ohne taf_-Präfix erhalten.
+          BASE_TAGS="sha-${SHORT} taf_sha-${SHORT} ${BRANCH_SAFE} taf_${BRANCH_SAFE} ${BUILD_DATE} taf_${BUILD_DATE} test taf_test AF_latest taf_AF_latest AF_test taf_AF_test AF_${BUILD_DATE} taf_AF_${BUILD_DATE}"
+          if [ "$BRANCH_SAFE" = "main" ]; then
+            BASE_TAGS="latest taf_latest $BASE_TAGS"
+          fi
+
           if [ "${{ github.event_name }}" = "push" ]; then
-            # Always include commit-based tags; add 'latest' only for main
-            BASE_TAGS="sha-${SHORT} ${BRANCH_SAFE}"
-            if [ "$BRANCH_SAFE" = "main" ]; then
-              BASE_TAGS="latest $BASE_TAGS"
-            fi
             RENDERER="html"
-            USE_CACHE="true"
             ARCH_CHOICE="both"
+
+            # BS_ = schneller Build mit Cache, BL_ = kompletter Build ohne Cache.
+            if [ "${{ startsWith(github.event.head_commit.message, 'BL_') }}" = "true" ]; then
+              USE_CACHE="false"
+            else
+              USE_CACHE="true"
+            fi
           else
             RENDERER="${{ github.event.inputs.renderer }}"
             USE_CACHE="${{ github.event.inputs.use_cache }}"
             ARCH_CHOICE="${{ github.event.inputs.arch }}"
-            BASE_TAGS="sha-${SHORT} ${BRANCH_SAFE}"
-            if [ "$BRANCH_SAFE" = "main" ]; then
-              BASE_TAGS="latest $BASE_TAGS"
-            fi
           fi
           case "$ARCH_CHOICE" in
             both) BUILD_AMD64=true; BUILD_ARM64=true; BUILD_BOTH=true ;;
