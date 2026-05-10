@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/timetable_controller.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
@@ -57,7 +58,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildSection(
+                _buildStaticSection(
                   context,
                   icon: Icons.pause_circle_outline,
                   title: 'Mähzeit aussetzen',
@@ -124,6 +125,52 @@ class _TimetableScreenState extends State<TimetableScreen> {
               width: double.infinity,
               color: Theme.of(context).cardColor,
               padding: EdgeInsets.zero,
+              child: child,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStaticSection(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
+    final color = Theme.of(context).primaryColor;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Container(
+        color: color.withOpacity(0.08),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(icon, color: color, size: 32),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
+                        Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              width: double.infinity,
+              color: Theme.of(context).cardColor,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: child,
             ),
           ],
@@ -377,8 +424,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           _entryDayDropdown(id, item, enabled: editing),
-          _smallTextField(id, item, 'start', 'Start', enabled: editing, width: 120),
-          _smallTextField(id, item, 'end', 'Ende', enabled: editing, width: 120),
+          _entryTimeField(context, id, item, 'start', 'Start', enabled: editing, width: 120),
+          _entryTimeField(context, id, item, 'end', 'Ende', enabled: editing, width: 120),
           _entryEndBehaviorDropdown(id, item, enabled: editing),
           _fieldsButton(context, id, item),
           _boolSwitch('Aktiv', item['enabled'] == true, editing ? (value) => controller.updateEntry(id, 'enabled', value) : null),
@@ -450,8 +497,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
               },
             ),
           ),
-          _newEntryTextField('start', 'Start', width: 120),
-          _newEntryTextField('end', 'Ende', width: 120),
+          _newEntryTimeField(context, 'start', 'Start', width: 120),
+          _newEntryTimeField(context, 'end', 'Ende', width: 120),
           SizedBox(
             width: 220,
             child: DropdownButtonFormField<String>(
@@ -514,33 +561,97 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  Widget _smallTextField(String id, Map<String, dynamic> item, String field, String label, {double width = 120, bool enabled = true}) {
+  Widget _entryTimeField(
+    BuildContext context,
+    String id,
+    Map<String, dynamic> item,
+    String field,
+    String label, {
+    double width = 120,
+    bool enabled = true,
+  }) {
+    final value = (item[field] ?? '').toString();
     return SizedBox(
       width: width,
       child: TextFormField(
-        key: ValueKey('$id-$field-${item[field]}-$enabled'),
-        initialValue: (item[field] ?? '').toString(),
-        decoration: InputDecoration(labelText: label, hintText: 'HH:MM'),
+        key: ValueKey('$id-$field-$value-$enabled'),
+        initialValue: value,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: 'HH:MM',
+          suffixIcon: const Icon(Icons.access_time, size: 18),
+        ),
         keyboardType: TextInputType.datetime,
-        readOnly: !enabled,
-        onChanged: enabled ? (value) => controller.updateEntry(id, field, value) : null,
+        inputFormatters: _timeInputFormatters,
+        readOnly: true,
+        enabled: enabled,
+        onTap: enabled ? () => _pickEntryTime(context, id, item, field) : null,
       ),
     );
   }
 
-  Widget _newEntryTextField(String field, String label, {double width = 120}) {
-    final value = controller.newEntryDraft[field];
+  Widget _newEntryTimeField(BuildContext context, String field, String label, {double width = 120}) {
+    final value = (controller.newEntryDraft[field] ?? '').toString();
     return SizedBox(
       width: width,
       child: TextFormField(
         key: ValueKey('new-entry-$field-$value'),
-        initialValue: (value ?? '').toString(),
-        decoration: InputDecoration(labelText: label, hintText: 'HH:MM'),
+        initialValue: value,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: 'HH:MM',
+          suffixIcon: const Icon(Icons.access_time, size: 18),
+        ),
         keyboardType: TextInputType.datetime,
-        onChanged: (text) => controller.updateNewEntry(field, text),
+        inputFormatters: _timeInputFormatters,
+        readOnly: true,
+        onTap: () => _pickNewEntryTime(context, field),
       ),
     );
   }
+
+  List<TextInputFormatter> get _timeInputFormatters => const [
+        LengthLimitingTextInputFormatter(5),
+      ];
+
+  Future<void> _pickEntryTime(BuildContext context, String id, Map<String, dynamic> item, String field) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _parseTimeOfDay((item[field] ?? '').toString()) ?? const TimeOfDay(hour: 0, minute: 0),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+        child: child ?? const SizedBox.shrink(),
+      ),
+    );
+    if (picked != null) {
+      controller.updateEntry(id, field, _formatTimeOfDay(picked));
+    }
+  }
+
+  Future<void> _pickNewEntryTime(BuildContext context, String field) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _parseTimeOfDay((controller.newEntryDraft[field] ?? '').toString()) ?? const TimeOfDay(hour: 0, minute: 0),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+        child: child ?? const SizedBox.shrink(),
+      ),
+    );
+    if (picked != null) {
+      controller.updateNewEntry(field, _formatTimeOfDay(picked));
+    }
+  }
+
+  TimeOfDay? _parseTimeOfDay(String value) {
+    final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(value.trim());
+    if (match == null) return null;
+    final hour = int.tryParse(match.group(1) ?? '');
+    final minute = int.tryParse(match.group(2) ?? '');
+    if (hour == null || minute == null || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  String _formatTimeOfDay(TimeOfDay time) => '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
   Widget _fieldsButton(BuildContext context, String id, Map<String, dynamic> item) {
     final count = controller.extraFieldsCount(item);
