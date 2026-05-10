@@ -113,7 +113,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
           backgroundColor: color.withOpacity(0.08),
           collapsedBackgroundColor: color.withOpacity(0.08),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           leading: Icon(icon, color: color, size: 32),
           iconColor: color,
           collapsedIconColor: color,
@@ -123,7 +123,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
             Container(
               width: double.infinity,
               color: Theme.of(context).cardColor,
-              padding: const EdgeInsets.only(top: 16),
+              padding: EdgeInsets.zero,
               child: child,
             ),
           ],
@@ -142,13 +142,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Time Settings', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 8),
-        Text(
-          'Alle Änderungen werden lokal in timeSettings aktualisiert. Übertragen wird erst mit Speichern in der JSON-Ansicht.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: 16),
         Wrap(
           spacing: 16,
           runSpacing: 8,
@@ -251,40 +244,30 @@ class _TimetableScreenState extends State<TimetableScreen> {
     final oneDayActive = controller.isSuspended && _suspensionLooksLikeDays(1);
     final threeDaysActive = controller.isSuspended && _suspensionLooksLikeDays(3);
     final suspensionValue = controller.autoMowSuspension;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final statusText = controller.isSuspended ? 'Ausgesetzt bis: $suspensionValue' : 'Aktuell keine Aussetzung aktiv.';
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Text('AutoMow Suspension', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 8),
-        Text(
-          'Die Buttons senden timetable/suspension/set/json. Der bestätigte Zustand wird aus robot_state.AutoMowSuspension gelesen.',
-          style: Theme.of(context).textTheme.bodySmall,
+        _toggleButton(
+          context,
+          active: oneDayActive,
+          icon: Icons.looks_one,
+          label: '1 Tag aussetzen',
+          onPressed: () => controller.toggleSuspensionDays(1),
         ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          children: [
-            _toggleButton(
-              context,
-              active: oneDayActive,
-              icon: Icons.looks_one,
-              label: '1 Tag aussetzen',
-              onPressed: () => controller.toggleSuspensionDays(1),
-            ),
-            _toggleButton(
-              context,
-              active: threeDaysActive,
-              icon: Icons.looks_3,
-              label: '3 Tage aussetzen',
-              onPressed: () => controller.toggleSuspensionDays(3),
-            ),
-          ],
+        _toggleButton(
+          context,
+          active: threeDaysActive,
+          icon: Icons.looks_3,
+          label: '3 Tage aussetzen',
+          onPressed: () => controller.toggleSuspensionDays(3),
         ),
-        const SizedBox(height: 12),
-        Text(
-          controller.isSuspended ? 'Aktuell ausgesetzt bis: $suspensionValue' : 'Aktuell keine Aussetzung aktiv.',
-          style: Theme.of(context).textTheme.bodyMedium,
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Text(statusText, style: Theme.of(context).textTheme.bodyMedium),
         ),
       ],
     );
@@ -626,64 +609,105 @@ class _TimetableScreenState extends State<TimetableScreen> {
             ? Icons.check_circle_outline
             : Icons.error_outline;
     final statusText = controller.lastStatus.value.isEmpty ? 'Noch keine Rückmeldung.' : controller.lastStatus.value;
+
     return Card(
       margin: EdgeInsets.zero,
-      child: ExpansionTile(
-        initiallyExpanded: false,
-        leading: Icon(Icons.code, color: color, size: 32),
-        title: Text('JSON-Ansicht', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
-        subtitle: Row(
-          children: [
-            Icon(statusIcon, size: 16, color: controller.lastStatusOk.value == false ? Colors.red : color),
-            const SizedBox(width: 6),
-            Expanded(child: Text(statusText, overflow: TextOverflow.ellipsis)),
-          ],
-        ),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Download speichert die aktuelle lokale JSON als Datei. Upload lädt eine Datei lokal. Speichern sendet an timetable/set/json.',
-                  style: Theme.of(context).textTheme.bodySmall,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              alignment: WrapAlignment.spaceBetween,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.code, color: color, size: 32),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('JSON-Ansicht', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
+                        const SizedBox(height: 2),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(statusIcon, size: 16, color: controller.lastStatusOk.value == false ? Colors.red : color),
+                            const SizedBox(width: 6),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 520),
+                              child: Text(statusText, overflow: TextOverflow.ellipsis),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-              ),
-              OutlinedButton.icon(
-                onPressed: _downloadJsonFile,
-                icon: const Icon(Icons.download),
-                label: const Text('Download'),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: _uploadJsonFile,
-                icon: const Icon(Icons.upload),
-                label: const Text('Upload'),
-              ),
-              const SizedBox(width: 8),
-              ElevatedButton.icon(
-                onPressed: controller.hasData ? controller.sendTimetable : null,
-                icon: const Icon(Icons.save_outlined),
-                label: const Text('Speichern'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _buildStatusCard(context),
-          const SizedBox(height: 8),
-          TextField(
-            controller: controller.rawJsonController,
-            minLines: 8,
-            maxLines: 20,
-            keyboardType: TextInputType.multiline,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              labelText: 'timetable.json',
+                _jsonActionButtons(),
+              ],
             ),
-            style: const TextStyle(fontFamily: 'monospace'),
+          ),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              initiallyExpanded: false,
+              tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              title: Text('JSON-Inhalt anzeigen', style: Theme.of(context).textTheme.titleMedium),
+              subtitle: Text(
+                'Download speichert die aktuelle lokale JSON als Datei. Upload lädt eine Datei lokal. Speichern sendet an timetable/set/json.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              children: [
+                _buildStatusCard(context),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: controller.rawJsonController,
+                  minLines: 8,
+                  maxLines: 20,
+                  keyboardType: TextInputType.multiline,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: 'timetable.json',
+                  ),
+                  style: const TextStyle(fontFamily: 'monospace'),
+                ),
+              ],
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _jsonActionButtons() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        OutlinedButton.icon(
+          onPressed: _downloadJsonFile,
+          icon: const Icon(Icons.download),
+          label: const Text('Download'),
+        ),
+        const SizedBox(width: 8),
+        OutlinedButton.icon(
+          onPressed: _uploadJsonFile,
+          icon: const Icon(Icons.upload),
+          label: const Text('Upload'),
+        ),
+        const SizedBox(width: 8),
+        ElevatedButton.icon(
+          onPressed: controller.hasData ? controller.sendTimetable : null,
+          icon: const Icon(Icons.save_outlined),
+          label: const Text('Speichern'),
+        ),
+      ],
     );
   }
 

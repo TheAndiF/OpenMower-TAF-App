@@ -467,7 +467,10 @@ class TimetableController extends GetxController {
   }
 
   Map<String, dynamic> _normalizeTimetableData(Map<String, dynamic> data) {
-    final next = _deepCopy(data);
+    // Some MQTT/BSON stacks wrap the actual payload in a top-level "d" object.
+    // The UI must work with the real timetable root, not the wrapper.
+    final unwrapped = _unwrapTimetableRoot(data);
+    final next = _deepCopy(unwrapped);
     if (!next.containsKey('timeSettings') && next.containsKey('time')) {
       final oldTime = _mapOrEmpty(next['time']);
       next['timeSettings'] = <String, dynamic>{
@@ -487,6 +490,16 @@ class TimetableController extends GetxController {
       next['timetable'] = <String, dynamic>{};
     }
     return next;
+  }
+
+
+  Map<String, dynamic> _unwrapTimetableRoot(Map<String, dynamic> data) {
+    final wrapped = _mapOrEmpty(data['d']);
+    if (wrapped.isNotEmpty &&
+        (wrapped.containsKey('timetable') || wrapped.containsKey('timeSettings') || wrapped.containsKey('time') || wrapped.containsKey('version'))) {
+      return wrapped;
+    }
+    return data;
   }
 
   void _syncControllersFromTimeSettings() {
