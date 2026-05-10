@@ -59,18 +59,18 @@ class _TimetableScreenState extends State<TimetableScreen> {
               children: [
                 _buildSection(
                   context,
-                  icon: Icons.schedule,
-                  title: 'Time Settings',
-                  subtitle: 'Zeitzone und Quelle für die einmalige Systemzeit-Synchronisation',
-                  child: _buildTimeSettingsCard(context),
-                ),
-                const SizedBox(height: 16),
-                _buildSection(
-                  context,
                   icon: Icons.pause_circle_outline,
                   title: 'Mähzeit aussetzen',
                   subtitle: 'Direkte MQTT-Aussetzung; Bestätigung kommt über robot_state.AutoMowSuspension',
                   child: _buildSuspensionCard(context),
+                ),
+                const SizedBox(height: 16),
+                _buildSection(
+                  context,
+                  icon: Icons.schedule,
+                  title: 'Time Settings',
+                  subtitle: 'Zeitzone und Quelle für die einmalige Systemzeit-Synchronisation',
+                  child: _buildTimeSettingsCard(context),
                 ),
                 const SizedBox(height: 16),
                 _buildSection(

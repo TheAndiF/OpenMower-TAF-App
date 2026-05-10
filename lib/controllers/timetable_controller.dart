@@ -83,58 +83,44 @@ class TimetableController extends GetxController {
 
   // Compatibility handlers for older OpenMower time/timetable topics.
   void setTimeStatus(Map<String, dynamic> payload) {
-    final root = _unwrapMessageRoot(payload);
-    final state = _mapOrEmpty(root['time_state']).isNotEmpty ? _mapOrEmpty(root['time_state']) : root;
+    final state = _mapOrEmpty(payload['time_state']).isNotEmpty ? _mapOrEmpty(payload['time_state']) : payload;
     final source = state['source']?.toString();
     if (source == 'manual' || source == 'ntp' || source == 'gps' || source == 'system') {
       selectedTimeSource.value = source!;
     }
-    lastRemarks.assignAll(_stringList(root['remarks']));
+    lastRemarks.assignAll(_stringList(payload['remarks']));
     lastUpdated.value = DateTime.now();
     lastTopic.value = 'legacy/time/status';
-    lastStatusOk.value = _validOrNull(root['valid']) ?? _validOrNull(state['valid']) ?? _statusOkOrNull(root['status']);
+    lastStatusOk.value = _validOrNull(payload['valid']) ?? _validOrNull(state['valid']);
     lastStatus.value = 'Zeitstatus empfangen.';
     waitingForResponse.value = false;
   }
 
   void setTimeConfigStatus(Map<String, dynamic> payload) {
-    final root = _unwrapMessageRoot(payload);
-    final ok = _validOrNull(root['valid']) ?? _validOrNull(root['ok']) ?? _statusOkOrNull(root['status']) ?? true;
     lastUpdated.value = DateTime.now();
     lastTopic.value = 'legacy/time/config/status';
-    lastStatusOk.value = ok;
-    lastRemarks.assignAll(_stringList(root['remarks']));
-    lastStatus.value = ok ? 'Zeit-Konfiguration bestätigt.' : 'Zeit-Konfiguration abgelehnt.';
+    lastStatusOk.value = true;
+    lastStatus.value = 'Zeit-Konfiguration bestätigt.';
     waitingForResponse.value = false;
   }
 
   void setActionResult(Map<String, dynamic> payload) {
-    final root = _unwrapMessageRoot(payload);
-    final ok = _validOrNull(root['valid']) ??
-        _validOrNull(root['ok']) ??
-        _validOrNull(root['accepted']) ??
-        _statusOkOrNull(root['status']) ??
-        false;
-    lastRemarks.assignAll(_stringList(root['remarks']));
+    final ok = _validOrNull(payload['valid']) ?? _validOrNull(payload['ok']) ?? false;
+    lastRemarks.assignAll(_stringList(payload['remarks']));
     lastUpdated.value = DateTime.now();
     lastTopic.value = 'legacy/action_result';
     lastStatusOk.value = ok;
-    final action = (root['action'] ?? 'Action').toString();
+    final action = (payload['action'] ?? 'Action').toString();
     lastStatus.value = ok ? '$action bestätigt.' : '$action abgelehnt.';
     waitingForResponse.value = false;
   }
 
   void setValidation(Map<String, dynamic> payload, {String topic = 'timetable/validation/json'}) {
-    final root = _unwrapMessageRoot(payload);
-    final ok = _validOrNull(root['valid']) ??
-        _validOrNull(root['ok']) ??
-        _validOrNull(root['accepted']) ??
-        _statusOkOrNull(root['status']) ??
-        false;
+    final ok = _validOrNull(payload['valid']) ?? false;
     lastUpdated.value = DateTime.now();
     lastTopic.value = topic;
     lastStatusOk.value = ok;
-    lastRemarks.assignAll(_stringList(root['remarks']));
+    lastRemarks.assignAll(_stringList(payload['remarks']));
     lastStatus.value = ok ? 'Server-Validierung erfolgreich.' : 'Speichern fehlgeschlagen. Server hat die Timetable abgelehnt.';
     waitingForResponse.value = false;
   }
@@ -546,34 +532,8 @@ class TimetableController extends GetxController {
     return <String, dynamic>{};
   }
 
-  Map<String, dynamic> _unwrapMessageRoot(Map<String, dynamic> data) {
-    final wrapped = _mapOrEmpty(data['d']);
-    return wrapped.isNotEmpty ? wrapped : data;
-  }
-
   bool? _validOrNull(dynamic value) {
     if (value is bool) return value;
-    if (value is num) {
-      if (value == 1) return true;
-      if (value == 0) return false;
-    }
-    if (value is String) {
-      final lower = value.trim().toLowerCase();
-      if (lower == 'true' || lower == '1' || lower == 'yes' || lower == 'ok' || lower == 'accepted' || lower == 'valid' || lower == 'success') {
-        return true;
-      }
-      if (lower == 'false' || lower == '0' || lower == 'no' || lower == 'rejected' || lower == 'invalid' || lower == 'error' || lower == 'failed') {
-        return false;
-      }
-    }
-    return null;
-  }
-
-  bool? _statusOkOrNull(dynamic value) {
-    final lower = value?.toString().trim().toLowerCase();
-    if (lower == null || lower.isEmpty) return null;
-    if (lower == 'ok' || lower == 'accepted' || lower == 'valid' || lower == 'success' || lower == 'saved') return true;
-    if (lower == 'error' || lower == 'rejected' || lower == 'invalid' || lower == 'failed' || lower == 'failure') return false;
     return null;
   }
 
