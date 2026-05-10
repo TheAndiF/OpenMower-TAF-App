@@ -104,29 +104,48 @@ class TimetableController extends GetxController {
     waitingForResponse.value = false;
   }
 
-  void setActionResult(Map<String, dynamic> payload) {
-    final ok = _validOrNull(payload['valid']) ?? _validOrNull(payload['ok']) ?? false;
-    lastRemarks.assignAll(_stringList(payload['remarks']));
-    lastUpdated.value = DateTime.now();
-    lastTopic.value = 'legacy/action_result';
-    lastStatusOk.value = ok;
-    final action = (payload['action'] ?? 'Action').toString();
-    lastStatus.value = ok ? '$action bestätigt.' : '$action abgelehnt.';
-    waitingForResponse.value = false;
-  }
-
-  void setValidation(Map<String, dynamic> payload, {String topic = 'timetable/validation/json'}) {
-    final ok = _validOrNull(payload['valid']) ?? false;
+  void setActionResult(Map<String, dynamic> payload, {String topic = 'legacy/action_result'}) {
+    final root = _unwrapPayload(payload);
+    final ok = _statusOrNull(root);
+    lastRemarks.assignAll(_stringList(root['remarks']));
     lastUpdated.value = DateTime.now();
     lastTopic.value = topic;
     lastStatusOk.value = ok;
-    lastRemarks.assignAll(_stringList(payload['remarks']));
-    lastStatus.value = ok ? 'Server-Validierung erfolgreich.' : 'Speichern fehlgeschlagen. Server hat die Timetable abgelehnt.';
-    waitingForResponse.value = false;
+    final action = (root['action'] ?? root['request'] ?? 'Aktion').toString();
+    if (ok == true) {
+      lastStatus.value = '$action bestätigt.';
+      waitingForResponse.value = false;
+    } else if (ok == false) {
+      lastStatus.value = '$action abgelehnt.';
+      waitingForResponse.value = false;
+    } else {
+      // Keine eindeutige Annahme/Ablehnung in der Nachricht. Nicht fälschlich als abgelehnt werten.
+      lastStatus.value = waitingForResponse.value
+          ? '$action empfangen. Warte auf eindeutige Serverbestätigung ...'
+          : '$action empfangen.';
+    }
+  }
+
+  void setValidation(Map<String, dynamic> payload, {String topic = 'timetable/validation/json'}) {
+    final root = _unwrapPayload(payload);
+    final ok = _statusOrNull(root);
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = topic;
+    lastStatusOk.value = ok;
+    lastRemarks.assignAll(_stringList(root['remarks']));
+    if (ok == true) {
+      lastStatus.value = 'Gespeichert. Server hat die Timetable bestätigt.';
+      waitingForResponse.value = false;
+    } else if (ok == false) {
+      lastStatus.value = 'Speichern fehlgeschlagen. Server hat die Timetable abgelehnt.';
+      waitingForResponse.value = false;
+    } else {
+      lastStatus.value = 'Validierung empfangen, aber ohne eindeutiges valid/ok/status-Feld.';
+    }
   }
 
   void setRobotState(Map<String, dynamic> payload, {String topic = 'robot_state/json'}) {
-    final state = _mapOrEmpty(payload['d']).isNotEmpty ? _mapOrEmpty(payload['d']) : payload;
+    final state = _unwrapPayload(payload);
     robotState
       ..clear()
       ..addAll(_deepCopy(state));
@@ -134,14 +153,21 @@ class TimetableController extends GetxController {
     lastTopic.value = topic;
   }
 
-  void setResponse(bool accepted, String reason, {String topic = 'timetable/response/json'}) {
-    waitingForResponse.value = false;
+  void setResponse(bool? accepted, String reason, {String topic = 'timetable/response/json'}) {
     lastUpdated.value = DateTime.now();
     lastTopic.value = topic;
     lastStatusOk.value = accepted;
-    lastStatus.value = accepted
-        ? (reason.isEmpty ? 'Service hat die Änderung bestätigt.' : 'Bestätigt: $reason')
-        : (reason.isEmpty ? 'Service hat die Änderung abgelehnt.' : 'Abgelehnt: $reason');
+    if (accepted == true) {
+      waitingForResponse.value = false;
+      lastStatus.value = reason.isEmpty ? 'Service hat die Änderung bestätigt.' : 'Bestätigt: $reason';
+    } else if (accepted == false) {
+      waitingForResponse.value = false;
+      lastStatus.value = reason.isEmpty ? 'Service hat die Änderung abgelehnt.' : 'Abgelehnt: $reason';
+    } else {
+      lastStatus.value = reason.isEmpty
+          ? 'Serverantwort empfangen, aber ohne eindeutige Annahme/Ablehnung.'
+          : 'Serverantwort empfangen: $reason';
+    }
   }
 
   void setError(String message, {String topic = ''}) {
@@ -502,6 +528,11 @@ class TimetableController extends GetxController {
     return data;
   }
 
+  Map<String, dynamic> _unwrapPayload(Map<String, dynamic> data) {
+    final wrapped = _mapOrEmpty(data['d']);
+    return wrapped.isNotEmpty ? wrapped : data;
+  }
+
   void _syncControllersFromTimeSettings() {
     final settings = _mapOrEmpty(timetableData['timeSettings']);
     final timezone = settings['timezone']?.toString();
@@ -534,7 +565,29 @@ class TimetableController extends GetxController {
 
   bool? _validOrNull(dynamic value) {
     if (value is bool) return value;
+    if (value is num) {
+      if (value == 1) return true;
+      if (value == 0) return false;
+    }
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized == 'true' || normalized == '1' || normalized == 'ok' || normalized == 'accepted' || normalized == 'success' || normalized == 'valid') {
+        return true;
+      }
+      if (normalized == 'false' || normalized == '0' || normalized == 'error' || normalized == 'rejected' || normalized == 'failed' || normalized == 'invalid') {
+        return false;
+      }
+    }
     return null;
+  }
+
+  bool? _statusOrNull(Map<String, dynamic> payload) {
+    return _validOrNull(payload['valid']) ??
+        _validOrNull(payload['ok']) ??
+        _validOrNull(payload['accepted']) ??
+        _validOrNull(payload['success']) ??
+        _validOrNull(payload['status']) ??
+        _validOrNull(payload['result']);
   }
 
   List<String> _stringList(dynamic value) {
