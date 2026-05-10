@@ -53,6 +53,7 @@ class TimetableController extends GetxController {
     timetableData
       ..clear()
       ..addAll(_deepCopy(data));
+    editingEntryIds.clear();
     rawJsonController.text = const JsonEncoder.withIndent('  ').convert(timetableData);
     _syncTimezoneControllerFromTimetable();
     lastUpdated.value = DateTime.now();
@@ -200,6 +201,7 @@ class TimetableController extends GetxController {
       timetableData
         ..clear()
         ..addAll(Map<String, dynamic>.from(parsed));
+      editingEntryIds.clear();
       _syncTimezoneControllerFromTimetable();
       lastStatus.value = 'JSON übernommen, noch nicht gesendet.';
       lastStatusOk.value = true;
@@ -245,15 +247,25 @@ class TimetableController extends GetxController {
 
   bool isEntryEditing(String entryId) => editingEntryIds.contains(entryId);
 
-  void editEntry(String entryId) {
+  void startEditEntry(String entryId) {
     editingEntryIds.add(entryId);
+    editingEntryIds.refresh();
   }
 
   void saveEntry(String entryId) {
     editingEntryIds.remove(entryId);
+    editingEntryIds.refresh();
     syncRawJsonFromData();
-    lastStatus.value = 'Zeit-Eintrag "' + entryId + '" gespeichert, noch nicht gesendet.';
+    lastStatus.value = 'Eintrag "' + entryId + '" gespeichert, noch nicht gesendet.';
     lastStatusOk.value = true;
+  }
+
+  void toggleEditEntry(String entryId) {
+    if (isEntryEditing(entryId)) {
+      saveEntry(entryId);
+    } else {
+      startEditEntry(entryId);
+    }
   }
 
   void updateEntry(String entryId, String key, dynamic value) {
@@ -301,14 +313,15 @@ class TimetableController extends GetxController {
       ..clear()
       ..addAll(next);
     editingEntryIds.remove(id);
-    _resetNewEntryDraft();
+    editingEntryIds.refresh();
+    _resetNewEntryDraft(existingIds: timetable.keys.map((e) => e.toString()).toSet());
     syncRawJsonFromData();
     lastStatus.value = 'Zeit-Eintrag "' + id + '" hinzugefügt, noch nicht gesendet.';
     lastStatusOk.value = true;
   }
 
-  void _resetNewEntryDraft() {
-    newEntryIdController.text = 'entry_' + DateTime.now().millisecondsSinceEpoch.toRadixString(16);
+
+  void _resetNewEntryDraft({Set<String> existingIds = const <String>{}}) {
     newEntryDraft
       ..clear()
       ..addAll(<String, dynamic>{
@@ -321,6 +334,17 @@ class TimetableController extends GetxController {
         'minimum_remaining_window_minutes': 1,
         'required_battery_state': 'sufficient',
       });
+    newEntryIdController.text = _generateEntryId(existingIds);
+  }
+
+  String _generateEntryId(Set<String> existingIds) {
+    var id = 'entry_${DateTime.now().millisecondsSinceEpoch.toRadixString(16)}';
+    var counter = 1;
+    while (existingIds.contains(id)) {
+      id = 'entry_${DateTime.now().millisecondsSinceEpoch.toRadixString(16)}_$counter';
+      counter += 1;
+    }
+    return id;
   }
 
   Map<String, dynamic> _emptyTimetableData() {
@@ -342,6 +366,7 @@ class TimetableController extends GetxController {
     final timetable = Map<String, dynamic>.from((next['timetable'] as Map?) ?? <String, dynamic>{});
     timetable.remove(entryId);
     editingEntryIds.remove(entryId);
+    editingEntryIds.refresh();
     next['timetable'] = timetable;
     timetableData
       ..clear()

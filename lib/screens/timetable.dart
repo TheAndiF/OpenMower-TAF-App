@@ -394,17 +394,21 @@ class TimetableScreen extends GetView<TimetableController> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Zeit', style: Theme.of(context).textTheme.titleLarge),
+            Row(
+              children: [
+                Expanded(child: Text('Zeit', style: Theme.of(context).textTheme.titleLarge)),
+              ],
+            ),
             const SizedBox(height: 8),
             Text(
-              'Empfangene MQTT-Zeiten werden als fixierte Zeilen angezeigt. Fixierte Zeilen können über „Eintrag ändern“ entsperrt und mit „Speichern“ wieder fixiert werden. Die letzte Zeile ist immer der neue Eintrag.',
+              'Jede Zeile entspricht einem Objekt unter timetable.*. Unten ist ein neuer Eintrag mit den Beispielwerten aus der Spezifikation vorbereitet.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
             if (entries.isEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: Text('Noch keine fixierten Zeit-Einträge vorhanden.', style: Theme.of(context).textTheme.bodyMedium),
+                child: Text('Noch keine Zeit-Einträge vorhanden.', style: Theme.of(context).textTheme.bodyMedium),
               )
             else
               ...entries.map((entry) {
@@ -414,7 +418,9 @@ class TimetableScreen extends GetView<TimetableController> {
                   child: _buildEntryRow(context, entry.key, item),
                 );
               }),
-            const SizedBox(height: 4),
+            const Divider(height: 24),
+            Text('Neuer Eintrag', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
             _buildNewEntryRow(context),
           ],
         ),
@@ -430,49 +436,53 @@ class TimetableScreen extends GetView<TimetableController> {
         border: Border.all(color: Theme.of(context).dividerColor),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Row(
-            children: [
-              Expanded(child: Text('Eintrag $id', style: Theme.of(context).textTheme.titleMedium)),
-              IconButton(
-                tooltip: 'Eintrag löschen',
-                onPressed: () => controller.removeEntry(id),
-                icon: const Icon(Icons.delete_outline),
-              ),
-            ],
+          SizedBox(
+            width: 190,
+            child: InputDecorator(
+              decoration: const InputDecoration(labelText: 'ID'),
+              child: Text(id, overflow: TextOverflow.ellipsis),
+            ),
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _entryDayDropdown(id, item, enabled: editing),
-              _smallTextField(id, item, 'start', 'Start', enabled: editing, keyboardType: TextInputType.datetime),
-              _smallTextField(id, item, 'end', 'Ende', enabled: editing, keyboardType: TextInputType.datetime),
-              _entryEndBehaviorDropdown(id, item, enabled: editing),
-              _entryBatteryDropdown(id, item, enabled: editing),
-              SizedBox(
-                width: 150,
-                child: TextFormField(
-                  key: ValueKey('$id-minimum_remaining_window_minutes-${item['minimum_remaining_window_minutes']}-$editing'),
-                  initialValue: (item['minimum_remaining_window_minutes'] ?? 0).toString(),
-                  enabled: editing,
-                  decoration: const InputDecoration(labelText: 'Min. Restzeit'),
-                  keyboardType: TextInputType.number,
-                  onChanged: (value) => controller.updateEntry(id, 'minimum_remaining_window_minutes', int.tryParse(value) ?? 0),
+          _entryDayDropdown(id, item, enabled: editing),
+          _smallTextField(id, item, 'start', 'Start', keyboardType: TextInputType.datetime, enabled: editing),
+          _smallTextField(id, item, 'end', 'Ende', keyboardType: TextInputType.datetime, enabled: editing),
+          _entryEndBehaviorDropdown(id, item, enabled: editing),
+          _entryBatteryDropdown(id, item, enabled: editing),
+          SizedBox(
+            width: 150,
+            child: TextFormField(
+              key: ValueKey('$id-minimum_remaining_window_minutes-${item['minimum_remaining_window_minutes']}-$editing'),
+              initialValue: (item['minimum_remaining_window_minutes'] ?? 0).toString(),
+              decoration: const InputDecoration(labelText: 'Min. Restzeit'),
+              keyboardType: TextInputType.number,
+              readOnly: !editing,
+              onChanged: editing ? (value) => controller.updateEntry(id, 'minimum_remaining_window_minutes', int.tryParse(value) ?? 0) : null,
+            ),
+          ),
+          _boolSwitch('Aktiv', item['enabled'] == true, editing ? (value) => controller.updateEntry(id, 'enabled', value) : null),
+          _boolSwitch('Auto-Start', item['auto_start'] == true, editing ? (value) => controller.updateEntry(id, 'auto_start', value) : null),
+          SizedBox(
+            width: 56,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Eintrag löschen',
+                  onPressed: () => controller.removeEntry(id),
+                  icon: const Icon(Icons.delete_outline),
                 ),
-              ),
-              _boolSwitch('Aktiv', item['enabled'] == true, editing ? (value) => controller.updateEntry(id, 'enabled', value) : null),
-              _boolSwitch('Auto-Start', item['auto_start'] == true, editing ? (value) => controller.updateEntry(id, 'auto_start', value) : null),
-              OutlinedButton.icon(
-                onPressed: editing ? () => controller.saveEntry(id) : () => controller.editEntry(id),
-                icon: Icon(editing ? Icons.save : Icons.edit),
-                label: Text(editing ? 'Speichern' : 'Eintrag ändern'),
-              ),
-            ],
+                IconButton(
+                  tooltip: editing ? 'Eintrag speichern' : 'Eintrag ändern',
+                  onPressed: () => controller.toggleEditEntry(id),
+                  icon: Icon(editing ? Icons.save_outlined : Icons.edit_outlined),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -487,67 +497,63 @@ class TimetableScreen extends GetView<TimetableController> {
         border: Border.all(color: Theme.of(context).dividerColor),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Text('Neuer Eintrag', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SizedBox(
-                width: 190,
-                child: TextFormField(
-                  controller: controller.newEntryIdController,
-                  decoration: const InputDecoration(labelText: 'ID'),
-                ),
-              ),
-              SizedBox(
-                width: 150,
-                child: DropdownButtonFormField<String>(
-                  value: _safeValue((draft['day'] ?? 'Sunday').toString(), days),
-                  decoration: const InputDecoration(labelText: 'Tag'),
-                  items: days.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
-                  onChanged: (value) {
-                    if (value != null) controller.updateNewEntry('day', value);
-                  },
-                ),
-              ),
-              _newEntryTextField('start', 'Start', width: 120, keyboardType: TextInputType.datetime),
-              _newEntryTextField('end', 'Ende', width: 120, keyboardType: TextInputType.datetime),
-              SizedBox(
-                width: 220,
-                child: DropdownButtonFormField<String>(
-                  value: _safeValue((draft['end_behavior'] ?? 'return_to_dock').toString(), endBehaviors),
-                  decoration: const InputDecoration(labelText: 'Verhalten bei Ende'),
-                  items: endBehaviors.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
-                  onChanged: (value) {
-                    if (value != null) controller.updateNewEntry('end_behavior', value);
-                  },
-                ),
-              ),
-              SizedBox(
-                width: 160,
-                child: DropdownButtonFormField<String>(
-                  value: _safeValue((draft['required_battery_state'] ?? 'sufficient').toString(), batteryStates),
-                  decoration: const InputDecoration(labelText: 'Akku'),
-                  items: batteryStates.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
-                  onChanged: (value) {
-                    if (value != null) controller.updateNewEntry('required_battery_state', value);
-                  },
-                ),
-              ),
-              _newEntryTextField('minimum_remaining_window_minutes', 'Min. Restzeit', width: 150, keyboardType: TextInputType.number),
-              _boolSwitch('Aktiv', draft['enabled'] == true, (value) => controller.updateNewEntry('enabled', value)),
-              _boolSwitch('Auto-Start', draft['auto_start'] == true, (value) => controller.updateNewEntry('auto_start', value)),
-              ElevatedButton.icon(
-                onPressed: () => controller.addEntryFromDraft(),
-                icon: const Icon(Icons.add),
-                label: const Text('Eintrag hinzufügen'),
-              ),
-            ],
+          SizedBox(
+            width: 190,
+            child: TextFormField(
+              controller: controller.newEntryIdController,
+              decoration: const InputDecoration(labelText: 'ID'),
+            ),
+          ),
+          SizedBox(
+            width: 150,
+            child: DropdownButtonFormField<String>(
+              value: _safeValue((draft['day'] ?? 'Sunday').toString(), days),
+              decoration: const InputDecoration(labelText: 'Tag'),
+              items: days.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+              onChanged: (value) {
+                if (value != null) controller.updateNewEntry('day', value);
+              },
+            ),
+          ),
+          _newEntryTextField('start', 'Start', width: 120, keyboardType: TextInputType.datetime),
+          _newEntryTextField('end', 'Ende', width: 120, keyboardType: TextInputType.datetime),
+          SizedBox(
+            width: 220,
+            child: DropdownButtonFormField<String>(
+              value: _safeValue((draft['end_behavior'] ?? 'return_to_dock').toString(), endBehaviors),
+              decoration: const InputDecoration(labelText: 'Verhalten bei Ende'),
+              items: endBehaviors.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+              onChanged: (value) {
+                if (value != null) controller.updateNewEntry('end_behavior', value);
+              },
+            ),
+          ),
+          SizedBox(
+            width: 160,
+            child: DropdownButtonFormField<String>(
+              value: _safeValue((draft['required_battery_state'] ?? 'sufficient').toString(), batteryStates),
+              decoration: const InputDecoration(labelText: 'Akku'),
+              items: batteryStates.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+              onChanged: (value) {
+                if (value != null) controller.updateNewEntry('required_battery_state', value);
+              },
+            ),
+          ),
+          _newEntryTextField('minimum_remaining_window_minutes', 'Min. Restzeit', width: 150, keyboardType: TextInputType.number),
+          _boolSwitch('Aktiv', draft['enabled'] == true, (value) => controller.updateNewEntry('enabled', value)),
+          _boolSwitch('Auto-Start', draft['auto_start'] == true, (value) => controller.updateNewEntry('auto_start', value)),
+          SizedBox(
+            width: 56,
+            child: IconButton(
+              tooltip: 'Eintrag hinzufügen',
+              onPressed: () => controller.addEntryFromDraft(),
+              icon: const Icon(Icons.add_circle_outline),
+            ),
           ),
         ],
       ),
@@ -697,16 +703,16 @@ class TimetableScreen extends GetView<TimetableController> {
     );
   }
 
-  Widget _smallTextField(String id, Map<String, dynamic> item, String field, String label, {bool enabled = true, TextInputType? keyboardType}) {
+  Widget _smallTextField(String id, Map<String, dynamic> item, String field, String label, {TextInputType? keyboardType, bool enabled = true}) {
     return SizedBox(
       width: 120,
       child: TextFormField(
         key: ValueKey('$id-$field-${item[field]}-$enabled'),
         initialValue: (item[field] ?? '').toString(),
-        enabled: enabled,
         decoration: InputDecoration(labelText: label, hintText: 'HH:MM'),
         keyboardType: keyboardType,
-        onChanged: (value) => controller.updateEntry(id, field, value),
+        readOnly: !enabled,
+        onChanged: enabled ? (value) => controller.updateEntry(id, field, value) : null,
       ),
     );
   }
@@ -729,14 +735,11 @@ class TimetableScreen extends GetView<TimetableController> {
       child: ExpansionTile(
         initiallyExpanded: false,
         title: Text('JSON-Ansicht', style: Theme.of(context).textTheme.titleLarge),
-        subtitle: Text(
-          'Eingeklappt. Hier können Felder editiert werden, die oben noch nicht als Formular abgebildet sind.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
+        subtitle: const Text('Eingeklappt. Zum Anzeigen und Bearbeiten des JSON hier öffnen.'),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
           Text(
-            'Gesendet wird der Timetable-Konfigurationsblock.',
+            'Hier können Felder editiert werden, die oben noch nicht als Formular abgebildet sind. Gesendet wird der Timetable-Konfigurationsblock.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
