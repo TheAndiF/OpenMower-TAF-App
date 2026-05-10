@@ -83,15 +83,16 @@ class TimetableController extends GetxController {
 
   // Compatibility handlers for older OpenMower time/timetable topics.
   void setTimeStatus(Map<String, dynamic> payload) {
-    final state = _mapOrEmpty(payload['time_state']).isNotEmpty ? _mapOrEmpty(payload['time_state']) : payload;
+    final root = _unwrapResponseRoot(payload);
+    final state = _mapOrEmpty(root['time_state']).isNotEmpty ? _mapOrEmpty(root['time_state']) : root;
     final source = state['source']?.toString();
     if (source == 'manual' || source == 'ntp' || source == 'gps' || source == 'system') {
       selectedTimeSource.value = source!;
     }
-    lastRemarks.assignAll(_stringList(payload['remarks']));
+    lastRemarks.assignAll(_stringList(root['remarks']));
     lastUpdated.value = DateTime.now();
     lastTopic.value = 'legacy/time/status';
-    lastStatusOk.value = _validOrNull(payload['valid']) ?? _validOrNull(state['valid']);
+    lastStatusOk.value = _acceptanceOrNull(root) ?? _acceptanceOrNull(state);
     lastStatus.value = 'Zeitstatus empfangen.';
     waitingForResponse.value = false;
   }
@@ -104,14 +105,14 @@ class TimetableController extends GetxController {
     waitingForResponse.value = false;
   }
 
-  void setActionResult(Map<String, dynamic> payload, {String topic = 'legacy/action_result'}) {
-    final root = _unwrapPayload(payload);
-    final ok = _statusOrNull(root);
+  void setActionResult(Map<String, dynamic> payload) {
+    final root = _unwrapResponseRoot(payload);
+    final ok = _acceptanceOrNull(root);
     lastRemarks.assignAll(_stringList(root['remarks']));
     lastUpdated.value = DateTime.now();
-    lastTopic.value = topic;
+    lastTopic.value = 'legacy/action_result';
     lastStatusOk.value = ok;
-    final action = (root['action'] ?? root['request'] ?? 'Aktion').toString();
+    final action = (root['action'] ?? 'Action').toString();
     if (ok == true) {
       lastStatus.value = '$action bestätigt.';
       waitingForResponse.value = false;
@@ -119,16 +120,13 @@ class TimetableController extends GetxController {
       lastStatus.value = '$action abgelehnt.';
       waitingForResponse.value = false;
     } else {
-      // Keine eindeutige Annahme/Ablehnung in der Nachricht. Nicht fälschlich als abgelehnt werten.
-      lastStatus.value = waitingForResponse.value
-          ? '$action empfangen. Warte auf eindeutige Serverbestätigung ...'
-          : '$action empfangen.';
+      lastStatus.value = '$action-Antwort empfangen. Warte auf eindeutige Serverbestätigung ...';
     }
   }
 
   void setValidation(Map<String, dynamic> payload, {String topic = 'timetable/validation/json'}) {
-    final root = _unwrapPayload(payload);
-    final ok = _statusOrNull(root);
+    final root = _unwrapResponseRoot(payload);
+    final ok = _acceptanceOrNull(root);
     lastUpdated.value = DateTime.now();
     lastTopic.value = topic;
     lastStatusOk.value = ok;
@@ -140,12 +138,12 @@ class TimetableController extends GetxController {
       lastStatus.value = 'Speichern fehlgeschlagen. Server hat die Timetable abgelehnt.';
       waitingForResponse.value = false;
     } else {
-      lastStatus.value = 'Validierung empfangen, aber ohne eindeutiges valid/ok/status-Feld.';
+      lastStatus.value = 'Validierungsantwort empfangen. Warte auf eindeutige Serverbestätigung ...';
     }
   }
 
   void setRobotState(Map<String, dynamic> payload, {String topic = 'robot_state/json'}) {
-    final state = _unwrapPayload(payload);
+    final state = _unwrapResponseRoot(payload);
     robotState
       ..clear()
       ..addAll(_deepCopy(state));
@@ -158,15 +156,13 @@ class TimetableController extends GetxController {
     lastTopic.value = topic;
     lastStatusOk.value = accepted;
     if (accepted == true) {
-      waitingForResponse.value = false;
       lastStatus.value = reason.isEmpty ? 'Service hat die Änderung bestätigt.' : 'Bestätigt: $reason';
-    } else if (accepted == false) {
       waitingForResponse.value = false;
+    } else if (accepted == false) {
       lastStatus.value = reason.isEmpty ? 'Service hat die Änderung abgelehnt.' : 'Abgelehnt: $reason';
+      waitingForResponse.value = false;
     } else {
-      lastStatus.value = reason.isEmpty
-          ? 'Serverantwort empfangen, aber ohne eindeutige Annahme/Ablehnung.'
-          : 'Serverantwort empfangen: $reason';
+      lastStatus.value = reason.isEmpty ? 'Antwort empfangen. Warte auf eindeutige Serverbestätigung ...' : reason;
     }
   }
 
@@ -528,11 +524,6 @@ class TimetableController extends GetxController {
     return data;
   }
 
-  Map<String, dynamic> _unwrapPayload(Map<String, dynamic> data) {
-    final wrapped = _mapOrEmpty(data['d']);
-    return wrapped.isNotEmpty ? wrapped : data;
-  }
-
   void _syncControllersFromTimeSettings() {
     final settings = _mapOrEmpty(timetableData['timeSettings']);
     final timezone = settings['timezone']?.toString();
@@ -563,6 +554,20 @@ class TimetableController extends GetxController {
     return <String, dynamic>{};
   }
 
+  Map<String, dynamic> _unwrapResponseRoot(Map<String, dynamic> data) {
+    final wrapped = _mapOrEmpty(data['d']);
+    return wrapped.isNotEmpty ? wrapped : data;
+  }
+
+  bool? _acceptanceOrNull(Map<String, dynamic> data) {
+    return _validOrNull(data['valid']) ??
+        _validOrNull(data['ok']) ??
+        _validOrNull(data['accepted']) ??
+        _validOrNull(data['success']) ??
+        _validOrNull(data['result']) ??
+        _validOrNull(data['status']);
+  }
+
   bool? _validOrNull(dynamic value) {
     if (value is bool) return value;
     if (value is num) {
@@ -570,24 +575,15 @@ class TimetableController extends GetxController {
       if (value == 0) return false;
     }
     if (value is String) {
-      final normalized = value.trim().toLowerCase();
-      if (normalized == 'true' || normalized == '1' || normalized == 'ok' || normalized == 'accepted' || normalized == 'success' || normalized == 'valid') {
+      final lower = value.trim().toLowerCase();
+      if (lower == 'true' || lower == '1' || lower == 'ok' || lower == 'accepted' || lower == 'success' || lower == 'successful' || lower == 'valid') {
         return true;
       }
-      if (normalized == 'false' || normalized == '0' || normalized == 'error' || normalized == 'rejected' || normalized == 'failed' || normalized == 'invalid') {
+      if (lower == 'false' || lower == '0' || lower == 'failed' || lower == 'failure' || lower == 'rejected' || lower == 'invalid' || lower == 'error') {
         return false;
       }
     }
     return null;
-  }
-
-  bool? _statusOrNull(Map<String, dynamic> payload) {
-    return _validOrNull(payload['valid']) ??
-        _validOrNull(payload['ok']) ??
-        _validOrNull(payload['accepted']) ??
-        _validOrNull(payload['success']) ??
-        _validOrNull(payload['status']) ??
-        _validOrNull(payload['result']);
   }
 
   List<String> _stringList(dynamic value) {

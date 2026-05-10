@@ -101,40 +101,12 @@ class MqttConnection  {
     return bson ? _decodeBsonMap(_payloadBytes(payload)) : _decodeJsonMap(_payloadBytes(payload));
   }
 
-
-  Map<String, dynamic> _unwrapPayload(Map<String, dynamic> data) {
-    final wrapped = data['d'];
+  Map<String, dynamic> _unwrapMap(Map<String, dynamic> map) {
+    final wrapped = map["d"];
     if (wrapped is Map) {
       return Map<String, dynamic>.from(wrapped);
     }
-    return data;
-  }
-
-  bool? _statusOrNull(Map<String, dynamic> payload) {
-    return _boolLike(payload['valid']) ??
-        _boolLike(payload['ok']) ??
-        _boolLike(payload['accepted']) ??
-        _boolLike(payload['success']) ??
-        _boolLike(payload['status']) ??
-        _boolLike(payload['result']);
-  }
-
-  bool? _boolLike(dynamic value) {
-    if (value is bool) return value;
-    if (value is num) {
-      if (value == 1) return true;
-      if (value == 0) return false;
-    }
-    if (value is String) {
-      final normalized = value.trim().toLowerCase();
-      if (normalized == 'true' || normalized == '1' || normalized == 'ok' || normalized == 'accepted' || normalized == 'success' || normalized == 'valid') {
-        return true;
-      }
-      if (normalized == 'false' || normalized == '0' || normalized == 'error' || normalized == 'rejected' || normalized == 'failed' || normalized == 'invalid') {
-        return false;
-      }
-    }
-    return null;
+    return map;
   }
 
   void parseTimetableMessage(MqttPublishMessage payload, {bool bson = false}) {
@@ -157,18 +129,25 @@ class MqttConnection  {
         timetableController.setError("Leere oder ungültige Timetable-Antwort empfangen.");
         return;
       }
-      final root = _unwrapPayload(map);
+      final root = _unwrapMap(map);
       if (root.containsKey("timetable")) {
         timetableController.setTimetablePayload(root);
         return;
       }
-      if (root.containsKey("valid") || root.containsKey("ok") || root.containsKey("accepted") || root.containsKey("status") || root.containsKey("result") || root.containsKey("remarks") || root.containsKey("time_state") || root.containsKey("robot_state")) {
-        timetableController.setActionResult(root, topic: bson ? timetableValidationBsonTopic : timetableResponseTopic);
+      if (root.containsKey("valid") ||
+          root.containsKey("ok") ||
+          root.containsKey("accepted") ||
+          root.containsKey("success") ||
+          root.containsKey("status") ||
+          root.containsKey("result") ||
+          root.containsKey("remarks") ||
+          root.containsKey("time_state") ||
+          root.containsKey("robot_state")) {
+        timetableController.setActionResult(root);
         return;
       }
-      final accepted = _statusOrNull(root);
       final reason = (root["reason"] ?? root["message"] ?? "").toString();
-      timetableController.setResponse(accepted, reason);
+      timetableController.setResponse(null, reason);
     } catch (e) {
       timetableController.setError("Timetable-Antwort konnte nicht gelesen werden: $e");
     }

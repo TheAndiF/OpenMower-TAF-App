@@ -610,7 +610,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  List<TextInputFormatter> get _timeInputFormatters => const [
+  List<TextInputFormatter> get _timeInputFormatters => [
         LengthLimitingTextInputFormatter(5),
       ];
 
