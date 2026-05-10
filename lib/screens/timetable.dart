@@ -1,12 +1,21 @@
 import 'dart:convert';
+import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/timetable_controller.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 
-class TimetableScreen extends GetView<TimetableController> {
+class TimetableScreen extends StatefulWidget {
   const TimetableScreen({super.key});
+
+  @override
+  State<TimetableScreen> createState() => _TimetableScreenState();
+}
+
+class _TimetableScreenState extends State<TimetableScreen> {
+  final TimetableController controller = Get.find<TimetableController>();
+  bool _renewSent = false;
 
   static const days = <String>[
     'Monday',
@@ -26,6 +35,17 @@ class TimetableScreen extends GetView<TimetableController> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_renewSent) {
+        _renewSent = true;
+        controller.requestTimetable();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
@@ -40,16 +60,24 @@ class TimetableScreen extends GetView<TimetableController> {
                 _buildSection(
                   context,
                   icon: Icons.schedule,
-                  title: 'Zeiteinstellungen',
-                  subtitle: 'Zeitstatus, Time-Server-Aktionen und Zeitquellen-Konfiguration',
-                  child: _buildTimeActionsCard(context),
+                  title: 'Time Settings',
+                  subtitle: 'Zeitzone und Quelle für die einmalige Systemzeit-Synchronisation',
+                  child: _buildTimeSettingsCard(context),
+                ),
+                const SizedBox(height: 16),
+                _buildSection(
+                  context,
+                  icon: Icons.pause_circle_outline,
+                  title: 'Mähzeit aussetzen',
+                  subtitle: 'Direkte MQTT-Aussetzung; Bestätigung kommt über robot_state.AutoMowSuspension',
+                  child: _buildSuspensionCard(context),
                 ),
                 const SizedBox(height: 16),
                 _buildSection(
                   context,
                   icon: Icons.calendar_month,
                   title: 'Mähzeiten',
-                  subtitle: 'Zeit-Einträge anzeigen, ändern und ergänzen',
+                  subtitle: 'Zeit-Einträge anzeigen, ändern, löschen und ergänzen',
                   child: _buildEntriesSection(context, timetable),
                 ),
                 const SizedBox(height: 16),
@@ -65,33 +93,6 @@ class TimetableScreen extends GetView<TimetableController> {
           child: RobotStateWidget(),
         ),
       ],
-    );
-  }
-
-  Widget _buildTimetableActions(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          ElevatedButton.icon(
-            onPressed: controller.requestTimetable,
-            icon: const Icon(Icons.download),
-            label: const Text('Timetable'),
-          ),
-          ElevatedButton.icon(
-            onPressed: controller.requestTimeStatus,
-            icon: const Icon(Icons.access_time),
-            label: const Text('Zeitstatus'),
-          ),
-          ElevatedButton.icon(
-            onPressed: controller.hasData ? controller.sendTimetable : null,
-            icon: const Icon(Icons.upload),
-            label: const Text('Senden'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -131,19 +132,20 @@ class TimetableScreen extends GetView<TimetableController> {
     );
   }
 
-  Widget _buildTimeActionsCard(BuildContext context) {
+  Widget _buildTimeSettingsCard(BuildContext context) {
     final source = controller.selectedTimeSource.value;
     final isManual = source == 'manual';
     final isNtp = source == 'ntp';
     final isGps = source == 'gps';
+    final isSystem = source == 'system';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Time-Server-Actions', style: Theme.of(context).textTheme.titleLarge),
+        Text('Time Settings', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
         Text(
-          'Die Actions werden an /openmower/time/action/json gesendet. Antworten werden über /openmower/time/action_result/json oder /bson ausgewertet.',
+          'Alle Änderungen werden lokal in timeSettings aktualisiert. Übertragen wird erst mit Speichern in der JSON-Ansicht.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 16),
@@ -158,12 +160,8 @@ class TimetableScreen extends GetView<TimetableController> {
               child: TextFormField(
                 controller: controller.timezoneController,
                 decoration: const InputDecoration(hintText: 'Europe/Berlin'),
+                onChanged: controller.updateTimezone,
               ),
-            ),
-            ElevatedButton.icon(
-              onPressed: controller.sendTimezone,
-              icon: const Icon(Icons.public),
-              label: const Text('Zeitzone setzen'),
             ),
           ],
         ),
@@ -182,6 +180,7 @@ class TimetableScreen extends GetView<TimetableController> {
                 controller: controller.hourController,
                 decoration: const InputDecoration(labelText: 'Stunden'),
                 keyboardType: TextInputType.number,
+                onChanged: (_) => controller.updateManualTimeFromFields(),
               ),
             ),
             SizedBox(
@@ -191,13 +190,10 @@ class TimetableScreen extends GetView<TimetableController> {
                 controller: controller.minuteController,
                 decoration: const InputDecoration(labelText: 'Minuten'),
                 keyboardType: TextInputType.number,
+                onChanged: (_) => controller.updateManualTimeFromFields(),
               ),
             ),
-            ElevatedButton.icon(
-              onPressed: isManual ? controller.sendManualTime : null,
-              icon: const Icon(Icons.edit_calendar),
-              label: const Text('Manuelle Zeit setzen'),
-            ),
+            Text('Wird als manual.datetime gespeichert.', style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
         const SizedBox(height: 8),
@@ -214,12 +210,8 @@ class TimetableScreen extends GetView<TimetableController> {
                 enabled: isNtp,
                 controller: controller.ntpServerController,
                 decoration: const InputDecoration(labelText: 'NTP Server', hintText: 'pool.ntp.org'),
+                onChanged: controller.updateNtpServer,
               ),
-            ),
-            ElevatedButton.icon(
-              onPressed: isNtp ? controller.sendNtpServer : null,
-              icon: const Icon(Icons.dns),
-              label: const Text('NTP Server setzen'),
             ),
           ],
         ),
@@ -235,19 +227,15 @@ class TimetableScreen extends GetView<TimetableController> {
               width: 360,
               child: Text('keine zusätzlichen Eingaben', style: Theme.of(context).textTheme.bodyMedium),
             ),
-            ElevatedButton.icon(
-              onPressed: isGps ? controller.synchronizeGps : null,
-              icon: const Icon(Icons.sync),
-              label: const Text('Synchronisieren'),
-            ),
           ],
         ),
         const SizedBox(height: 8),
         _buildSourceRow(
           context,
-          selected: false,
-          selectable: false,
+          selected: isSystem,
+          selectable: true,
           label: 'Systemzeit',
+          onTap: () => controller.setSelectedTimeSource('system'),
           children: [
             SizedBox(
               width: 360,
@@ -257,6 +245,55 @@ class TimetableScreen extends GetView<TimetableController> {
         ),
       ],
     );
+  }
+
+  Widget _buildSuspensionCard(BuildContext context) {
+    final oneDayActive = controller.isSuspended && _suspensionLooksLikeDays(1);
+    final threeDaysActive = controller.isSuspended && _suspensionLooksLikeDays(3);
+    final suspensionValue = controller.autoMowSuspension;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('AutoMow Suspension', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 8),
+        Text(
+          'Die Buttons senden timetable/suspension/set/json. Der bestätigte Zustand wird aus robot_state.AutoMowSuspension gelesen.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            _toggleButton(
+              context,
+              active: oneDayActive,
+              icon: Icons.looks_one,
+              label: '1 Tag aussetzen',
+              onPressed: () => controller.toggleSuspensionDays(1),
+            ),
+            _toggleButton(
+              context,
+              active: threeDaysActive,
+              icon: Icons.looks_3,
+              label: '3 Tage aussetzen',
+              onPressed: () => controller.toggleSuspensionDays(3),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          controller.isSuspended ? 'Aktuell ausgesetzt bis: $suspensionValue' : 'Aktuell keine Aussetzung aktiv.',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
+    );
+  }
+
+  Widget _toggleButton(BuildContext context, {required bool active, required IconData icon, required String label, required VoidCallback onPressed}) {
+    return active
+        ? ElevatedButton.icon(onPressed: onPressed, icon: Icon(icon), label: Text('✓ $label'))
+        : OutlinedButton.icon(onPressed: onPressed, icon: Icon(icon), label: Text(label));
   }
 
   Widget _buildSourceRow(
@@ -319,7 +356,7 @@ class TimetableScreen extends GetView<TimetableController> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Jede Zeile entspricht einem Objekt unter timetable.*. Unten ist ein neuer Eintrag vorbereitet.',
+          'Die technische ID wird automatisch erzeugt, intern als Key unter timetable verwendet und nicht angezeigt.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
@@ -356,7 +393,6 @@ class TimetableScreen extends GetView<TimetableController> {
         runSpacing: 12,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          SizedBox(width: 230, child: _idField(id, editable: false)),
           _entryDayDropdown(id, item, enabled: editing),
           _smallTextField(id, item, 'start', 'Start', enabled: editing, width: 120),
           _smallTextField(id, item, 'end', 'Ende', enabled: editing, width: 120),
@@ -371,7 +407,7 @@ class TimetableScreen extends GetView<TimetableController> {
               children: [
                 IconButton(
                   tooltip: 'Eintrag löschen',
-                  onPressed: () => controller.removeEntry(id),
+                  onPressed: () => _confirmRemoveEntry(context, id),
                   icon: const Icon(Icons.delete_outline),
                 ),
                 IconButton(
@@ -381,6 +417,26 @@ class TimetableScreen extends GetView<TimetableController> {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmRemoveEntry(BuildContext context, String id) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Mähzeit löschen?'),
+        content: const Text('Der Timeslot wird lokal aus der JSON entfernt. Übertragen wird erst mit Speichern.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Abbrechen')),
+          ElevatedButton(
+            onPressed: () {
+              controller.removeEntry(id);
+              Navigator.of(dialogContext).pop();
+            },
+            child: const Text('Löschen'),
           ),
         ],
       ),
@@ -400,13 +456,6 @@ class TimetableScreen extends GetView<TimetableController> {
         runSpacing: 12,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          SizedBox(
-            width: 230,
-            child: TextFormField(
-              controller: controller.newEntryIdController,
-              decoration: const InputDecoration(labelText: 'ID'),
-            ),
-          ),
           SizedBox(
             width: 150,
             child: DropdownButtonFormField<String>(
@@ -447,13 +496,6 @@ class TimetableScreen extends GetView<TimetableController> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _idField(String id, {bool editable = false}) {
-    return InputDecorator(
-      decoration: const InputDecoration(labelText: 'ID'),
-      child: Text(id, overflow: TextOverflow.ellipsis),
     );
   }
 
@@ -532,7 +574,7 @@ class TimetableScreen extends GetView<TimetableController> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: Text('Felder für $id'),
+          title: const Text('Zusätzliche Felder'),
           content: SizedBox(
             width: 520,
             child: TextField(
@@ -578,31 +620,43 @@ class TimetableScreen extends GetView<TimetableController> {
 
   Widget _buildJsonSection(BuildContext context) {
     final color = Theme.of(context).primaryColor;
+    final statusIcon = controller.lastStatusOk.value == null
+        ? Icons.hourglass_empty
+        : controller.lastStatusOk.value == true
+            ? Icons.check_circle_outline
+            : Icons.error_outline;
+    final statusText = controller.lastStatus.value.isEmpty ? 'Noch keine Rückmeldung.' : controller.lastStatus.value;
     return Card(
       margin: EdgeInsets.zero,
       child: ExpansionTile(
         initiallyExpanded: false,
         leading: Icon(Icons.code, color: color, size: 32),
         title: Text('JSON-Ansicht', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
-        subtitle: const Text('Optionaler Bereich für weitere Felder'),
+        subtitle: Row(
+          children: [
+            Icon(statusIcon, size: 16, color: controller.lastStatusOk.value == false ? Colors.red : color),
+            const SizedBox(width: 6),
+            Expanded(child: Text(statusText, overflow: TextOverflow.ellipsis)),
+          ],
+        ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
           Row(
             children: [
               Expanded(
                 child: Text(
-                  'Eingeklappt. Zum Anzeigen und Bearbeiten des JSON hier öffnen.',
+                  'Download speichert die aktuelle lokale JSON als Datei. Upload lädt eine Datei lokal. Speichern sendet an timetable/set/json.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
               OutlinedButton.icon(
-                onPressed: controller.requestTimetable,
+                onPressed: _downloadJsonFile,
                 icon: const Icon(Icons.download),
                 label: const Text('Download'),
               ),
               const SizedBox(width: 8),
               OutlinedButton.icon(
-                onPressed: controller.applyRawJson,
+                onPressed: _uploadJsonFile,
                 icon: const Icon(Icons.upload),
                 label: const Text('Upload'),
               ),
@@ -614,6 +668,8 @@ class TimetableScreen extends GetView<TimetableController> {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          _buildStatusCard(context),
           const SizedBox(height: 8),
           TextField(
             controller: controller.rawJsonController,
@@ -631,10 +687,93 @@ class TimetableScreen extends GetView<TimetableController> {
     );
   }
 
+  Widget _buildStatusCard(BuildContext context) {
+    final ok = controller.lastStatusOk.value;
+    final topic = controller.lastTopic.value;
+    final updated = controller.lastUpdated.value;
+    final remarks = controller.lastRemarks;
+    final color = ok == false ? Colors.red.shade50 : ok == true ? Colors.green.shade50 : Colors.grey.shade100;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color,
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(controller.lastStatus.value.isEmpty ? 'Noch keine Rückmeldung.' : controller.lastStatus.value),
+          if (topic.isNotEmpty) Text('Letztes Topic: $topic', style: Theme.of(context).textTheme.bodySmall),
+          if (updated != null) Text('Zeit: ${_formatTime(updated)}', style: Theme.of(context).textTheme.bodySmall),
+          if (remarks.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text('Server-Hinweise:', style: Theme.of(context).textTheme.bodySmall),
+            ...remarks.map((r) => Text('- $r', style: Theme.of(context).textTheme.bodySmall)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _downloadJsonFile() {
+    final jsonText = controller.exportJsonString();
+    final bytes = utf8.encode(jsonText);
+    final blob = html.Blob(<Object>[bytes], 'application/json');
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    final now = DateTime.now();
+    final filename = 'openmower_timetable_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}.json';
+    final anchor = html.AnchorElement(href: url)
+      ..download = filename
+      ..style.display = 'none';
+    html.document.body?.children.add(anchor);
+    anchor.click();
+    anchor.remove();
+    html.Url.revokeObjectUrl(url);
+  }
+
+  void _uploadJsonFile() {
+    final input = html.FileUploadInputElement()..accept = '.json,application/json';
+    input.click();
+    input.onChange.listen((_) {
+      final files = input.files;
+      if (files == null || files.isEmpty) {
+        return;
+      }
+      final file = files.first;
+      final reader = html.FileReader();
+      reader.onLoadEnd.listen((_) {
+        final result = reader.result;
+        if (result is String) {
+          controller.importJsonString(result, filename: file.name);
+        } else {
+          controller.setError('Datei konnte nicht als Text gelesen werden.', topic: 'local/upload');
+        }
+      });
+      reader.readAsText(file);
+    });
+  }
+
+  bool _suspensionLooksLikeDays(int days) {
+    final value = controller.autoMowSuspension;
+    if (value == null || value == 0) return false;
+    final until = DateTime.tryParse(value.toString());
+    if (until == null) return false;
+    final diffHours = until.difference(DateTime.now()).inHours;
+    if (days == 1) return diffHours <= 48;
+    if (days == 3) return diffHours > 48;
+    return false;
+  }
+
   String _safeValue(String value, List<String> allowed) => allowed.contains(value) ? value : allowed.first;
 
   String _currentTimeText() {
     final now = DateTime.now();
     return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _formatTime(DateTime time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:${time.second.toString().padLeft(2, '0')}';
   }
 }

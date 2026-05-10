@@ -46,11 +46,17 @@ class MqttConnection  {
   final client = mqttclient.get();
 
   static const String timetableTopic = "timetable/json";
-  static const String timetableRequestTopic = "timetable/request";
+  static const String timetableBsonTopic = "timetable/bson";
+  static const String timetableRenewJsonTopic = "timetable/renew/json";
   static const String timetableSetTopic = "timetable/set/json";
+  static const String timetableValidationJsonTopic = "timetable/validation/json";
+  static const String timetableValidationBsonTopic = "timetable/validation/bson";
+  static const String timetableSuspensionSetJsonTopic = "timetable/suspension/set/json";
+
+  // Legacy topics kept for compatibility with older services.
+  static const String timetableRequestTopic = "timetable/request";
   static const String timetableResponseTopic = "timetable/response/json";
   static const String timetableAckTopic = "timetable/ack/json";
-
   static const String timetableStatusTopic = "/openmower/timetable/status/json";
   static const String timetableSetJsonTopic = "/openmower/timetable/config/set/json";
   static const String timetableActionResultTopic = "/openmower/timetable/action_result/json";
@@ -102,7 +108,7 @@ class MqttConnection  {
         timetableController.setError("Leere oder ungültige Timetable-Nachricht empfangen.");
         return;
       }
-      timetableController.setTimetablePayload(map);
+      timetableController.setTimetablePayload(map, topic: bson ? timetableBsonTopic : timetableTopic);
     } catch (e) {
       timetableController.setError("Timetable konnte nicht gelesen werden: $e");
     }
@@ -128,6 +134,30 @@ class MqttConnection  {
       timetableController.setResponse(accepted, reason);
     } catch (e) {
       timetableController.setError("Timetable-Antwort konnte nicht gelesen werden: $e");
+    }
+  }
+
+  void parseTimetableValidation(MqttPublishMessage payload, {bool bson = false}) {
+    try {
+      final map = _decodeMap(payload, bson: bson);
+      if (map == null) {
+        timetableController.setError("Leere oder ungültige Timetable-Validierung empfangen.");
+        return;
+      }
+      timetableController.setValidation(map, topic: bson ? timetableValidationBsonTopic : timetableValidationJsonTopic);
+    } catch (e) {
+      timetableController.setError("Timetable-Validierung konnte nicht gelesen werden: $e");
+    }
+  }
+
+  void parseRobotStateJson(MqttPublishMessage payload) {
+    try {
+      final map = _decodeMap(payload);
+      if (map != null) {
+        timetableController.setRobotState(map, topic: "robot_state/json");
+      }
+    } catch (e) {
+      timetableController.setError("Robot-State konnte nicht gelesen werden: $e", topic: "robot_state/json");
     }
   }
 
@@ -180,8 +210,7 @@ class MqttConnection  {
 
   void requestTimetable() {
     try {
-      _publishJson(timetableRequestTopic, {"request": "timetable"});
-      _publishJson(timetableStatusTopic, {"request_id": _requestId("timetable_req"), "action": "get_status"});
+      _publishJson(timetableRenewJsonTopic, {"request": "renew", "source": "app", "request_id": _requestId("timetable_renew")});
     } catch(e) {
       debugPrint("error requesting timetable via mqtt");
       timetableController.setError("Timetable-Anfrage konnte nicht gesendet werden.");
@@ -191,10 +220,18 @@ class MqttConnection  {
   void publishTimetable(Map<String, dynamic> timetable) {
     try {
       _publishJson(timetableSetTopic, timetable, qos: MqttQos.exactlyOnce);
-      _publishJson(timetableSetJsonTopic, timetable, qos: MqttQos.exactlyOnce);
     } catch(e) {
       debugPrint("error publishing timetable to mqtt");
       timetableController.setError("Timetable konnte nicht gesendet werden.");
+    }
+  }
+
+  void publishSuspension(dynamic autoMowSuspension) {
+    try {
+      _publishJson(timetableSuspensionSetJsonTopic, {"AutoMowSuspension": autoMowSuspension}, qos: MqttQos.exactlyOnce);
+    } catch(e) {
+      debugPrint("error publishing suspension to mqtt");
+      timetableController.setError("Aussetzung konnte nicht gesendet werden.");
     }
   }
 
@@ -488,6 +525,13 @@ class MqttConnection  {
   }
 
   void parseRobotState(obj) {
+    final raw = obj is Map && obj["d"] is Map ? Map<String, dynamic>.from(obj["d"] as Map) : <String, dynamic>{};
+    if (raw.isNotEmpty) {
+      timetableController.setRobotState(raw, topic: "robot_state/bson");
+    }
+    if (obj["d"] == null || obj["d"]["pose"] == null) {
+      return;
+    }
     RobotState state        = RobotState();
     state.isConnected       = true;
     state.posX              = obj["d"]["pose"]["x"];
@@ -571,7 +615,14 @@ class MqttConnection  {
           debugPrint("got message on ${msg.topic}");
           final payload = msg.payload as MqttPublishMessage;
           switch(msg.topic) {
-            case timetableTopic:
+            case timetableTopic: {
+              parseTimetableMessage(payload);
+            }
+            break;
+            case timetableBsonTopic: {
+              parseTimetableMessage(payload, bson: true);
+            }
+            break;
             case timetableStatusTopic: {
               parseTimetableMessage(payload);
             }
@@ -580,6 +631,14 @@ class MqttConnection  {
             case timetableAckTopic:
             case timetableActionResultTopic: {
               parseTimetableResponse(payload);
+            }
+            break;
+            case timetableValidationJsonTopic: {
+              parseTimetableValidation(payload);
+            }
+            break;
+            case timetableValidationBsonTopic: {
+              parseTimetableValidation(payload, bson: true);
             }
             break;
             case timeStatusJsonTopic: {
@@ -646,6 +705,10 @@ class MqttConnection  {
               parseMapOverlay(object);
             }
             break;
+            case "robot_state/json": {
+              parseRobotStateJson(payload);
+            }
+            break;
             case "robot_state/bson": {
               // Got the robot state
               final bytes = payload.payload.message?.toList(growable: false);
@@ -692,11 +755,14 @@ class MqttConnection  {
     client.subscribe("map/bson", MqttQos.atLeastOnce);
     client.subscribe("map_overlay/bson", MqttQos.atMostOnce);
     client.subscribe("sensor_infos/bson", MqttQos.atLeastOnce);
-    client.subscribe("robot_state/bson", MqttQos.atMostOnce);
+    client.subscribe("robot_state/json", MqttQos.atMostOnce);
     client.subscribe("robot_state/bson", MqttQos.atMostOnce);
     client.subscribe("sensors/+/bson", MqttQos.atMostOnce);
     client.subscribe("version", MqttQos.atLeastOnce);
     client.subscribe(timetableTopic, MqttQos.atLeastOnce);
+    client.subscribe(timetableBsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(timetableValidationJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(timetableValidationBsonTopic, MqttQos.atLeastOnce);
     client.subscribe(timetableStatusTopic, MqttQos.atLeastOnce);
     client.subscribe(timetableResponseTopic, MqttQos.atLeastOnce);
     client.subscribe(timetableAckTopic, MqttQos.atLeastOnce);

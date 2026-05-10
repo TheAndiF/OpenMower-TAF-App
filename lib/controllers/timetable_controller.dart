@@ -15,11 +15,10 @@ class TimetableController extends GetxController {
   };
 
   final timetableData = <String, dynamic>{}.obs;
-  final timeState = <String, dynamic>{}.obs;
   final robotState = <String, dynamic>{}.obs;
-  final timeConfigStatus = <String, dynamic>{}.obs;
   final lastRemarks = <String>[].obs;
   final lastStatus = ''.obs;
+  final lastTopic = ''.obs;
   final lastStatusOk = RxnBool();
   final lastUpdated = Rxn<DateTime>();
   final waitingForResponse = false.obs;
@@ -29,9 +28,8 @@ class TimetableController extends GetxController {
   final hourController = TextEditingController(text: '22');
   final minuteController = TextEditingController(text: '30');
   final ntpServerController = TextEditingController(text: 'pool.ntp.org');
-  final newEntryIdController = TextEditingController(text: 'test_sunday_full_day');
 
-  final selectedTimeSource = 'manual'.obs;
+  final selectedTimeSource = 'ntp'.obs;
   final editingEntryIds = <String>{}.obs;
   final newEntryDraft = <String, dynamic>{
     'day': 'Sunday',
@@ -43,9 +41,10 @@ class TimetableController extends GetxController {
   }.obs;
 
   bool get hasData => timetableData.isNotEmpty;
-  bool get hasTimeState => timeState.isNotEmpty;
   bool get hasRobotState => robotState.isNotEmpty;
-  bool get hasTimeConfigStatus => timeConfigStatus.isNotEmpty;
+
+  dynamic get autoMowSuspension => robotState['AutoMowSuspension'] ?? 0;
+  bool get isSuspended => autoMowSuspension != null && autoMowSuspension != 0 && autoMowSuspension.toString() != '0' && autoMowSuspension.toString().isNotEmpty;
 
   String get localTimeForManualSet {
     final hour = int.tryParse(hourController.text.trim()) ?? 0;
@@ -59,173 +58,166 @@ class TimetableController extends GetxController {
     return '${manual.year.toString().padLeft(4, '0')}-${manual.month.toString().padLeft(2, '0')}-${manual.day.toString().padLeft(2, '0')}T${manual.hour.toString().padLeft(2, '0')}:${manual.minute.toString().padLeft(2, '0')}:00$offsetText';
   }
 
-  void setTimetablePayload(Map<String, dynamic> payload) {
-    final nextTimetable = _mapOrEmpty(payload['timetable']);
-    if (nextTimetable.isNotEmpty &&
-        (payload.containsKey('valid') || payload.containsKey('remarks') || payload.containsKey('time_state') || payload.containsKey('robot_state'))) {
-      setTimetable(nextTimetable, statusMessage: 'Timetable-Rückkanal empfangen');
-      _updateOptionalStatusBlocks(payload);
-      lastStatusOk.value = _validOrNull(payload['valid']) ?? true;
-      lastRemarks.assignAll(_stringList(payload['remarks']));
-      return;
-    }
-
-    setTimetable(payload, statusMessage: 'Timetable empfangen');
+  void setTimetablePayload(Map<String, dynamic> payload, {String topic = 'timetable/json'}) {
+    final wasWaiting = waitingForResponse.value;
+    final status = wasWaiting ? 'Gespeichert. Server hat die Timetable bestätigt.' : 'Timetable vom Server empfangen.';
+    setTimetable(payload, statusMessage: status, topic: topic);
   }
 
-  void setTimetable(Map<String, dynamic> data, {String statusMessage = 'Timetable empfangen'}) {
+  void setTimetable(Map<String, dynamic> data, {String statusMessage = 'Timetable empfangen', String topic = 'timetable/json'}) {
+    final normalized = _normalizeTimetableData(data);
     timetableData
       ..clear()
-      ..addAll(_deepCopy(data));
+      ..addAll(_deepCopy(normalized));
     editingEntryIds.clear();
     syncRawJsonFromData();
-    _syncTimezoneControllerFromTimetable();
+    _syncControllersFromTimeSettings();
     lastUpdated.value = DateTime.now();
+    lastTopic.value = topic;
     lastStatus.value = statusMessage;
     lastStatusOk.value = true;
+    lastRemarks.clear();
     waitingForResponse.value = false;
   }
 
+
+  // Compatibility handlers for older OpenMower time/timetable topics.
   void setTimeStatus(Map<String, dynamic> payload) {
-    final state = _mapOrEmpty(payload['time_state']);
-    if (state.isNotEmpty) {
-      timeState
-        ..clear()
-        ..addAll(_deepCopy(state));
-      _syncTimezoneControllerFromTimeState();
-      final source = (state['source'] ?? '').toString();
-      if (source == 'manual') selectedTimeSource.value = 'manual';
-      if (source == 'ntp') selectedTimeSource.value = 'ntp';
-      if (source == 'gps') selectedTimeSource.value = 'gps';
+    final state = _mapOrEmpty(payload['time_state']).isNotEmpty ? _mapOrEmpty(payload['time_state']) : payload;
+    final source = state['source']?.toString();
+    if (source == 'manual' || source == 'ntp' || source == 'gps' || source == 'system') {
+      selectedTimeSource.value = source!;
     }
     lastRemarks.assignAll(_stringList(payload['remarks']));
     lastUpdated.value = DateTime.now();
+    lastTopic.value = 'legacy/time/status';
     lastStatusOk.value = _validOrNull(payload['valid']) ?? _validOrNull(state['valid']);
-    lastStatus.value = 'Zeitstatus empfangen';
+    lastStatus.value = 'Zeitstatus empfangen.';
     waitingForResponse.value = false;
   }
 
   void setTimeConfigStatus(Map<String, dynamic> payload) {
-    final config = _mapOrEmpty(payload['time']).isNotEmpty ? _mapOrEmpty(payload['time']) : payload;
-    timeConfigStatus
-      ..clear()
-      ..addAll(_deepCopy(config));
     lastUpdated.value = DateTime.now();
+    lastTopic.value = 'legacy/time/config/status';
     lastStatusOk.value = true;
-    lastStatus.value = 'Zeit-Konfiguration bestätigt';
+    lastStatus.value = 'Zeit-Konfiguration bestätigt.';
     waitingForResponse.value = false;
   }
 
   void setActionResult(Map<String, dynamic> payload) {
-    _updateOptionalStatusBlocks(payload);
-    final action = (payload['action'] ?? 'Action').toString();
-    final ok = _validOrNull(payload['valid']) ?? false;
-    final remarks = _stringList(payload['remarks']);
-    lastRemarks.assignAll(remarks);
-    waitingForResponse.value = false;
+    final ok = _validOrNull(payload['valid']) ?? _validOrNull(payload['ok']) ?? false;
+    lastRemarks.assignAll(_stringList(payload['remarks']));
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = 'legacy/action_result';
     lastStatusOk.value = ok;
-    lastStatus.value = ok
-        ? '$action bestätigt${remarks.isEmpty ? '' : ': ${remarks.join(', ')}'}'
-        : '$action abgelehnt${remarks.isEmpty ? '' : ': ${remarks.join(', ')}'}';
+    final action = (payload['action'] ?? 'Action').toString();
+    lastStatus.value = ok ? '$action bestätigt.' : '$action abgelehnt.';
+    waitingForResponse.value = false;
   }
 
-  void setResponse(bool accepted, String reason) {
+  void setValidation(Map<String, dynamic> payload, {String topic = 'timetable/validation/json'}) {
+    final ok = _validOrNull(payload['valid']) ?? false;
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = topic;
+    lastStatusOk.value = ok;
+    lastRemarks.assignAll(_stringList(payload['remarks']));
+    lastStatus.value = ok ? 'Server-Validierung erfolgreich.' : 'Speichern fehlgeschlagen. Server hat die Timetable abgelehnt.';
     waitingForResponse.value = false;
+  }
+
+  void setRobotState(Map<String, dynamic> payload, {String topic = 'robot_state/json'}) {
+    final state = _mapOrEmpty(payload['d']).isNotEmpty ? _mapOrEmpty(payload['d']) : payload;
+    robotState
+      ..clear()
+      ..addAll(_deepCopy(state));
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = topic;
+  }
+
+  void setResponse(bool accepted, String reason, {String topic = 'timetable/response/json'}) {
+    waitingForResponse.value = false;
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = topic;
     lastStatusOk.value = accepted;
     lastStatus.value = accepted
         ? (reason.isEmpty ? 'Service hat die Änderung bestätigt.' : 'Bestätigt: $reason')
         : (reason.isEmpty ? 'Service hat die Änderung abgelehnt.' : 'Abgelehnt: $reason');
   }
 
-  void setError(String message) {
+  void setError(String message, {String topic = ''}) {
     waitingForResponse.value = false;
+    lastUpdated.value = DateTime.now();
+    if (topic.isNotEmpty) lastTopic.value = topic;
     lastStatusOk.value = false;
     lastStatus.value = message;
   }
 
   void requestTimetable() {
     Get.find<MqttConnection>().requestTimetable();
-    lastStatus.value = 'Timetable wird angefordert ...';
-    lastStatusOk.value = null;
-  }
-
-  void requestTimeStatus() {
-    Get.find<MqttConnection>().requestTimeStatus();
-    waitingForResponse.value = true;
-    lastStatus.value = 'Zeitstatus wird angefordert ...';
+    lastStatus.value = 'Timetable wird vom Server angefordert ...';
+    lastTopic.value = 'timetable/renew/json';
     lastStatusOk.value = null;
   }
 
   void setSelectedTimeSource(String source) {
-    if (source == 'manual' || source == 'ntp' || source == 'gps') {
+    if (source == 'manual' || source == 'ntp' || source == 'gps' || source == 'system') {
       selectedTimeSource.value = source;
+      _updateTimeSettings((settings) {
+        settings['active_source'] = source;
+        _applySourceSpecificValues(settings);
+      });
     }
   }
 
-  void sendTimezone() {
-    final timezone = timezoneController.text.trim();
-    if (timezone.isEmpty) {
-      setError('Zeitzone darf nicht leer sein.');
-      return;
-    }
-    Get.find<MqttConnection>().setTimeTimezone(timezone);
-    waitingForResponse.value = true;
-    lastStatus.value = 'Zeitzone wird gesendet ...';
-    lastStatusOk.value = null;
+  void updateTimezone(String timezone) {
+    _updateTimeSettings((settings) {
+      settings['timezone'] = timezone.trim().isEmpty ? 'Europe/Berlin' : timezone.trim();
+    });
   }
 
-  void sendManualTime() {
-    final timezone = timezoneController.text.trim();
-    if (timezone.isEmpty) {
-      setError('Zeitzone darf nicht leer sein.');
-      return;
-    }
-    final hour = int.tryParse(hourController.text.trim());
-    final minute = int.tryParse(minuteController.text.trim());
-    if (hour == null || minute == null || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-      setError('Stunden müssen 0–23 und Minuten 0–59 sein.');
-      return;
-    }
-    selectedTimeSource.value = 'manual';
-    Get.find<MqttConnection>().setManualTime(timezone: timezone, localTime: localTimeForManualSet);
-    waitingForResponse.value = true;
-    lastStatus.value = 'Manuelle Zeit wird gesendet ...';
-    lastStatusOk.value = null;
+  void updateManualTimeFromFields() {
+    _updateTimeSettings((settings) {
+      settings['manual'] = <String, dynamic>{'datetime': localTimeForManualSet};
+    });
   }
 
-  void sendNtpServer() {
-    final server = ntpServerController.text.trim();
-    if (server.isEmpty) {
-      setError('NTP Server darf nicht leer sein.');
-      return;
+  void updateNtpServer(String server) {
+    _updateTimeSettings((settings) {
+      settings['ntp'] = <String, dynamic>{'server': server.trim().isEmpty ? 'pool.ntp.org' : server.trim()};
+    });
+  }
+
+  void _applySourceSpecificValues(Map<String, dynamic> settings) {
+    final source = (settings['active_source'] ?? 'ntp').toString();
+    if (source == 'manual') {
+      settings['manual'] = <String, dynamic>{'datetime': localTimeForManualSet};
+    } else {
+      settings['manual'] = _mapOrEmpty(settings['manual']).isEmpty ? <String, dynamic>{'datetime': null} : _mapOrEmpty(settings['manual']);
     }
-    selectedTimeSource.value = 'ntp';
-    Get.find<MqttConnection>().setNtpServer(server);
-    waitingForResponse.value = true;
-    lastStatus.value = 'NTP Server wird gesendet ...';
-    lastStatusOk.value = null;
+    settings['ntp'] = <String, dynamic>{'server': ntpServerController.text.trim().isEmpty ? 'pool.ntp.org' : ntpServerController.text.trim()};
+    settings['gps'] = _mapOrEmpty(settings['gps']);
   }
 
-  void synchronizeGps() {
-    selectedTimeSource.value = 'gps';
-    Get.find<MqttConnection>().requestTimeResync(preferredSource: 'gps');
-    waitingForResponse.value = true;
-    lastStatus.value = 'GPS-Zeit wird synchronisiert ...';
-    lastStatusOk.value = null;
-  }
-
-  void clearManualTime() {
-    Get.find<MqttConnection>().clearManualTime();
-    waitingForResponse.value = true;
-    lastStatus.value = 'Manuelle Zeit wird verworfen ...';
-    lastStatusOk.value = null;
+  void _updateTimeSettings(void Function(Map<String, dynamic> settings) mutate) {
+    final next = _deepCopy(timetableData.isEmpty ? _emptyTimetableData() : timetableData);
+    final settings = Map<String, dynamic>.from((next['timeSettings'] as Map?) ?? _defaultTimeSettings());
+    mutate(settings);
+    next['timeSettings'] = settings;
+    timetableData
+      ..clear()
+      ..addAll(next);
+    syncRawJsonFromData();
+    lastStatus.value = 'Time Settings lokal aktualisiert, noch nicht gesendet.';
+    lastStatusOk.value = true;
   }
 
   void sendTimetable() {
     syncRawJsonFromData();
     Get.find<MqttConnection>().publishTimetable(Map<String, dynamic>.from(timetableData));
     waitingForResponse.value = true;
-    lastStatus.value = 'Timetable gesendet. Warte auf Bestätigung ...';
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = 'timetable/set/json';
+    lastStatus.value = 'Timetable gesendet. Warte auf Serverantwort ...';
     lastStatusOk.value = null;
   }
 
@@ -238,20 +230,41 @@ class TimetableController extends GetxController {
       }
       timetableData
         ..clear()
-        ..addAll(Map<String, dynamic>.from(parsed));
+        ..addAll(_normalizeTimetableData(Map<String, dynamic>.from(parsed)));
       editingEntryIds.clear();
-      _syncTimezoneControllerFromTimetable();
-      lastStatus.value = 'JSON übernommen, noch nicht gesendet.';
+      _syncControllersFromTimeSettings();
+      syncRawJsonFromData();
+      lastUpdated.value = DateTime.now();
+      lastTopic.value = 'local/upload';
+      lastStatus.value = 'JSON wurde lokal übernommen. Zum Übertragen an den Server bitte Speichern drücken.';
       lastStatusOk.value = true;
       return true;
     } catch (e) {
-      setError('JSON ist ungültig: $e');
+      setError('JSON ist ungültig: $e', topic: 'local/upload');
       return false;
     }
   }
 
+  bool importJsonString(String jsonText, {String filename = 'Datei'}) {
+    rawJsonController.text = jsonText;
+    final ok = applyRawJson();
+    if (ok) {
+      lastStatus.value = 'JSON-Datei "$filename" wurde lokal geladen. Noch nicht an den Server gesendet.';
+    }
+    return ok;
+  }
+
+  String exportJsonString() {
+    syncRawJsonFromData();
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = 'local/download';
+    lastStatus.value = 'JSON-Datei wurde zum Download vorbereitet.';
+    lastStatusOk.value = true;
+    return rawJsonController.text;
+  }
+
   void syncRawJsonFromData() {
-    rawJsonController.text = const JsonEncoder.withIndent('  ').convert(timetableData);
+    rawJsonController.text = const JsonEncoder.withIndent('  ').convert(timetableData.isEmpty ? _emptyTimetableData() : timetableData);
   }
 
   bool isEntryEditing(String entryId) => editingEntryIds.contains(entryId);
@@ -261,7 +274,7 @@ class TimetableController extends GetxController {
       editingEntryIds.remove(entryId);
       editingEntryIds.refresh();
       syncRawJsonFromData();
-      lastStatus.value = 'Eintrag "$entryId" gespeichert, noch nicht gesendet.';
+      lastStatus.value = 'Mähzeit gespeichert, noch nicht an den Server gesendet.';
       lastStatusOk.value = true;
     } else {
       editingEntryIds.add(entryId);
@@ -290,20 +303,10 @@ class TimetableController extends GetxController {
       ..addAll(next);
   }
 
-  void addEntryFromDraft({String? overrideId}) {
-    final id = (overrideId ?? newEntryIdController.text).trim();
-    if (id.isEmpty) {
-      setError('Bitte eine Eintrag-ID angeben.');
-      return;
-    }
-
+  void addEntryFromDraft() {
     final next = _deepCopy(timetableData.isEmpty ? _emptyTimetableData() : timetableData);
     final timetable = Map<String, dynamic>.from((next['timetable'] as Map?) ?? <String, dynamic>{});
-    if (timetable.containsKey(id) && overrideId == null) {
-      setError('Eintrag-ID "$id" existiert bereits.');
-      return;
-    }
-
+    final id = _generateEntryId(timetable.keys.map((e) => e.toString()).toSet());
     timetable[id] = Map<String, dynamic>.from(newEntryDraft);
     next['timetable'] = timetable;
     timetableData
@@ -311,9 +314,9 @@ class TimetableController extends GetxController {
       ..addAll(next);
     editingEntryIds.remove(id);
     editingEntryIds.refresh();
-    _resetNewEntryDraft(existingIds: timetable.keys.map((e) => e.toString()).toSet());
+    _resetNewEntryDraft();
     syncRawJsonFromData();
-    lastStatus.value = 'Mähzeit "$id" hinzugefügt, noch nicht gesendet.';
+    lastStatus.value = 'Neue Mähzeit hinzugefügt, noch nicht an den Server gesendet.';
     lastStatusOk.value = true;
   }
 
@@ -328,6 +331,8 @@ class TimetableController extends GetxController {
       ..clear()
       ..addAll(next);
     syncRawJsonFromData();
+    lastStatus.value = 'Mähzeit gelöscht, noch nicht an den Server gesendet.';
+    lastStatusOk.value = true;
   }
 
   Map<String, dynamic> extraFieldsFor(Map<String, dynamic> item) {
@@ -365,7 +370,7 @@ class TimetableController extends GetxController {
         ..clear()
         ..addAll(next);
       syncRawJsonFromData();
-      lastStatus.value = 'Zusätzliche Felder für "$entryId" übernommen, noch nicht gesendet.';
+      lastStatus.value = 'Zusätzliche Felder übernommen, noch nicht an den Server gesendet.';
       lastStatusOk.value = true;
       return true;
     } catch (e) {
@@ -374,7 +379,46 @@ class TimetableController extends GetxController {
     }
   }
 
-  void _resetNewEntryDraft({Set<String> existingIds = const <String>{}}) {
+  void setSuspensionUntil(DateTime until) {
+    final value = _isoWithOffset(until);
+    Get.find<MqttConnection>().publishSuspension(value);
+    waitingForResponse.value = true;
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = 'timetable/suspension/set/json';
+    lastStatus.value = 'Aussetzung bis $value gesendet. Warte auf robot_state ...';
+    lastStatusOk.value = null;
+  }
+
+  void clearSuspension() {
+    Get.find<MqttConnection>().publishSuspension(0);
+    waitingForResponse.value = true;
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = 'timetable/suspension/set/json';
+    lastStatus.value = 'Aufheben der Aussetzung gesendet. Warte auf robot_state ...';
+    lastStatusOk.value = null;
+  }
+
+  void toggleSuspensionDays(int days) {
+    if (isSuspended && _suspensionMatchesDays(days)) {
+      clearSuspension();
+      return;
+    }
+    final until = _nextMidnightAfterMinimumHours(days * 24);
+    setSuspensionUntil(until);
+  }
+
+  bool _suspensionMatchesDays(int days) {
+    final value = autoMowSuspension;
+    if (value == null || value == 0) return false;
+    final until = DateTime.tryParse(value.toString());
+    if (until == null) return false;
+    final diffHours = until.difference(DateTime.now()).inHours;
+    if (days == 1) return diffHours <= 48;
+    if (days == 3) return diffHours > 48;
+    return false;
+  }
+
+  void _resetNewEntryDraft() {
     newEntryDraft
       ..clear()
       ..addAll(<String, dynamic>{
@@ -385,14 +429,14 @@ class TimetableController extends GetxController {
         'enabled': true,
         'auto_start': true,
       });
-    newEntryIdController.text = _generateEntryId(existingIds);
   }
 
   String _generateEntryId(Set<String> existingIds) {
-    var id = 'entry_${DateTime.now().millisecondsSinceEpoch.toRadixString(16)}';
+    final now = DateTime.now();
+    var id = 'mow_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}_${now.microsecond.toRadixString(16)}';
     var counter = 1;
     while (existingIds.contains(id)) {
-      id = 'entry_${DateTime.now().millisecondsSinceEpoch.toRadixString(16)}_$counter';
+      id = '${id}_$counter';
       counter += 1;
     }
     return id;
@@ -401,45 +445,70 @@ class TimetableController extends GetxController {
   Map<String, dynamic> _emptyTimetableData() {
     return <String, dynamic>{
       'version': 1,
-      'time': <String, dynamic>{
-        'timezone': timezoneController.text.trim().isEmpty ? 'Europe/Berlin' : timezoneController.text.trim(),
-        'required': true,
-        'allowed_sources': <String>['ntp', 'gps', 'manual', 'system'],
-        'fallback_source': 'system',
-        'require_valid_time': true,
+      'metadata': <String, dynamic>{
+        'created_at': _isoWithOffset(DateTime.now()),
+        'created_by': 'openmower_app',
+        'description': 'Timetable configuration',
       },
+      'timeSettings': _defaultTimeSettings(),
       'timetable': <String, dynamic>{},
     };
   }
 
-  void _updateOptionalStatusBlocks(Map<String, dynamic> payload) {
-    final state = _mapOrEmpty(payload['time_state']);
-    if (state.isNotEmpty) {
-      timeState
-        ..clear()
-        ..addAll(_deepCopy(state));
-      _syncTimezoneControllerFromTimeState();
-    }
-    final robot = _mapOrEmpty(payload['robot_state']);
-    if (robot.isNotEmpty) {
-      robotState
-        ..clear()
-        ..addAll(_deepCopy(robot));
-    }
+  Map<String, dynamic> _defaultTimeSettings() {
+    return <String, dynamic>{
+      'timezone': timezoneController.text.trim().isEmpty ? 'Europe/Berlin' : timezoneController.text.trim(),
+      'allowed_sources': <String>['ntp', 'gps', 'manual', 'system'],
+      'active_source': selectedTimeSource.value,
+      'manual': <String, dynamic>{'datetime': null},
+      'ntp': <String, dynamic>{'server': ntpServerController.text.trim().isEmpty ? 'pool.ntp.org' : ntpServerController.text.trim()},
+      'gps': <String, dynamic>{},
+    };
   }
 
-  void _syncTimezoneControllerFromTimetable() {
-    final time = _mapOrEmpty(timetableData['time']);
-    final timezone = time['timezone']?.toString();
+  Map<String, dynamic> _normalizeTimetableData(Map<String, dynamic> data) {
+    final next = _deepCopy(data);
+    if (!next.containsKey('timeSettings') && next.containsKey('time')) {
+      final oldTime = _mapOrEmpty(next['time']);
+      next['timeSettings'] = <String, dynamic>{
+        'timezone': oldTime['timezone'] ?? 'Europe/Berlin',
+        'allowed_sources': oldTime['allowed_sources'] ?? <String>['ntp', 'gps', 'manual', 'system'],
+        'active_source': oldTime['active_source'] ?? oldTime['fallback_source'] ?? 'ntp',
+        'manual': oldTime['manual'] ?? <String, dynamic>{'datetime': oldTime['manual_time']},
+        'ntp': oldTime['ntp'] ?? <String, dynamic>{'server': oldTime['ntp_server'] ?? 'pool.ntp.org'},
+        'gps': oldTime['gps'] ?? <String, dynamic>{},
+      };
+      next.remove('time');
+    }
+    if (!next.containsKey('timeSettings')) {
+      next['timeSettings'] = _defaultTimeSettings();
+    }
+    if (!next.containsKey('timetable') || next['timetable'] is! Map) {
+      next['timetable'] = <String, dynamic>{};
+    }
+    return next;
+  }
+
+  void _syncControllersFromTimeSettings() {
+    final settings = _mapOrEmpty(timetableData['timeSettings']);
+    final timezone = settings['timezone']?.toString();
     if (timezone != null && timezone.isNotEmpty && timezoneController.text != timezone) {
       timezoneController.text = timezone;
     }
-  }
-
-  void _syncTimezoneControllerFromTimeState() {
-    final timezone = timeState['timezone']?.toString();
-    if (timezone != null && timezone.isNotEmpty && timezoneController.text != timezone) {
-      timezoneController.text = timezone;
+    final source = settings['active_source']?.toString() ?? 'ntp';
+    if (source == 'manual' || source == 'ntp' || source == 'gps' || source == 'system') {
+      selectedTimeSource.value = source;
+    }
+    final ntp = _mapOrEmpty(settings['ntp']);
+    final server = ntp['server']?.toString();
+    if (server != null && server.isNotEmpty && ntpServerController.text != server) {
+      ntpServerController.text = server;
+    }
+    final manual = _mapOrEmpty(settings['manual']);
+    final manualDate = DateTime.tryParse(manual['datetime']?.toString() ?? '');
+    if (manualDate != null) {
+      hourController.text = manualDate.hour.toString().padLeft(2, '0');
+      minuteController.text = manualDate.minute.toString().padLeft(2, '0');
     }
   }
 
@@ -465,6 +534,19 @@ class TimetableController extends GetxController {
     return Map<String, dynamic>.from(jsonDecode(jsonEncode(data)) as Map);
   }
 
+  DateTime _nextMidnightAfterMinimumHours(int minimumHours) {
+    final minimumUntil = DateTime.now().add(Duration(hours: minimumHours));
+    return DateTime(minimumUntil.year, minimumUntil.month, minimumUntil.day).add(const Duration(days: 1));
+  }
+
+  String _isoWithOffset(DateTime dateTime) {
+    final offset = dateTime.timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final abs = offset.abs();
+    final offsetText = '$sign${abs.inHours.toString().padLeft(2, '0')}:${(abs.inMinutes % 60).toString().padLeft(2, '0')}';
+    return '${dateTime.year.toString().padLeft(4, '0')}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')}T${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}:${dateTime.second.toString().padLeft(2, '0')}$offsetText';
+  }
+
   @override
   void onClose() {
     rawJsonController.dispose();
@@ -472,7 +554,6 @@ class TimetableController extends GetxController {
     hourController.dispose();
     minuteController.dispose();
     ntpServerController.dispose();
-    newEntryIdController.dispose();
     super.onClose();
   }
 }
