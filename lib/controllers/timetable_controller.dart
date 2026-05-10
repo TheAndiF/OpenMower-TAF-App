@@ -17,6 +17,17 @@ class TimetableController extends GetxController {
   final rawJsonController = TextEditingController();
   final timezoneController = TextEditingController(text: 'Europe/Berlin');
   final manualLocalTimeController = TextEditingController();
+  final newEntryIdController = TextEditingController(text: 'test_sunday_full_day');
+  final newEntryDraft = <String, dynamic>{
+    'day': 'Sunday',
+    'start': '00:00',
+    'end': '23:59',
+    'end_behavior': 'return_to_dock',
+    'enabled': true,
+    'auto_start': true,
+    'minimum_remaining_window_minutes': 1,
+    'required_battery_state': 'sufficient',
+  }.obs;
 
   bool get hasData => timetableData.isNotEmpty;
   bool get hasTimeState => timeState.isNotEmpty;
@@ -245,24 +256,53 @@ class TimetableController extends GetxController {
   }
 
   void addEntry() {
-    final next = _deepCopy(timetableData);
+    addEntryFromDraft(overrideId: DateTime.now().millisecondsSinceEpoch.toRadixString(16));
+  }
+
+  void updateNewEntry(String key, dynamic value) {
+    final next = Map<String, dynamic>.from(newEntryDraft);
+    next[key] = value;
+    newEntryDraft
+      ..clear()
+      ..addAll(next);
+  }
+
+  void addEntryFromDraft({String? overrideId}) {
+    final id = (overrideId ?? newEntryIdController.text).trim();
+    if (id.isEmpty) {
+      setError('Bitte eine Eintrag-ID angeben.');
+      return;
+    }
+
+    final next = _deepCopy(timetableData.isEmpty ? _emptyTimetableData() : timetableData);
     final timetable = Map<String, dynamic>.from((next['timetable'] as Map?) ?? <String, dynamic>{});
-    final id = DateTime.now().millisecondsSinceEpoch.toRadixString(16);
-    timetable[id] = <String, dynamic>{
-      'day': 'Monday',
-      'start': '08:00',
-      'end': '12:00',
-      'end_behavior': 'return_to_dock',
-      'enabled': true,
-      'auto_start': true,
-      'minimum_remaining_window_minutes': 30,
-      'required_battery_state': 'full',
-    };
+    if (timetable.containsKey(id) && overrideId == null) {
+      setError('Eintrag-ID "' + id + '" existiert bereits.');
+      return;
+    }
+
+    timetable[id] = Map<String, dynamic>.from(newEntryDraft);
     next['timetable'] = timetable;
     timetableData
       ..clear()
       ..addAll(next);
     syncRawJsonFromData();
+    lastStatus.value = 'Zeitfenster "' + id + '" hinzugefügt, noch nicht gesendet.';
+    lastStatusOk.value = true;
+  }
+
+  Map<String, dynamic> _emptyTimetableData() {
+    return <String, dynamic>{
+      'version': 1,
+      'time': <String, dynamic>{
+        'timezone': timezoneController.text.trim().isEmpty ? 'Europe/Berlin' : timezoneController.text.trim(),
+        'required': true,
+        'allowed_sources': <String>['ntp', 'gps', 'manual', 'system'],
+        'fallback_source': 'system',
+        'require_valid_time': true,
+      },
+      'timetable': <String, dynamic>{},
+    };
   }
 
   void removeEntry(String entryId) {
@@ -338,6 +378,7 @@ class TimetableController extends GetxController {
     rawJsonController.dispose();
     timezoneController.dispose();
     manualLocalTimeController.dispose();
+    newEntryIdController.dispose();
     super.onClose();
   }
 }

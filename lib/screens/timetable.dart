@@ -84,42 +84,24 @@ class TimetableScreen extends GetView<TimetableController> {
             ],
             _buildTimeActionsCard(context),
             const SizedBox(height: 16),
-            if (!controller.hasData)
+            if (!controller.hasData) ...[
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Text(
-                    'Noch keine Timetable-Daten empfangen. „Timetable“ fragt den Wochenplan per MQTT an; „Zeitstatus“ fragt den Time-Server an. Die Seite bleibt auch ohne MQTT-Daten bedienbar.',
+                    'Noch keine Timetable-Daten empfangen. „Timetable“ fragt den Wochenplan per MQTT an; „Zeitstatus“ fragt den Time-Server an. Die Seite bleibt auch ohne MQTT-Daten bedienbar. Über die Zeile „Neuer Eintrag“ kann trotzdem schon ein erster Plan vorbereitet werden.',
                     style: Theme.of(context).textTheme.bodyLarge,
                   ),
                 ),
-              )
-            else ...[
+              ),
+              const SizedBox(height: 16),
+            ],
+            if (controller.hasData) ...[
               _buildTimeCard(context, time),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Zeitfenster',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: controller.addEntry,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Eintrag hinzufügen'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ...timetable.entries.map((entry) {
-                final item = Map<String, dynamic>.from((entry.value as Map?) ?? <String, dynamic>{});
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _buildEntryCard(context, entry.key, item),
-                );
-              }).toList(),
+            ],
+            _buildEntriesSection(context, timetable),
+            if (controller.hasData) ...[
               const SizedBox(height: 16),
               _buildRawJsonCard(context),
             ],
@@ -397,6 +379,229 @@ class TimetableScreen extends GetView<TimetableController> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+
+  Widget _buildEntriesSection(BuildContext context, Map<String, dynamic> timetable) {
+    final entries = timetable.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text('Zeitfenster', style: Theme.of(context).textTheme.titleLarge)),
+                OutlinedButton.icon(
+                  onPressed: controller.addEntry,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Schnellen Eintrag hinzufügen'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Jede Zeile entspricht einem Objekt unter timetable.*. Unten ist ein neuer Eintrag mit den Beispielwerten aus der Spezifikation vorbereitet.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            if (entries.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text('Noch keine Zeitfenster vorhanden.', style: Theme.of(context).textTheme.bodyMedium),
+              )
+            else
+              ...entries.map((entry) {
+                final item = Map<String, dynamic>.from((entry.value as Map?) ?? <String, dynamic>{});
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _buildEntryRow(context, entry.key, item),
+                );
+              }),
+            const Divider(height: 24),
+            Text('Neuer Eintrag', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            _buildNewEntryRow(context),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEntryRow(BuildContext context, String id, Map<String, dynamic> item) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(
+            width: 190,
+            child: InputDecorator(
+              decoration: const InputDecoration(labelText: 'ID'),
+              child: Text(id, overflow: TextOverflow.ellipsis),
+            ),
+          ),
+          _entryDayDropdown(id, item),
+          _smallTextField(id, item, 'start', 'Start', keyboardType: TextInputType.datetime),
+          _smallTextField(id, item, 'end', 'Ende', keyboardType: TextInputType.datetime),
+          _entryEndBehaviorDropdown(id, item),
+          _entryBatteryDropdown(id, item),
+          SizedBox(
+            width: 150,
+            child: TextFormField(
+              key: ValueKey('$id-minimum_remaining_window_minutes-${item['minimum_remaining_window_minutes']}'),
+              initialValue: (item['minimum_remaining_window_minutes'] ?? 0).toString(),
+              decoration: const InputDecoration(labelText: 'Min. Restzeit'),
+              keyboardType: TextInputType.number,
+              onChanged: (value) => controller.updateEntry(id, 'minimum_remaining_window_minutes', int.tryParse(value) ?? 0),
+            ),
+          ),
+          _boolSwitch('Aktiv', item['enabled'] == true, (value) => controller.updateEntry(id, 'enabled', value)),
+          _boolSwitch('Auto-Start', item['auto_start'] == true, (value) => controller.updateEntry(id, 'auto_start', value)),
+          IconButton(
+            tooltip: 'Eintrag löschen',
+            onPressed: () => controller.removeEntry(id),
+            icon: const Icon(Icons.delete_outline),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNewEntryRow(BuildContext context) {
+    final draft = controller.newEntryDraft;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(
+            width: 190,
+            child: TextFormField(
+              controller: controller.newEntryIdController,
+              decoration: const InputDecoration(labelText: 'ID'),
+            ),
+          ),
+          SizedBox(
+            width: 150,
+            child: DropdownButtonFormField<String>(
+              value: _safeValue((draft['day'] ?? 'Sunday').toString(), days),
+              decoration: const InputDecoration(labelText: 'Tag'),
+              items: days.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+              onChanged: (value) {
+                if (value != null) controller.updateNewEntry('day', value);
+              },
+            ),
+          ),
+          _newEntryTextField('start', 'Start', width: 120, keyboardType: TextInputType.datetime),
+          _newEntryTextField('end', 'Ende', width: 120, keyboardType: TextInputType.datetime),
+          SizedBox(
+            width: 220,
+            child: DropdownButtonFormField<String>(
+              value: _safeValue((draft['end_behavior'] ?? 'return_to_dock').toString(), endBehaviors),
+              decoration: const InputDecoration(labelText: 'Verhalten bei Ende'),
+              items: endBehaviors.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+              onChanged: (value) {
+                if (value != null) controller.updateNewEntry('end_behavior', value);
+              },
+            ),
+          ),
+          SizedBox(
+            width: 160,
+            child: DropdownButtonFormField<String>(
+              value: _safeValue((draft['required_battery_state'] ?? 'sufficient').toString(), batteryStates),
+              decoration: const InputDecoration(labelText: 'Akku'),
+              items: batteryStates.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+              onChanged: (value) {
+                if (value != null) controller.updateNewEntry('required_battery_state', value);
+              },
+            ),
+          ),
+          _newEntryTextField('minimum_remaining_window_minutes', 'Min. Restzeit', width: 150, keyboardType: TextInputType.number),
+          _boolSwitch('Aktiv', draft['enabled'] == true, (value) => controller.updateNewEntry('enabled', value)),
+          _boolSwitch('Auto-Start', draft['auto_start'] == true, (value) => controller.updateNewEntry('auto_start', value)),
+          ElevatedButton.icon(
+            onPressed: () => controller.addEntryFromDraft(),
+            icon: const Icon(Icons.add),
+            label: const Text('Eintragen'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _entryDayDropdown(String id, Map<String, dynamic> item) {
+    return SizedBox(
+      width: 150,
+      child: DropdownButtonFormField<String>(
+        value: _safeValue((item['day'] ?? 'Monday').toString(), days),
+        decoration: const InputDecoration(labelText: 'Tag'),
+        items: days.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+        onChanged: (value) {
+          if (value != null) controller.updateEntry(id, 'day', value);
+        },
+      ),
+    );
+  }
+
+  Widget _entryEndBehaviorDropdown(String id, Map<String, dynamic> item) {
+    return SizedBox(
+      width: 220,
+      child: DropdownButtonFormField<String>(
+        value: _safeValue((item['end_behavior'] ?? 'return_to_dock').toString(), endBehaviors),
+        decoration: const InputDecoration(labelText: 'Verhalten bei Ende'),
+        items: endBehaviors.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+        onChanged: (value) {
+          if (value != null) controller.updateEntry(id, 'end_behavior', value);
+        },
+      ),
+    );
+  }
+
+  Widget _entryBatteryDropdown(String id, Map<String, dynamic> item) {
+    return SizedBox(
+      width: 160,
+      child: DropdownButtonFormField<String>(
+        value: _safeValue((item['required_battery_state'] ?? 'full').toString(), batteryStates),
+        decoration: const InputDecoration(labelText: 'Akku'),
+        items: batteryStates.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+        onChanged: (value) {
+          if (value != null) controller.updateEntry(id, 'required_battery_state', value);
+        },
+      ),
+    );
+  }
+
+  Widget _newEntryTextField(String field, String label, {double width = 120, TextInputType? keyboardType}) {
+    final value = controller.newEntryDraft[field];
+    return SizedBox(
+      width: width,
+      child: TextFormField(
+        key: ValueKey('new-entry-$field'),
+        initialValue: (value ?? '').toString(),
+        decoration: InputDecoration(labelText: label, hintText: field == 'minimum_remaining_window_minutes' ? '1' : 'HH:MM'),
+        keyboardType: keyboardType,
+        onChanged: (text) {
+          final nextValue = field == 'minimum_remaining_window_minutes' ? int.tryParse(text) ?? 0 : text;
+          controller.updateNewEntry(field, nextValue);
+        },
       ),
     );
   }
