@@ -18,6 +18,7 @@ class TimetableController extends GetxController {
   final timezoneController = TextEditingController(text: 'Europe/Berlin');
   final manualLocalTimeController = TextEditingController();
   final newEntryIdController = TextEditingController(text: 'test_sunday_full_day');
+  final editingEntryIds = <String>{}.obs;
   final newEntryDraft = <String, dynamic>{
     'day': 'Sunday',
     'start': '00:00',
@@ -242,6 +243,19 @@ class TimetableController extends GetxController {
     syncRawJsonFromData();
   }
 
+  bool isEntryEditing(String entryId) => editingEntryIds.contains(entryId);
+
+  void editEntry(String entryId) {
+    editingEntryIds.add(entryId);
+  }
+
+  void saveEntry(String entryId) {
+    editingEntryIds.remove(entryId);
+    syncRawJsonFromData();
+    lastStatus.value = 'Zeit-Eintrag "' + entryId + '" gespeichert, noch nicht gesendet.';
+    lastStatusOk.value = true;
+  }
+
   void updateEntry(String entryId, String key, dynamic value) {
     final next = _deepCopy(timetableData);
     final timetable = Map<String, dynamic>.from((next['timetable'] as Map?) ?? <String, dynamic>{});
@@ -286,9 +300,27 @@ class TimetableController extends GetxController {
     timetableData
       ..clear()
       ..addAll(next);
+    editingEntryIds.remove(id);
+    _resetNewEntryDraft();
     syncRawJsonFromData();
-    lastStatus.value = 'Zeitfenster "' + id + '" hinzugefügt, noch nicht gesendet.';
+    lastStatus.value = 'Zeit-Eintrag "' + id + '" hinzugefügt, noch nicht gesendet.';
     lastStatusOk.value = true;
+  }
+
+  void _resetNewEntryDraft() {
+    newEntryIdController.text = 'entry_' + DateTime.now().millisecondsSinceEpoch.toRadixString(16);
+    newEntryDraft
+      ..clear()
+      ..addAll(<String, dynamic>{
+        'day': 'Sunday',
+        'start': '00:00',
+        'end': '23:59',
+        'end_behavior': 'return_to_dock',
+        'enabled': true,
+        'auto_start': true,
+        'minimum_remaining_window_minutes': 1,
+        'required_battery_state': 'sufficient',
+      });
   }
 
   Map<String, dynamic> _emptyTimetableData() {
@@ -309,6 +341,7 @@ class TimetableController extends GetxController {
     final next = _deepCopy(timetableData);
     final timetable = Map<String, dynamic>.from((next['timetable'] as Map?) ?? <String, dynamic>{});
     timetable.remove(entryId);
+    editingEntryIds.remove(entryId);
     next['timetable'] = timetable;
     timetableData
       ..clear()
