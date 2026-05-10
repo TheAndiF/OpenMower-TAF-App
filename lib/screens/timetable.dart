@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/timetable_controller.dart';
+import 'package:open_mower_app/views/robot_state_widget.dart';
 
 class TimetableScreen extends GetView<TimetableController> {
   const TimetableScreen({super.key});
@@ -22,409 +25,316 @@ class TimetableScreen extends GetView<TimetableController> {
     'stop',
   ];
 
-  static const batteryStates = <String>[
-    'full',
-    'sufficient',
-  ];
-
-  static const timeSources = <String>[
-    'ntp',
-    'gps',
-    'manual',
-    'system',
-  ];
-
   @override
   Widget build(BuildContext context) {
-    return Obx(() {
-      final data = controller.timetableData;
-      final timetable = Map<String, dynamic>.from((data['timetable'] as Map?) ?? <String, dynamic>{});
-      final time = Map<String, dynamic>.from((data['time'] as Map?) ?? <String, dynamic>{});
-
-      return SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
+    return Stack(
+      children: [
+        Obx(() {
+          final data = controller.timetableData;
+          final timetable = Map<String, dynamic>.from((data['timetable'] as Map?) ?? <String, dynamic>{});
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 60, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                _buildSection(
+                  context,
+                  icon: Icons.schedule,
+                  title: 'Zeiteinstellungen',
+                  subtitle: 'Zeitstatus, Time-Server-Aktionen und Zeitquellen-Konfiguration',
+                  child: _buildTimeActionsCard(context),
+                ),
+                const SizedBox(height: 16),
+                _buildSection(
+                  context,
+                  icon: Icons.calendar_month,
+                  title: 'Mähzeiten',
+                  subtitle: 'Zeit-Einträge anzeigen, ändern und ergänzen',
+                  child: _buildEntriesSection(context, timetable),
+                ),
+                const SizedBox(height: 16),
+                _buildJsonSection(context),
+              ],
+            ),
+          );
+        }),
+        const RobotStateWidget(),
+      ],
+    );
+  }
+
+  Widget _buildTimetableActions(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          ElevatedButton.icon(
+            onPressed: controller.requestTimetable,
+            icon: const Icon(Icons.download),
+            label: const Text('Timetable'),
+          ),
+          ElevatedButton.icon(
+            onPressed: controller.requestTimeStatus,
+            icon: const Icon(Icons.access_time),
+            label: const Text('Zeitstatus'),
+          ),
+          ElevatedButton.icon(
+            onPressed: controller.hasData ? controller.sendTimetable : null,
+            icon: const Icon(Icons.upload),
+            label: const Text('Senden'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSection(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
+    final color = Theme.of(context).primaryColor;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.08),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, color: color, size: 32),
+                const SizedBox(width: 16),
                 Expanded(
-                  child: Text(
-                    'Timetable & Zeitservice',
-                    style: Theme.of(context).textTheme.headlineMedium,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
+                      const SizedBox(height: 4),
+                      Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
+                    ],
                   ),
                 ),
-                ElevatedButton.icon(
-                  onPressed: controller.requestTimetable,
-                  icon: const Icon(Icons.download),
-                  label: const Text('Timetable'),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: controller.requestTimeStatus,
-                  icon: const Icon(Icons.access_time),
-                  label: const Text('Zeitstatus'),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: controller.hasData ? controller.sendTimetable : null,
-                  icon: const Icon(Icons.upload),
-                  label: const Text('Senden'),
-                ),
+                Icon(Icons.keyboard_arrow_up, color: color),
               ],
             ),
-            const SizedBox(height: 12),
-            _buildStatus(context),
-            const SizedBox(height: 16),
-            _buildTimeStateCard(context),
-            const SizedBox(height: 16),
-            if (controller.hasRobotState) ...[
-              _buildRobotStateCard(context),
-              const SizedBox(height: 16),
-            ],
-            _buildTimeActionsCard(context),
-            const SizedBox(height: 16),
-            if (!controller.hasData) ...[
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    'Noch keine Timetable-Daten empfangen. „Timetable“ fragt den Wochenplan per MQTT an; „Zeitstatus“ fragt den Time-Server an. Die Seite bleibt auch ohne MQTT-Daten bedienbar. Über die Zeile „Neuer Eintrag“ kann trotzdem schon ein erster Plan vorbereitet werden.',
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-            if (controller.hasData) ...[
-              _buildTimeCard(context, time),
-              const SizedBox(height: 16),
-            ],
-            _buildEntriesSection(context, timetable),
-            if (controller.hasData) ...[
-              const SizedBox(height: 16),
-              _buildRawJsonCard(context),
-            ],
-          ],
-        ),
-      );
-    });
-  }
-
-  Widget _buildStatus(BuildContext context) {
-    final waiting = controller.waitingForResponse.value;
-    final ok = controller.lastStatusOk.value;
-    final message = controller.lastStatus.value;
-    final remarks = controller.lastRemarks;
-    final color = ok == null
-        ? Colors.blueGrey
-        : ok
-            ? Colors.green
-            : Colors.red;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (waiting)
-              const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else
-              Icon(ok == false ? Icons.error_outline : Icons.info_outline, color: color),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(message.isEmpty ? 'Bereit' : message),
-                  if (remarks.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(remarks.join('\n'), style: Theme.of(context).textTheme.bodySmall),
-                  ],
-                ],
-              ),
-            ),
-            if (controller.lastUpdated.value != null)
-              Text(
-                'Update: ${controller.lastUpdated.value!.hour.toString().padLeft(2, '0')}:${controller.lastUpdated.value!.minute.toString().padLeft(2, '0')}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTimeStateCard(BuildContext context) {
-    final state = controller.timeState;
-    final valid = state['valid'] == true;
-    final quality = (state['quality'] ?? 'unbekannt').toString();
-    final source = (state['source'] ?? 'none').toString();
-    final timezone = (state['timezone'] ?? '-').toString();
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(valid ? Icons.check_circle_outline : Icons.warning_amber_outlined, color: valid ? Colors.green : Colors.orange),
-                const SizedBox(width: 8),
-                Expanded(child: Text('Aktueller Zeitstatus', style: Theme.of(context).textTheme.titleLarge)),
-                OutlinedButton.icon(
-                  onPressed: controller.requestTimeStatus,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Aktualisieren'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (!controller.hasTimeState)
-              Text('Noch kein Zeitstatus empfangen.', style: Theme.of(context).textTheme.bodyMedium)
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _infoChip('valid', valid ? 'true' : 'false'),
-                  _infoChip('source', source),
-                  _infoChip('timezone', timezone),
-                  _infoChip('quality', quality),
-                  if (state['sync_age_seconds'] != null) _infoChip('sync age', '${state['sync_age_seconds']} s'),
-                ],
-              ),
-            if (controller.hasTimeState) ...[
-              const SizedBox(height: 12),
-              _keyValue('UTC', state['utc_time']),
-              _keyValue('Lokal', state['local_time']),
-              _keyValue('Letzter Sync', state['last_sync_at']),
-              _keyValue('Hinweise', state['remarks'] is List ? (state['remarks'] as List).join(', ') : state['remarks']),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRobotStateCard(BuildContext context) {
-    final state = controller.robotState;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Timetable-Entscheidung / robot_state', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _infoChip('auto_mowing_time', '${state['auto_mowing_time']}'),
-                _infoChip('active_window', '${state['active_window']}'),
-                _infoChip('start_allowed', '${state['start_allowed']}'),
-                _infoChip('mission_trigger_allowed', '${state['mission_trigger_allowed']}'),
-                _infoChip('reason', '${state['reason'] ?? '-'}'),
-              ],
-            ),
-          ],
-        ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: child,
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildTimeActionsCard(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final source = controller.selectedTimeSource.value;
+    final isManual = source == 'manual';
+    final isNtp = source == 'ntp';
+    final isGps = source == 'gps';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildTimetableActions(context),
+        const SizedBox(height: 12),
+        Text('Time-Server-Actions', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 8),
+        Text(
+          'Die Actions werden an /openmower/time/action/json gesendet. Antworten werden über /openmower/time/action_result/json oder /bson ausgewertet.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 16,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Text('Time-Server Actions', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text(
-              'Die Actions werden an /openmower/time/action/json gesendet. Antworten werden über /openmower/time/action_result/json oder /bson ausgewertet.',
-              style: Theme.of(context).textTheme.bodySmall,
+            const SizedBox(width: 220, child: Text('Zeitzone')),
+            SizedBox(
+              width: 420,
+              child: TextFormField(
+                controller: controller.timezoneController,
+                decoration: const InputDecoration(hintText: 'Europe/Berlin'),
+              ),
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: 240,
-                  child: TextFormField(
-                    controller: controller.timezoneController,
-                    decoration: const InputDecoration(labelText: 'Zeitzone', hintText: 'Europe/Berlin'),
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: controller.sendTimezone,
-                  icon: const Icon(Icons.public),
-                  label: const Text('Zeitzone setzen'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: () => controller.requestTimeResync(preferredSource: 'ntp'),
-                  icon: const Icon(Icons.sync),
-                  label: const Text('Resync NTP'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: controller.clearManualTime,
-                  icon: const Icon(Icons.delete_sweep),
-                  label: const Text('Manual löschen'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: 320,
-                  child: TextFormField(
-                    controller: controller.manualLocalTimeController,
-                    decoration: const InputDecoration(
-                      labelText: 'Manuelle lokale Zeit',
-                      hintText: '2026-05-10T22:30:00+02:00',
-                    ),
-                    keyboardType: TextInputType.datetime,
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: controller.sendManualTime,
-                  icon: const Icon(Icons.edit_calendar),
-                  label: const Text('Manuelle Zeit setzen'),
-                ),
-              ],
+            ElevatedButton.icon(
+              onPressed: controller.sendTimezone,
+              icon: const Icon(Icons.public),
+              label: const Text('Zeitzone setzen'),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildTimeCard(BuildContext context, Map<String, dynamic> time) {
-    final allowedSources = List<String>.from((time['allowed_sources'] as List?)?.map((e) => e.toString()) ?? const <String>[]);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        const SizedBox(height: 12),
+        _buildSourceRow(
+          context,
+          selected: isManual,
+          selectable: true,
+          label: 'manuelle Zeit',
+          onTap: () => controller.setSelectedTimeSource('manual'),
           children: [
-            Row(
-              children: [
-                Expanded(child: Text('timetable.time / Zeitquellen-Konfiguration', style: Theme.of(context).textTheme.titleLarge)),
-                OutlinedButton.icon(
-                  onPressed: controller.hasData ? controller.sendTimeConfig : null,
-                  icon: const Icon(Icons.settings_backup_restore),
-                  label: const Text('Zeit-Konfig senden'),
-                ),
-              ],
+            SizedBox(
+              width: 170,
+              child: TextFormField(
+                enabled: isManual,
+                controller: controller.hourController,
+                decoration: const InputDecoration(labelText: 'Stunden'),
+                keyboardType: TextInputType.number,
+              ),
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                SizedBox(
-                  width: 240,
-                  child: TextFormField(
-                    key: ValueKey("timezone-${time['timezone']}"),
-                    initialValue: (time['timezone'] ?? '').toString(),
-                    decoration: const InputDecoration(labelText: 'Zeitzone'),
-                    onChanged: (value) => controller.updateTopLevel('time', 'timezone', value),
-                  ),
-                ),
-                _boolSwitch('Zeit erforderlich', time['required'] == true, (value) => controller.updateTopLevel('time', 'required', value)),
-                _boolSwitch('Nur gültige Zeit', time['require_valid_time'] == true, (value) => controller.updateTopLevel('time', 'require_valid_time', value)),
-                SizedBox(
-                  width: 220,
-                  child: DropdownButtonFormField<String>(
-                    value: _safeValue((time['fallback_source'] ?? 'system').toString(), timeSources),
-                    decoration: const InputDecoration(labelText: 'Fallback-Zeitquelle'),
-                    items: timeSources.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
-                    onChanged: (value) {
-                      if (value != null) controller.updateTopLevel('time', 'fallback_source', value);
-                    },
-                  ),
-                ),
-              ],
+            SizedBox(
+              width: 170,
+              child: TextFormField(
+                enabled: isManual,
+                controller: controller.minuteController,
+                decoration: const InputDecoration(labelText: 'Minuten'),
+                keyboardType: TextInputType.number,
+              ),
             ),
-            const SizedBox(height: 8),
-            Text('Erlaubte Zeitquellen', style: Theme.of(context).textTheme.titleSmall),
-            Wrap(
-              spacing: 8,
-              children: timeSources
-                  .map((source) => FilterChip(
-                        label: Text(source),
-                        selected: allowedSources.contains(source),
-                        onSelected: (selected) => controller.updateAllowedSource(source, selected),
-                      ))
-                  .toList(),
+            ElevatedButton.icon(
+              onPressed: isManual ? controller.sendManualTime : null,
+              icon: const Icon(Icons.edit_calendar),
+              label: const Text('Manuelle Zeit setzen'),
             ),
-            if (controller.hasTimeConfigStatus) ...[
-              const SizedBox(height: 12),
-              Text('Bestätigte Konfiguration: ${controller.timeConfigStatus}', style: Theme.of(context).textTheme.bodySmall),
-            ],
           ],
         ),
-      ),
+        const SizedBox(height: 8),
+        _buildSourceRow(
+          context,
+          selected: isNtp,
+          selectable: true,
+          label: 'ntp',
+          onTap: () => controller.setSelectedTimeSource('ntp'),
+          children: [
+            SizedBox(
+              width: 360,
+              child: TextFormField(
+                enabled: isNtp,
+                controller: controller.ntpServerController,
+                decoration: const InputDecoration(labelText: 'NTP Server', hintText: 'pool.ntp.org'),
+              ),
+            ),
+            ElevatedButton.icon(
+              onPressed: isNtp ? controller.sendNtpServer : null,
+              icon: const Icon(Icons.dns),
+              label: const Text('NTP Server setzen'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _buildSourceRow(
+          context,
+          selected: isGps,
+          selectable: true,
+          label: 'gps Zeit',
+          onTap: () => controller.setSelectedTimeSource('gps'),
+          children: [
+            SizedBox(
+              width: 360,
+              child: Text('keine zusätzlichen Eingaben', style: Theme.of(context).textTheme.bodyMedium),
+            ),
+            ElevatedButton.icon(
+              onPressed: isGps ? controller.synchronizeGps : null,
+              icon: const Icon(Icons.sync),
+              label: const Text('Synchronisieren'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _buildSourceRow(
+          context,
+          selected: false,
+          selectable: false,
+          label: 'Systemzeit',
+          children: [
+            SizedBox(
+              width: 360,
+              child: Text('Aktuelle Uhrzeit: ${_currentTimeText()}', style: Theme.of(context).textTheme.bodyMedium),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
+  Widget _buildSourceRow(
+    BuildContext context, {
+    required bool selected,
+    required bool selectable,
+    required String label,
+    required List<Widget> children,
+    VoidCallback? onTap,
+  }) {
+    final color = Theme.of(context).primaryColor;
+    final labelBox = Container(
+      width: 220,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(4),
+        color: selectable ? Colors.white : Colors.grey.shade100,
+      ),
+      child: Text(label, style: TextStyle(color: selected ? color : null)),
+    );
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: 36,
+          child: selected ? Icon(Icons.check, color: color, size: 22) : const SizedBox.shrink(),
+        ),
+        selectable ? InkWell(onTap: onTap, child: labelBox) : labelBox,
+        const SizedBox(width: 16),
+        Flexible(
+          child: Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: children,
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _buildEntriesSection(BuildContext context, Map<String, dynamic> timetable) {
-    final entries = timetable.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
+    final entries = timetable.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(child: Text('Zeit', style: Theme.of(context).textTheme.titleLarge)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Jede Zeile entspricht einem Objekt unter timetable.*. Unten ist ein neuer Eintrag mit den Beispielwerten aus der Spezifikation vorbereitet.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 12),
-            if (entries.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text('Noch keine Zeit-Einträge vorhanden.', style: Theme.of(context).textTheme.bodyMedium),
-              )
-            else
-              ...entries.map((entry) {
-                final item = Map<String, dynamic>.from((entry.value as Map?) ?? <String, dynamic>{});
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _buildEntryRow(context, entry.key, item),
-                );
-              }),
-            const Divider(height: 24),
-            Text('Neuer Eintrag', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            _buildNewEntryRow(context),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Jede Zeile entspricht einem Objekt unter timetable.*. Unten ist ein neuer Eintrag vorbereitet.',
+          style: Theme.of(context).textTheme.bodySmall,
         ),
-      ),
+        const SizedBox(height: 12),
+        if (entries.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text('Noch keine Mähzeiten vorhanden.', style: Theme.of(context).textTheme.bodyMedium),
+          )
+        else
+          ...entries.map((entry) {
+            final item = Map<String, dynamic>.from((entry.value as Map?) ?? <String, dynamic>{});
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _buildEntryRow(context, entry.key, item),
+            );
+          }),
+        Text('Neuer Eintrag', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        _buildNewEntryRow(context),
+      ],
     );
   }
 
@@ -434,36 +344,19 @@ class TimetableScreen extends GetView<TimetableController> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Wrap(
         spacing: 12,
         runSpacing: 12,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          SizedBox(
-            width: 190,
-            child: InputDecorator(
-              decoration: const InputDecoration(labelText: 'ID'),
-              child: Text(id, overflow: TextOverflow.ellipsis),
-            ),
-          ),
+          SizedBox(width: 230, child: _idField(id, editable: false)),
           _entryDayDropdown(id, item, enabled: editing),
-          _smallTextField(id, item, 'start', 'Start', keyboardType: TextInputType.datetime, enabled: editing),
-          _smallTextField(id, item, 'end', 'Ende', keyboardType: TextInputType.datetime, enabled: editing),
+          _smallTextField(id, item, 'start', 'Start', enabled: editing, width: 120),
+          _smallTextField(id, item, 'end', 'Ende', enabled: editing, width: 120),
           _entryEndBehaviorDropdown(id, item, enabled: editing),
-          _entryBatteryDropdown(id, item, enabled: editing),
-          SizedBox(
-            width: 150,
-            child: TextFormField(
-              key: ValueKey('$id-minimum_remaining_window_minutes-${item['minimum_remaining_window_minutes']}-$editing'),
-              initialValue: (item['minimum_remaining_window_minutes'] ?? 0).toString(),
-              decoration: const InputDecoration(labelText: 'Min. Restzeit'),
-              keyboardType: TextInputType.number,
-              readOnly: !editing,
-              onChanged: editing ? (value) => controller.updateEntry(id, 'minimum_remaining_window_minutes', int.tryParse(value) ?? 0) : null,
-            ),
-          ),
+          _fieldsButton(context, id, item),
           _boolSwitch('Aktiv', item['enabled'] == true, editing ? (value) => controller.updateEntry(id, 'enabled', value) : null),
           _boolSwitch('Auto-Start', item['auto_start'] == true, editing ? (value) => controller.updateEntry(id, 'auto_start', value) : null),
           SizedBox(
@@ -495,7 +388,7 @@ class TimetableScreen extends GetView<TimetableController> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Wrap(
         spacing: 12,
@@ -503,7 +396,7 @@ class TimetableScreen extends GetView<TimetableController> {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           SizedBox(
-            width: 190,
+            width: 230,
             child: TextFormField(
               controller: controller.newEntryIdController,
               decoration: const InputDecoration(labelText: 'ID'),
@@ -520,8 +413,8 @@ class TimetableScreen extends GetView<TimetableController> {
               },
             ),
           ),
-          _newEntryTextField('start', 'Start', width: 120, keyboardType: TextInputType.datetime),
-          _newEntryTextField('end', 'Ende', width: 120, keyboardType: TextInputType.datetime),
+          _newEntryTextField('start', 'Start', width: 120),
+          _newEntryTextField('end', 'Ende', width: 120),
           SizedBox(
             width: 220,
             child: DropdownButtonFormField<String>(
@@ -533,18 +426,10 @@ class TimetableScreen extends GetView<TimetableController> {
               },
             ),
           ),
-          SizedBox(
-            width: 160,
-            child: DropdownButtonFormField<String>(
-              value: _safeValue((draft['required_battery_state'] ?? 'sufficient').toString(), batteryStates),
-              decoration: const InputDecoration(labelText: 'Akku'),
-              items: batteryStates.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
-              onChanged: (value) {
-                if (value != null) controller.updateNewEntry('required_battery_state', value);
-              },
-            ),
+          OutlinedButton(
+            onPressed: null,
+            child: const Text('0 Felder'),
           ),
-          _newEntryTextField('minimum_remaining_window_minutes', 'Min. Restzeit', width: 150, keyboardType: TextInputType.number),
           _boolSwitch('Aktiv', draft['enabled'] == true, (value) => controller.updateNewEntry('enabled', value)),
           _boolSwitch('Auto-Start', draft['auto_start'] == true, (value) => controller.updateNewEntry('auto_start', value)),
           SizedBox(
@@ -557,6 +442,13 @@ class TimetableScreen extends GetView<TimetableController> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _idField(String id, {bool editable = false}) {
+    return InputDecorator(
+      decoration: const InputDecoration(labelText: 'ID'),
+      child: Text(id, overflow: TextOverflow.ellipsis),
     );
   }
 
@@ -592,134 +484,83 @@ class TimetableScreen extends GetView<TimetableController> {
     );
   }
 
-  Widget _entryBatteryDropdown(String id, Map<String, dynamic> item, {bool enabled = true}) {
-    return SizedBox(
-      width: 160,
-      child: DropdownButtonFormField<String>(
-        value: _safeValue((item['required_battery_state'] ?? 'full').toString(), batteryStates),
-        decoration: const InputDecoration(labelText: 'Akku'),
-        items: batteryStates.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
-        onChanged: enabled
-            ? (value) {
-                if (value != null) controller.updateEntry(id, 'required_battery_state', value);
-              }
-            : null,
-      ),
-    );
-  }
-
-  Widget _newEntryTextField(String field, String label, {double width = 120, TextInputType? keyboardType}) {
-    final value = controller.newEntryDraft[field];
+  Widget _smallTextField(String id, Map<String, dynamic> item, String field, String label, {double width = 120, bool enabled = true}) {
     return SizedBox(
       width: width,
-      child: TextFormField(
-        key: ValueKey('new-entry-$field-$value'),
-        initialValue: (value ?? '').toString(),
-        decoration: InputDecoration(labelText: label, hintText: field == 'minimum_remaining_window_minutes' ? '1' : 'HH:MM'),
-        keyboardType: keyboardType,
-        onChanged: (text) {
-          final nextValue = field == 'minimum_remaining_window_minutes' ? int.tryParse(text) ?? 0 : text;
-          controller.updateNewEntry(field, nextValue);
-        },
-      ),
-    );
-  }
-
-  Widget _buildEntryCard(BuildContext context, String id, Map<String, dynamic> item) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(child: Text('Eintrag $id', style: Theme.of(context).textTheme.titleMedium)),
-                IconButton(
-                  tooltip: 'Eintrag löschen',
-                  onPressed: () => controller.removeEntry(id),
-                  icon: const Icon(Icons.delete_outline),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: 180,
-                  child: DropdownButtonFormField<String>(
-                    value: _safeValue((item['day'] ?? 'Monday').toString(), days),
-                    decoration: const InputDecoration(labelText: 'Tag'),
-                    items: days.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
-                    onChanged: (value) {
-                      if (value != null) controller.updateEntry(id, 'day', value);
-                    },
-                  ),
-                ),
-                _smallTextField(id, item, 'start', 'Start', keyboardType: TextInputType.datetime),
-                _smallTextField(id, item, 'end', 'Ende', keyboardType: TextInputType.datetime),
-                SizedBox(
-                  width: 220,
-                  child: DropdownButtonFormField<String>(
-                    value: _safeValue((item['end_behavior'] ?? 'return_to_dock').toString(), endBehaviors),
-                    decoration: const InputDecoration(labelText: 'Verhalten bei Ende'),
-                    items: endBehaviors.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
-                    onChanged: (value) {
-                      if (value != null) controller.updateEntry(id, 'end_behavior', value);
-                    },
-                  ),
-                ),
-                SizedBox(
-                  width: 180,
-                  child: DropdownButtonFormField<String>(
-                    value: _safeValue((item['required_battery_state'] ?? 'full').toString(), batteryStates),
-                    decoration: const InputDecoration(labelText: 'Akku'),
-                    items: batteryStates.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
-                    onChanged: (value) {
-                      if (value != null) controller.updateEntry(id, 'required_battery_state', value);
-                    },
-                  ),
-                ),
-                SizedBox(
-                  width: 180,
-                  child: TextFormField(
-                    key: ValueKey("$id-minimum_remaining_window_minutes-${item['minimum_remaining_window_minutes']}"),
-                    initialValue: (item['minimum_remaining_window_minutes'] ?? 0).toString(),
-                    decoration: const InputDecoration(labelText: 'Min. Restzeit'),
-                    keyboardType: TextInputType.number,
-                    onChanged: (value) => controller.updateEntry(id, 'minimum_remaining_window_minutes', int.tryParse(value) ?? 0),
-                  ),
-                ),
-                _boolSwitch('Aktiv', item['enabled'] == true, (value) => controller.updateEntry(id, 'enabled', value)),
-                _boolSwitch('Auto-Start', item['auto_start'] == true, (value) => controller.updateEntry(id, 'auto_start', value)),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _smallTextField(String id, Map<String, dynamic> item, String field, String label, {TextInputType? keyboardType, bool enabled = true}) {
-    return SizedBox(
-      width: 120,
       child: TextFormField(
         key: ValueKey('$id-$field-${item[field]}-$enabled'),
         initialValue: (item[field] ?? '').toString(),
         decoration: InputDecoration(labelText: label, hintText: 'HH:MM'),
-        keyboardType: keyboardType,
+        keyboardType: TextInputType.datetime,
         readOnly: !enabled,
         onChanged: enabled ? (value) => controller.updateEntry(id, field, value) : null,
       ),
     );
   }
 
+  Widget _newEntryTextField(String field, String label, {double width = 120}) {
+    final value = controller.newEntryDraft[field];
+    return SizedBox(
+      width: width,
+      child: TextFormField(
+        key: ValueKey('new-entry-$field-$value'),
+        initialValue: (value ?? '').toString(),
+        decoration: InputDecoration(labelText: label, hintText: 'HH:MM'),
+        keyboardType: TextInputType.datetime,
+        onChanged: (text) => controller.updateNewEntry(field, text),
+      ),
+    );
+  }
+
+  Widget _fieldsButton(BuildContext context, String id, Map<String, dynamic> item) {
+    final count = controller.extraFieldsCount(item);
+    return OutlinedButton(
+      onPressed: () => _showExtraFieldsDialog(context, id, item),
+      child: Text('$count Felder'),
+    );
+  }
+
+  void _showExtraFieldsDialog(BuildContext context, String id, Map<String, dynamic> item) {
+    final extra = controller.extraFieldsFor(item);
+    final textController = TextEditingController(text: const JsonEncoder.withIndent('  ').convert(extra));
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text('Felder für $id'),
+          content: SizedBox(
+            width: 520,
+            child: TextField(
+              controller: textController,
+              minLines: 8,
+              maxLines: 16,
+              keyboardType: TextInputType.multiline,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Zusätzliche Felder als JSON',
+              ),
+              style: const TextStyle(fontFamily: 'monospace'),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Abbrechen')),
+            ElevatedButton(
+              onPressed: () {
+                if (controller.updateExtraFieldsFromJson(id, textController.text)) {
+                  Navigator.of(dialogContext).pop();
+                }
+              },
+              child: const Text('Übernehmen'),
+            ),
+          ],
+        );
+      },
+    ).whenComplete(textController.dispose);
+  }
+
   Widget _boolSwitch(String label, bool value, ValueChanged<bool>? onChanged) {
     return SizedBox(
-      width: 170,
+      width: 150,
       child: SwitchListTile(
         dense: true,
         contentPadding: EdgeInsets.zero,
@@ -730,17 +571,23 @@ class TimetableScreen extends GetView<TimetableController> {
     );
   }
 
-  Widget _buildRawJsonCard(BuildContext context) {
+  Widget _buildJsonSection(BuildContext context) {
+    final color = Theme.of(context).primaryColor;
     return Card(
+      margin: EdgeInsets.zero,
       child: ExpansionTile(
         initiallyExpanded: false,
-        title: Text('JSON-Ansicht', style: Theme.of(context).textTheme.titleLarge),
-        subtitle: const Text('Eingeklappt. Zum Anzeigen und Bearbeiten des JSON hier öffnen.'),
+        leading: Icon(Icons.code, color: color, size: 32),
+        title: Text('JSON-Ansicht', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
+        subtitle: const Text('Optionaler Bereich für weitere Felder'),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
-          Text(
-            'Hier können Felder editiert werden, die oben noch nicht als Formular abgebildet sind. Gesendet wird der Timetable-Konfigurationsblock.',
-            style: Theme.of(context).textTheme.bodySmall,
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Eingeklappt. Zum Anzeigen und Bearbeiten des JSON hier öffnen.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ),
           const SizedBox(height: 8),
           TextField(
@@ -768,21 +615,10 @@ class TimetableScreen extends GetView<TimetableController> {
     );
   }
 
-  Widget _infoChip(String label, String value) {
-    return Chip(label: Text('$label: $value'));
-  }
+  String _safeValue(String value, List<String> allowed) => allowed.contains(value) ? value : allowed.first;
 
-  Widget _keyValue(String label, dynamic value) {
-    if (value == null || value.toString().isEmpty) {
-      return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Text('$label: $value'),
-    );
-  }
-
-  String _safeValue(String value, List<String> allowed) {
-    return allowed.contains(value) ? value : allowed.first;
+  String _currentTimeText() {
+    final now = DateTime.now();
+    return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
   }
 }

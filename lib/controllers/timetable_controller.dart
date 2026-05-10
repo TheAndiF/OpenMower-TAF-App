@@ -5,6 +5,15 @@ import 'package:get/get.dart';
 import 'package:open_mower_app/io/mqtt_connection.dart';
 
 class TimetableController extends GetxController {
+  static const visibleEntryFields = <String>{
+    'day',
+    'start',
+    'end',
+    'end_behavior',
+    'enabled',
+    'auto_start',
+  };
+
   final timetableData = <String, dynamic>{}.obs;
   final timeState = <String, dynamic>{}.obs;
   final robotState = <String, dynamic>{}.obs;
@@ -14,10 +23,15 @@ class TimetableController extends GetxController {
   final lastStatusOk = RxnBool();
   final lastUpdated = Rxn<DateTime>();
   final waitingForResponse = false.obs;
+
   final rawJsonController = TextEditingController();
   final timezoneController = TextEditingController(text: 'Europe/Berlin');
-  final manualLocalTimeController = TextEditingController();
+  final hourController = TextEditingController(text: '22');
+  final minuteController = TextEditingController(text: '30');
+  final ntpServerController = TextEditingController(text: 'pool.ntp.org');
   final newEntryIdController = TextEditingController(text: 'test_sunday_full_day');
+
+  final selectedTimeSource = 'manual'.obs;
   final editingEntryIds = <String>{}.obs;
   final newEntryDraft = <String, dynamic>{
     'day': 'Sunday',
@@ -26,14 +40,24 @@ class TimetableController extends GetxController {
     'end_behavior': 'return_to_dock',
     'enabled': true,
     'auto_start': true,
-    'minimum_remaining_window_minutes': 1,
-    'required_battery_state': 'sufficient',
   }.obs;
 
   bool get hasData => timetableData.isNotEmpty;
   bool get hasTimeState => timeState.isNotEmpty;
   bool get hasRobotState => robotState.isNotEmpty;
   bool get hasTimeConfigStatus => timeConfigStatus.isNotEmpty;
+
+  String get localTimeForManualSet {
+    final hour = int.tryParse(hourController.text.trim()) ?? 0;
+    final minute = int.tryParse(minuteController.text.trim()) ?? 0;
+    final now = DateTime.now();
+    final manual = DateTime(now.year, now.month, now.day, hour.clamp(0, 23), minute.clamp(0, 59));
+    final offset = manual.timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final abs = offset.abs();
+    final offsetText = '$sign${abs.inHours.toString().padLeft(2, '0')}:${(abs.inMinutes % 60).toString().padLeft(2, '0')}';
+    return '${manual.year.toString().padLeft(4, '0')}-${manual.month.toString().padLeft(2, '0')}-${manual.day.toString().padLeft(2, '0')}T${manual.hour.toString().padLeft(2, '0')}:${manual.minute.toString().padLeft(2, '0')}:00$offsetText';
+  }
 
   void setTimetablePayload(Map<String, dynamic> payload) {
     final nextTimetable = _mapOrEmpty(payload['timetable']);
@@ -54,7 +78,7 @@ class TimetableController extends GetxController {
       ..clear()
       ..addAll(_deepCopy(data));
     editingEntryIds.clear();
-    rawJsonController.text = const JsonEncoder.withIndent('  ').convert(timetableData);
+    syncRawJsonFromData();
     _syncTimezoneControllerFromTimetable();
     lastUpdated.value = DateTime.now();
     lastStatus.value = statusMessage;
@@ -69,6 +93,10 @@ class TimetableController extends GetxController {
         ..clear()
         ..addAll(_deepCopy(state));
       _syncTimezoneControllerFromTimeState();
+      final source = (state['source'] ?? '').toString();
+      if (source == 'manual') selectedTimeSource.value = 'manual';
+      if (source == 'ntp') selectedTimeSource.value = 'ntp';
+      if (source == 'gps') selectedTimeSource.value = 'gps';
     }
     lastRemarks.assignAll(_stringList(payload['remarks']));
     lastUpdated.value = DateTime.now();
@@ -116,26 +144,22 @@ class TimetableController extends GetxController {
   }
 
   void requestTimetable() {
-    final mqttConnection = Get.find<MqttConnection>();
-    mqttConnection.requestTimetable();
+    Get.find<MqttConnection>().requestTimetable();
     lastStatus.value = 'Timetable wird angefordert ...';
     lastStatusOk.value = null;
   }
 
   void requestTimeStatus() {
-    final mqttConnection = Get.find<MqttConnection>();
-    mqttConnection.requestTimeStatus();
+    Get.find<MqttConnection>().requestTimeStatus();
     waitingForResponse.value = true;
     lastStatus.value = 'Zeitstatus wird angefordert ...';
     lastStatusOk.value = null;
   }
 
-  void requestTimeResync({String preferredSource = 'ntp'}) {
-    final mqttConnection = Get.find<MqttConnection>();
-    mqttConnection.requestTimeResync(preferredSource: preferredSource);
-    waitingForResponse.value = true;
-    lastStatus.value = 'Zeitsynchronisation wird angefordert ...';
-    lastStatusOk.value = null;
+  void setSelectedTimeSource(String source) {
+    if (source == 'manual' || source == 'ntp' || source == 'gps') {
+      selectedTimeSource.value = source;
+    }
   }
 
   void sendTimezone() {
@@ -152,14 +176,41 @@ class TimetableController extends GetxController {
 
   void sendManualTime() {
     final timezone = timezoneController.text.trim();
-    final localTime = manualLocalTimeController.text.trim();
-    if (timezone.isEmpty || localTime.isEmpty) {
-      setError('Zeitzone und lokale Zeit müssen gesetzt sein.');
+    if (timezone.isEmpty) {
+      setError('Zeitzone darf nicht leer sein.');
       return;
     }
-    Get.find<MqttConnection>().setManualTime(timezone: timezone, localTime: localTime);
+    final hour = int.tryParse(hourController.text.trim());
+    final minute = int.tryParse(minuteController.text.trim());
+    if (hour == null || minute == null || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+      setError('Stunden müssen 0–23 und Minuten 0–59 sein.');
+      return;
+    }
+    selectedTimeSource.value = 'manual';
+    Get.find<MqttConnection>().setManualTime(timezone: timezone, localTime: localTimeForManualSet);
     waitingForResponse.value = true;
     lastStatus.value = 'Manuelle Zeit wird gesendet ...';
+    lastStatusOk.value = null;
+  }
+
+  void sendNtpServer() {
+    final server = ntpServerController.text.trim();
+    if (server.isEmpty) {
+      setError('NTP Server darf nicht leer sein.');
+      return;
+    }
+    selectedTimeSource.value = 'ntp';
+    Get.find<MqttConnection>().setNtpServer(server);
+    waitingForResponse.value = true;
+    lastStatus.value = 'NTP Server wird gesendet ...';
+    lastStatusOk.value = null;
+  }
+
+  void synchronizeGps() {
+    selectedTimeSource.value = 'gps';
+    Get.find<MqttConnection>().requestTimeResync(preferredSource: 'gps');
+    waitingForResponse.value = true;
+    lastStatus.value = 'GPS-Zeit wird synchronisiert ...';
     lastStatusOk.value = null;
   }
 
@@ -170,22 +221,9 @@ class TimetableController extends GetxController {
     lastStatusOk.value = null;
   }
 
-  void sendTimeConfig() {
-    final time = _mapOrEmpty(timetableData['time']);
-    if (time.isEmpty) {
-      setError('Keine timetable.time-Konfiguration vorhanden.');
-      return;
-    }
-    Get.find<MqttConnection>().publishTimeConfig(time);
-    waitingForResponse.value = true;
-    lastStatus.value = 'Zeitquellen-Konfiguration wird gesendet ...';
-    lastStatusOk.value = null;
-  }
-
   void sendTimetable() {
-    final mqttConnection = Get.find<MqttConnection>();
     syncRawJsonFromData();
-    mqttConnection.publishTimetable(Map<String, dynamic>.from(timetableData));
+    Get.find<MqttConnection>().publishTimetable(Map<String, dynamic>.from(timetableData));
     waitingForResponse.value = true;
     lastStatus.value = 'Timetable gesendet. Warte auf Bestätigung ...';
     lastStatusOk.value = null;
@@ -216,60 +254,23 @@ class TimetableController extends GetxController {
     rawJsonController.text = const JsonEncoder.withIndent('  ').convert(timetableData);
   }
 
-  void updateTopLevel(String section, String key, dynamic value) {
-    final next = _deepCopy(timetableData);
-    final sectionData = Map<String, dynamic>.from((next[section] as Map?) ?? <String, dynamic>{});
-    sectionData[key] = value;
-    next[section] = sectionData;
-    timetableData
-      ..clear()
-      ..addAll(next);
-    syncRawJsonFromData();
-    _syncTimezoneControllerFromTimetable();
-  }
-
-  void updateAllowedSource(String source, bool enabled) {
-    final next = _deepCopy(timetableData);
-    final time = Map<String, dynamic>.from((next['time'] as Map?) ?? <String, dynamic>{});
-    final sources = List<String>.from((time['allowed_sources'] as List?)?.map((e) => e.toString()) ?? const <String>[]);
-    if (enabled && !sources.contains(source)) {
-      sources.add(source);
-    } else if (!enabled) {
-      sources.remove(source);
-    }
-    time['allowed_sources'] = sources;
-    next['time'] = time;
-    timetableData
-      ..clear()
-      ..addAll(next);
-    syncRawJsonFromData();
-  }
-
   bool isEntryEditing(String entryId) => editingEntryIds.contains(entryId);
-
-  void startEditEntry(String entryId) {
-    editingEntryIds.add(entryId);
-    editingEntryIds.refresh();
-  }
-
-  void saveEntry(String entryId) {
-    editingEntryIds.remove(entryId);
-    editingEntryIds.refresh();
-    syncRawJsonFromData();
-    lastStatus.value = 'Eintrag "' + entryId + '" gespeichert, noch nicht gesendet.';
-    lastStatusOk.value = true;
-  }
 
   void toggleEditEntry(String entryId) {
     if (isEntryEditing(entryId)) {
-      saveEntry(entryId);
+      editingEntryIds.remove(entryId);
+      editingEntryIds.refresh();
+      syncRawJsonFromData();
+      lastStatus.value = 'Eintrag "$entryId" gespeichert, noch nicht gesendet.';
+      lastStatusOk.value = true;
     } else {
-      startEditEntry(entryId);
+      editingEntryIds.add(entryId);
+      editingEntryIds.refresh();
     }
   }
 
   void updateEntry(String entryId, String key, dynamic value) {
-    final next = _deepCopy(timetableData);
+    final next = _deepCopy(timetableData.isEmpty ? _emptyTimetableData() : timetableData);
     final timetable = Map<String, dynamic>.from((next['timetable'] as Map?) ?? <String, dynamic>{});
     final entry = Map<String, dynamic>.from((timetable[entryId] as Map?) ?? <String, dynamic>{});
     entry[key] = value;
@@ -279,10 +280,6 @@ class TimetableController extends GetxController {
       ..clear()
       ..addAll(next);
     syncRawJsonFromData();
-  }
-
-  void addEntry() {
-    addEntryFromDraft(overrideId: DateTime.now().millisecondsSinceEpoch.toRadixString(16));
   }
 
   void updateNewEntry(String key, dynamic value) {
@@ -303,7 +300,7 @@ class TimetableController extends GetxController {
     final next = _deepCopy(timetableData.isEmpty ? _emptyTimetableData() : timetableData);
     final timetable = Map<String, dynamic>.from((next['timetable'] as Map?) ?? <String, dynamic>{});
     if (timetable.containsKey(id) && overrideId == null) {
-      setError('Eintrag-ID "' + id + '" existiert bereits.');
+      setError('Eintrag-ID "$id" existiert bereits.');
       return;
     }
 
@@ -316,10 +313,66 @@ class TimetableController extends GetxController {
     editingEntryIds.refresh();
     _resetNewEntryDraft(existingIds: timetable.keys.map((e) => e.toString()).toSet());
     syncRawJsonFromData();
-    lastStatus.value = 'Zeit-Eintrag "' + id + '" hinzugefügt, noch nicht gesendet.';
+    lastStatus.value = 'Mähzeit "$id" hinzugefügt, noch nicht gesendet.';
     lastStatusOk.value = true;
   }
 
+  void removeEntry(String entryId) {
+    final next = _deepCopy(timetableData.isEmpty ? _emptyTimetableData() : timetableData);
+    final timetable = Map<String, dynamic>.from((next['timetable'] as Map?) ?? <String, dynamic>{});
+    timetable.remove(entryId);
+    editingEntryIds.remove(entryId);
+    editingEntryIds.refresh();
+    next['timetable'] = timetable;
+    timetableData
+      ..clear()
+      ..addAll(next);
+    syncRawJsonFromData();
+  }
+
+  Map<String, dynamic> extraFieldsFor(Map<String, dynamic> item) {
+    final result = <String, dynamic>{};
+    for (final entry in item.entries) {
+      if (!visibleEntryFields.contains(entry.key)) {
+        result[entry.key] = entry.value;
+      }
+    }
+    return result;
+  }
+
+  int extraFieldsCount(Map<String, dynamic> item) => extraFieldsFor(item).length;
+
+  bool updateExtraFieldsFromJson(String entryId, String jsonText) {
+    try {
+      final parsed = jsonDecode(jsonText.trim().isEmpty ? '{}' : jsonText);
+      if (parsed is! Map) {
+        setError('Felder-JSON muss ein Objekt sein.');
+        return false;
+      }
+      final cleaned = Map<String, dynamic>.from(parsed);
+      for (final key in visibleEntryFields) {
+        cleaned.remove(key);
+      }
+
+      final next = _deepCopy(timetableData.isEmpty ? _emptyTimetableData() : timetableData);
+      final timetable = Map<String, dynamic>.from((next['timetable'] as Map?) ?? <String, dynamic>{});
+      final entry = Map<String, dynamic>.from((timetable[entryId] as Map?) ?? <String, dynamic>{});
+      entry.removeWhere((key, value) => !visibleEntryFields.contains(key));
+      entry.addAll(cleaned);
+      timetable[entryId] = entry;
+      next['timetable'] = timetable;
+      timetableData
+        ..clear()
+        ..addAll(next);
+      syncRawJsonFromData();
+      lastStatus.value = 'Zusätzliche Felder für "$entryId" übernommen, noch nicht gesendet.';
+      lastStatusOk.value = true;
+      return true;
+    } catch (e) {
+      setError('Felder-JSON ist ungültig: $e');
+      return false;
+    }
+  }
 
   void _resetNewEntryDraft({Set<String> existingIds = const <String>{}}) {
     newEntryDraft
@@ -331,8 +384,6 @@ class TimetableController extends GetxController {
         'end_behavior': 'return_to_dock',
         'enabled': true,
         'auto_start': true,
-        'minimum_remaining_window_minutes': 1,
-        'required_battery_state': 'sufficient',
       });
     newEntryIdController.text = _generateEntryId(existingIds);
   }
@@ -359,19 +410,6 @@ class TimetableController extends GetxController {
       },
       'timetable': <String, dynamic>{},
     };
-  }
-
-  void removeEntry(String entryId) {
-    final next = _deepCopy(timetableData);
-    final timetable = Map<String, dynamic>.from((next['timetable'] as Map?) ?? <String, dynamic>{});
-    timetable.remove(entryId);
-    editingEntryIds.remove(entryId);
-    editingEntryIds.refresh();
-    next['timetable'] = timetable;
-    timetableData
-      ..clear()
-      ..addAll(next);
-    syncRawJsonFromData();
   }
 
   void _updateOptionalStatusBlocks(Map<String, dynamic> payload) {
@@ -418,12 +456,8 @@ class TimetableController extends GetxController {
   }
 
   List<String> _stringList(dynamic value) {
-    if (value is List) {
-      return value.map((e) => e.toString()).toList();
-    }
-    if (value == null) {
-      return <String>[];
-    }
+    if (value is List) return value.map((e) => e.toString()).toList();
+    if (value == null) return <String>[];
     return <String>[value.toString()];
   }
 
@@ -435,7 +469,9 @@ class TimetableController extends GetxController {
   void onClose() {
     rawJsonController.dispose();
     timezoneController.dispose();
-    manualLocalTimeController.dispose();
+    hourController.dispose();
+    minuteController.dispose();
+    ntpServerController.dispose();
     newEntryIdController.dispose();
     super.onClose();
   }

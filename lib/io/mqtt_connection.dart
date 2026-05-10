@@ -234,6 +234,15 @@ class MqttConnection  {
     }
   }
 
+  void setNtpServer(String server) {
+    try {
+      _publishJson(timeActionJsonTopic, {"request_id": _requestId("time_req"), "action": "set_ntp_server", "ntp_server": server});
+    } catch(e) {
+      debugPrint("error setting ntp server via mqtt");
+      timetableController.setError("NTP Server konnte nicht gesendet werden.");
+    }
+  }
+
   void clearManualTime() {
     try {
       _publishJson(timeActionJsonTopic, {"request_id": _requestId("time_req"), "action": "clear_manual_time"});
