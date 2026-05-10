@@ -58,7 +58,12 @@ class TimetableScreen extends GetView<TimetableController> {
             ),
           );
         }),
-        const RobotStateWidget(),
+        const Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: RobotStateWidget(),
+        ),
       ],
     );
   }
@@ -100,38 +105,28 @@ class TimetableScreen extends GetView<TimetableController> {
     final color = Theme.of(context).primaryColor;
     return Card(
       margin: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.08),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: true,
+          backgroundColor: color.withOpacity(0.08),
+          collapsedBackgroundColor: color.withOpacity(0.08),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          leading: Icon(icon, color: color, size: 32),
+          iconColor: color,
+          collapsedIconColor: color,
+          title: Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
+          subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
+          children: [
+            Container(
+              width: double.infinity,
+              color: Theme.of(context).cardColor,
+              padding: const EdgeInsets.only(top: 16),
+              child: child,
             ),
-            child: Row(
-              children: [
-                Icon(icon, color: color, size: 32),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
-                      const SizedBox(height: 4),
-                      Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
-                    ],
-                  ),
-                ),
-                Icon(Icons.keyboard_arrow_up, color: color),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: child,
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -145,8 +140,6 @@ class TimetableScreen extends GetView<TimetableController> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildTimetableActions(context),
-        const SizedBox(height: 12),
         Text('Time-Server-Actions', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
         Text(
@@ -212,7 +205,7 @@ class TimetableScreen extends GetView<TimetableController> {
           context,
           selected: isNtp,
           selectable: true,
-          label: 'ntp',
+          label: 'ntp Zeit',
           onTap: () => controller.setSelectedTimeSource('ntp'),
           children: [
             SizedBox(
@@ -286,14 +279,14 @@ class TimetableScreen extends GetView<TimetableController> {
       child: Text(label, style: TextStyle(color: selected ? color : null)),
     );
 
-    return Row(
+    final row = Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         SizedBox(
           width: 36,
           child: selected ? Icon(Icons.check, color: color, size: 22) : const SizedBox.shrink(),
         ),
-        selectable ? InkWell(onTap: onTap, child: labelBox) : labelBox,
+        labelBox,
         const SizedBox(width: 16),
         Flexible(
           child: Wrap(
@@ -304,6 +297,18 @@ class TimetableScreen extends GetView<TimetableController> {
           ),
         ),
       ],
+    );
+
+    if (!selectable) {
+      return row;
+    }
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: row,
+      ),
     );
   }
 
@@ -582,12 +587,32 @@ class TimetableScreen extends GetView<TimetableController> {
         subtitle: const Text('Optionaler Bereich für weitere Felder'),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Eingeklappt. Zum Anzeigen und Bearbeiten des JSON hier öffnen.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Eingeklappt. Zum Anzeigen und Bearbeiten des JSON hier öffnen.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: controller.requestTimetable,
+                icon: const Icon(Icons.download),
+                label: const Text('Download'),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: controller.applyRawJson,
+                icon: const Icon(Icons.upload),
+                label: const Text('Upload'),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: controller.hasData ? controller.sendTimetable : null,
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Speichern'),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           TextField(
@@ -600,15 +625,6 @@ class TimetableScreen extends GetView<TimetableController> {
               labelText: 'timetable.json',
             ),
             style: const TextStyle(fontFamily: 'monospace'),
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: OutlinedButton.icon(
-              onPressed: controller.applyRawJson,
-              icon: const Icon(Icons.check),
-              label: const Text('JSON übernehmen'),
-            ),
           ),
         ],
       ),
