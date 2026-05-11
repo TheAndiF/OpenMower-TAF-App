@@ -2,14 +2,18 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:open_mower_app/io/mqtt_connection.dart';
 
 class MqttAreasController extends GetxController {
   final areaPayload = <String, dynamic>{}.obs;
+  final lastRemarks = <String>[].obs;
   final lastStatus = ''.obs;
   final lastTopic = ''.obs;
   final lastStatusOk = RxnBool();
   final lastUpdated = Rxn<DateTime>();
+  final waitingForResponse = false.obs;
   final rawJsonController = TextEditingController();
+  final editingAreaIds = <String>{}.obs;
 
   bool get hasData => areaPayload.isNotEmpty;
 
@@ -33,8 +37,6 @@ class MqttAreasController extends GetxController {
     return const <Map<String, dynamic>>[];
   }
 
-
-
   List<Map<String, dynamic>> get mowAreas {
     final filtered = areas.where((area) {
       final props = propertiesFor(area);
@@ -53,12 +55,17 @@ class MqttAreasController extends GetxController {
     return sorted;
   }
 
+  String areaIdFor(Map<String, dynamic> area) {
+    final props = propertiesFor(area);
+    return (area['id'] ?? props['id'] ?? '').toString();
+  }
+
   String areaNameFor(Map<String, dynamic> area) {
     final props = propertiesFor(area);
     final name = (props['name'] ?? area['name'] ?? '').toString().trim();
     if (name.isNotEmpty) return name;
 
-    final id = (area['id'] ?? props['id'] ?? '').toString();
+    final id = areaIdFor(area);
     if (id.isEmpty) return 'Unbenannte Fläche';
     if (id.length <= 12) return id;
     return '${id.substring(0, 8)}…${id.substring(id.length - 4)}';
@@ -94,26 +101,211 @@ class MqttAreasController extends GetxController {
     return const JsonEncoder.withIndent('  ').convert(_jsonSafe(areaPayload));
   }
 
-  void setAreaPayload(Map<dynamic, dynamic> payload, {String topic = 'map/bson'}) {
+  void setAreaPayload(Map<dynamic, dynamic> payload, {String topic = 'map/json'}) {
     final root = payload['d'] is Map ? Map<dynamic, dynamic>.from(payload['d'] as Map) : payload;
     final normalized = Map<String, dynamic>.from(_jsonSafe(root) as Map);
 
     areaPayload
       ..clear()
-      ..addAll(normalized);
+      ..addAll(_deepCopy(normalized));
 
-    rawJsonController.text = jsonString;
+    editingAreaIds.clear();
+    syncRawJsonFromData();
+    lastRemarks.clear();
     lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
     lastStatusOk.value = true;
+    waitingForResponse.value = false;
     lastStatus.value = areas.isEmpty
         ? 'MQTT-Flächen empfangen, aber keine Flächenliste gefunden.'
         : '${mowAreas.length} Mähfläche(n) empfangen.';
   }
 
-  void setError(String message, {String topic = 'map/bson'}) {
-    lastTopic.value = topic;
+  void requestMap() {
+    Get.find<MqttConnection>().requestMap();
+    lastStatus.value = 'MQTT-Flächen werden vom Server angefordert ...';
+    lastTopic.value = 'map/set/renew/json';
+    lastStatusOk.value = null;
+    waitingForResponse.value = true;
+  }
+
+  void sendMap() {
+    if (!applyRawJson(setLocalStatus: false)) {
+      return;
+    }
+    Get.find<MqttConnection>().publishMap(Map<String, dynamic>.from(areaPayload));
+    waitingForResponse.value = true;
     lastUpdated.value = DateTime.now();
+    lastTopic.value = 'map/set/json';
+    lastStatus.value = 'MQTT-Flächen gesendet. Warte auf Serverantwort ...';
+    lastStatusOk.value = null;
+  }
+
+  bool applyRawJson({bool setLocalStatus = true}) {
+    try {
+      final parsed = jsonDecode(rawJsonController.text);
+      if (parsed is! Map) {
+        setError('JSON muss ein Objekt sein.');
+        return false;
+      }
+      final normalized = Map<String, dynamic>.from(_jsonSafe(parsed) as Map);
+      if (normalized['areas'] is! List && normalized['working_areas'] is! List) {
+        setError('JSON muss eine Flächenliste unter "areas" enthalten.', topic: 'local/upload');
+        return false;
+      }
+      areaPayload
+        ..clear()
+        ..addAll(_deepCopy(normalized));
+      editingAreaIds.clear();
+      syncRawJsonFromData();
+      lastUpdated.value = DateTime.now();
+      if (setLocalStatus) {
+        lastTopic.value = 'local/upload';
+        lastStatus.value = 'JSON wurde lokal übernommen. Zum Übertragen an den Server bitte Speichern drücken.';
+        lastStatusOk.value = true;
+        waitingForResponse.value = false;
+      }
+      return true;
+    } catch (e) {
+      setError('JSON ist ungültig: $e', topic: 'local/upload');
+      return false;
+    }
+  }
+
+  bool importJsonString(String jsonText, {String filename = 'Datei'}) {
+    rawJsonController.text = jsonText;
+    final ok = applyRawJson();
+    if (ok) {
+      lastStatus.value = 'JSON-Datei "$filename" wurde lokal geladen. Noch nicht an den Server gesendet.';
+    }
+    return ok;
+  }
+
+  String exportJsonString() {
+    syncRawJsonFromData();
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = 'local/download';
+    lastStatus.value = 'JSON-Datei wurde zum Download vorbereitet.';
+    lastStatusOk.value = true;
+    return rawJsonController.text;
+  }
+
+  void syncRawJsonFromData() {
+    rawJsonController.text = const JsonEncoder.withIndent('  ').convert(areaPayload.isEmpty ? <String, dynamic>{'areas': <dynamic>[]} : areaPayload);
+  }
+
+  bool isAreaEditing(String areaId) => editingAreaIds.contains(areaId);
+
+  void toggleEditArea(String areaId) {
+    if (isAreaEditing(areaId)) {
+      editingAreaIds.remove(areaId);
+      editingAreaIds.refresh();
+      syncRawJsonFromData();
+      lastStatus.value = 'Mähfläche gespeichert, noch nicht an den Server gesendet.';
+      lastStatusOk.value = true;
+    } else {
+      editingAreaIds.add(areaId);
+      editingAreaIds.refresh();
+    }
+  }
+
+  void updateAreaName(String areaId, String value) {
+    _updateAreaProperties(areaId, (properties) {
+      properties['name'] = value.trim();
+    });
+  }
+
+  void updateMowingEnabled(String areaId, bool value) {
+    _updateAreaProperties(areaId, (properties) {
+      properties['mowing_enabled'] = value;
+    });
+  }
+
+  void updateMowingOrder(String areaId, String value) {
+    final parsed = int.tryParse(value.trim());
+    if (parsed == null) {
+      return;
+    }
+    _updateAreaProperties(areaId, (properties) {
+      properties['mowing_order'] = parsed;
+    });
+  }
+
+  void _updateAreaProperties(String areaId, void Function(Map<String, dynamic> properties) mutate) {
+    final next = _deepCopy(areaPayload.isEmpty ? <String, dynamic>{'areas': <dynamic>[]} : areaPayload);
+    final listKey = next['areas'] is List ? 'areas' : (next['working_areas'] is List ? 'working_areas' : 'areas');
+    final list = List<dynamic>.from((next[listKey] as List?) ?? const <dynamic>[]);
+
+    for (var i = 0; i < list.length; i++) {
+      final raw = list[i];
+      if (raw is! Map) continue;
+      final area = Map<String, dynamic>.from(raw);
+      final currentId = areaIdFor(area);
+      if (currentId != areaId) continue;
+
+      final properties = Map<String, dynamic>.from((area['properties'] as Map?) ?? <String, dynamic>{});
+      mutate(properties);
+      area['properties'] = properties;
+      list[i] = area;
+      break;
+    }
+
+    next[listKey] = list;
+    areaPayload
+      ..clear()
+      ..addAll(next);
+    syncRawJsonFromData();
+  }
+
+  void setValidation(Map<String, dynamic> payload, {String topic = 'map/validation/json'}) {
+    final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
+    final ok = _validationResult(root);
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = topic;
+    lastStatusOk.value = ok;
+    lastRemarks.assignAll(_stringList(root['remarks']));
+    if (ok == true) {
+      lastStatus.value = 'Server-Validierung erfolgreich.';
+    } else if (ok == false) {
+      lastStatus.value = 'Speichern fehlgeschlagen. Server hat die MQTT-Flächen abgelehnt.';
+    } else {
+      lastStatus.value = 'Validierungsantwort empfangen. Warte auf eindeutige Bestätigung ...';
+    }
+    waitingForResponse.value = false;
+  }
+
+  void setActionResult(Map<String, dynamic> payload, {String topic = 'map/action_result/json'}) {
+    final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
+    final ok = _validationResult(root);
+    lastRemarks.assignAll(_stringList(root['remarks']));
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = topic;
+    lastStatusOk.value = ok;
+    final action = (root['action'] ?? 'Map-Aktion').toString();
+    if (ok == true) {
+      lastStatus.value = '$action bestätigt.';
+    } else if (ok == false) {
+      lastStatus.value = '$action abgelehnt.';
+    } else {
+      lastStatus.value = '$action verarbeitet. Warte auf Bestätigung ...';
+    }
+    waitingForResponse.value = false;
+  }
+
+  void setResponse(bool accepted, String reason, {String topic = 'map/response/json'}) {
+    waitingForResponse.value = false;
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = topic;
+    lastStatusOk.value = accepted;
+    lastStatus.value = accepted
+        ? (reason.isEmpty ? 'Service hat die Änderung bestätigt.' : 'Bestätigt: $reason')
+        : (reason.isEmpty ? 'Service hat die Änderung abgelehnt.' : 'Abgelehnt: $reason');
+  }
+
+  void setError(String message, {String topic = ''}) {
+    waitingForResponse.value = false;
+    lastUpdated.value = DateTime.now();
+    if (topic.isNotEmpty) lastTopic.value = topic;
     lastStatusOk.value = false;
     lastStatus.value = message;
   }
@@ -136,6 +328,42 @@ class MqttAreasController extends GetxController {
       return legacyOutline.length;
     }
     return 0;
+  }
+
+  bool? _validationResult(Map<String, dynamic> root) {
+    final status = (root['status'] ?? '').toString().toLowerCase().trim();
+    final result = (root['result'] ?? '').toString().toLowerCase().trim();
+    return _validOrNull(root['valid']) ??
+        _validOrNull(root['ok']) ??
+        _validOrNull(root['accepted']) ??
+        _validOrNull(root['success']) ??
+        (status == 'ok' || status == 'accepted' ? true : null) ??
+        (status == 'error' || status == 'failed' || status == 'rejected' ? false : null) ??
+        (result == 'valid' || result == 'ok' ? true : null) ??
+        (result == 'invalid' || result == 'error' || result == 'failed' ? false : null);
+  }
+
+  bool? _validOrNull(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final text = value?.toString().toLowerCase().trim();
+    if (text == 'true' || text == 'ok' || text == 'accepted' || text == 'success' || text == 'valid') return true;
+    if (text == 'false' || text == 'error' || text == 'rejected' || text == 'failed' || text == 'invalid') return false;
+    return null;
+  }
+
+  List<String> _stringList(dynamic value) {
+    if (value is List) {
+      return value.map((entry) => entry.toString()).toList(growable: false);
+    }
+    if (value == null || value.toString().trim().isEmpty) {
+      return const <String>[];
+    }
+    return <String>[value.toString()];
+  }
+
+  Map<String, dynamic> _deepCopy(Map<dynamic, dynamic> value) {
+    return Map<String, dynamic>.from(jsonDecode(jsonEncode(_jsonSafe(value))) as Map);
   }
 
   Object? _jsonSafe(Object? value) {

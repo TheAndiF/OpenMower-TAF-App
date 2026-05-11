@@ -73,6 +73,16 @@ class MqttConnection  {
   static const String timeConfigStatusJsonTopic = "/openmower/time/config/status/json";
   static const String timeConfigStatusBsonTopic = "/openmower/time/config/status/bson";
 
+  static const String mapJsonTopic = "map/json";
+  static const String mapBsonTopic = "map/bson";
+  static const String mapRenewJsonTopic = "map/set/renew/json";
+  static const String mapSetJsonTopic = "map/set/json";
+  static const String mapValidationJsonTopic = "map/validation/json";
+  static const String mapValidationBsonTopic = "map/validation/bson";
+  static const String mapResponseJsonTopic = "map/response/json";
+  static const String mapAckJsonTopic = "map/ack/json";
+  static const String mapActionResultJsonTopic = "map/action_result/json";
+
   List<int>? _payloadBytes(MqttPublishMessage payload) {
     return payload.payload.message?.toList(growable: false);
   }
@@ -316,6 +326,24 @@ class MqttConnection  {
     }
   }
 
+  void requestMap() {
+    try {
+      _publishJson(mapRenewJsonTopic, {"request": "renew", "source": "app", "request_id": _requestId("map_renew")});
+    } catch(e) {
+      debugPrint("error requesting map via mqtt");
+      mqttAreasController.setError("MQTT-Flächen-Anfrage konnte nicht gesendet werden.");
+    }
+  }
+
+  void publishMap(Map<String, dynamic> map) {
+    try {
+      _publishJson(mapSetJsonTopic, map, qos: MqttQos.exactlyOnce);
+    } catch(e) {
+      debugPrint("error publishing map to mqtt");
+      mqttAreasController.setError("MQTT-Flächen konnten nicht gesendet werden.");
+    }
+  }
+
 
   void disconnect() {
     client.autoReconnect = false;
@@ -408,6 +436,85 @@ class MqttConnection  {
 
     final lower = value.toString().toLowerCase();
     return lower != "false" && lower != "0" && lower != "disabled";
+  }
+
+  Map<String, dynamic> _mapRootForParser(Map<String, dynamic> obj) {
+    return obj["d"] is Map ? obj : <String, dynamic>{"d": obj};
+  }
+
+  void parseMapMessage(MqttPublishMessage payload, {bool bson = false}) {
+    try {
+      final map = _decodeMap(payload, bson: bson);
+      if (map == null) {
+        mqttAreasController.setError("Leere oder ungültige Map-Nachricht empfangen.", topic: bson ? mapBsonTopic : mapJsonTopic);
+        return;
+      }
+      mqttAreasController.setAreaPayload(map, topic: bson ? mapBsonTopic : mapJsonTopic);
+      final root = _mapRootForParser(map);
+      if (root["d"] is Map && (root["d"] as Map).containsKey("areas")) {
+        parseMap(root);
+      } else {
+        parseLegacyMap(root);
+      }
+    } catch (e) {
+      mqttAreasController.setError("Map konnte nicht gelesen werden: $e", topic: bson ? mapBsonTopic : mapJsonTopic);
+    }
+  }
+
+  void parseMapValidation(MqttPublishMessage payload, {bool bson = false}) {
+    try {
+      final map = _decodeMap(payload, bson: bson);
+      if (map == null) {
+        mqttAreasController.setError("Leere oder ungültige Map-Validierung empfangen.", topic: bson ? mapValidationBsonTopic : mapValidationJsonTopic);
+        return;
+      }
+      mqttAreasController.setValidation(map, topic: bson ? mapValidationBsonTopic : mapValidationJsonTopic);
+    } catch (e) {
+      mqttAreasController.setError("Map-Validierung konnte nicht gelesen werden: $e", topic: bson ? mapValidationBsonTopic : mapValidationJsonTopic);
+    }
+  }
+
+  void parseMapResponse(MqttPublishMessage payload, {String topic = mapResponseJsonTopic}) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) {
+        mqttAreasController.setError("Leere oder ungültige Map-Antwort empfangen.", topic: topic);
+        return;
+      }
+      final root = map['d'] is Map ? Map<String, dynamic>.from(map['d'] as Map) : map;
+      if (root.containsKey("areas") || root.containsKey("working_areas")) {
+        mqttAreasController.setAreaPayload(root, topic: topic);
+        final parserRoot = _mapRootForParser(root);
+        if (parserRoot["d"] is Map && (parserRoot["d"] as Map).containsKey("areas")) {
+          parseMap(parserRoot);
+        } else {
+          parseLegacyMap(parserRoot);
+        }
+        return;
+      }
+      if (root.containsKey("valid") ||
+          root.containsKey("remarks") ||
+          root.containsKey("ok") ||
+          root.containsKey("accepted") ||
+          root.containsKey("success") ||
+          root.containsKey("status") ||
+          root.containsKey("result")) {
+        mqttAreasController.setActionResult(root, topic: topic);
+        return;
+      }
+      final status = (root["status"] ?? '').toString().toLowerCase();
+      final result = (root["result"] ?? '').toString().toLowerCase();
+      final accepted = root["accepted"] == true ||
+          root["ok"] == true ||
+          root["success"] == true ||
+          status == "accepted" ||
+          status == "ok" ||
+          result == "valid";
+      final reason = (root["reason"] ?? root["message"] ?? "").toString();
+      mqttAreasController.setResponse(accepted, reason, topic: topic);
+    } catch (e) {
+      mqttAreasController.setError("Map-Antwort konnte nicht gelesen werden: $e", topic: topic);
+    }
   }
 
   void parseMap(obj) {
@@ -701,18 +808,32 @@ class MqttConnection  {
               parseActionInfos(object);
             }
             break;
-            case "map/bson": {
-              final bytes = payload.payload.message?.toList(growable: false);
-              if(bytes == null || bytes.isBlank == true) {
-                continue;
-              }
-              final object = BsonCodec.deserialize(BsonBinary.from(bytes));
-              mqttAreasController.setAreaPayload(object, topic: "map/bson");
-              if (object["d"].containsKey("areas")) {
-                parseMap(object);
-              } else {
-                parseLegacyMap(object);
-              }
+            case mapJsonTopic: {
+              parseMapMessage(payload);
+            }
+            break;
+            case mapBsonTopic: {
+              parseMapMessage(payload, bson: true);
+            }
+            break;
+            case mapValidationJsonTopic: {
+              parseMapValidation(payload);
+            }
+            break;
+            case mapValidationBsonTopic: {
+              parseMapValidation(payload, bson: true);
+            }
+            break;
+            case mapResponseJsonTopic: {
+              parseMapResponse(payload, topic: mapResponseJsonTopic);
+            }
+            break;
+            case mapAckJsonTopic: {
+              parseMapResponse(payload, topic: mapAckJsonTopic);
+            }
+            break;
+            case mapActionResultJsonTopic: {
+              parseMapResponse(payload, topic: mapActionResultJsonTopic);
             }
             break;
             case "map_overlay/bson": {
@@ -771,7 +892,13 @@ class MqttConnection  {
     });
 
     client.subscribe("actions/bson", MqttQos.exactlyOnce);
-    client.subscribe("map/bson", MqttQos.atLeastOnce);
+    client.subscribe(mapJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(mapBsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(mapValidationJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(mapValidationBsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(mapResponseJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(mapAckJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(mapActionResultJsonTopic, MqttQos.atLeastOnce);
     client.subscribe("map_overlay/bson", MqttQos.atMostOnce);
     client.subscribe("sensor_infos/bson", MqttQos.atLeastOnce);
     client.subscribe("robot_state/json", MqttQos.atMostOnce);
