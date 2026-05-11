@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/timetable_controller.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
@@ -57,20 +58,14 @@ class _TimetableScreenState extends State<TimetableScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                _buildSuspensionSection(context),
+                const SizedBox(height: 16),
                 _buildSection(
                   context,
                   icon: Icons.schedule,
                   title: 'Time Settings',
-                  subtitle: 'Zeitzone und Quelle für die einmalige Systemzeit-Synchronisation',
+                  subtitle: 'Systemzeit anzeigen und aktualisieren',
                   child: _buildTimeSettingsCard(context),
-                ),
-                const SizedBox(height: 16),
-                _buildSection(
-                  context,
-                  icon: Icons.pause_circle_outline,
-                  title: 'Mähzeit aussetzen',
-                  subtitle: 'Direkte MQTT-Aussetzung; Bestätigung kommt über robot_state.AutoMowSuspension',
-                  child: _buildSuspensionCard(context),
                 ),
                 const SizedBox(height: 16),
                 _buildSection(
@@ -124,6 +119,52 @@ class _TimetableScreenState extends State<TimetableScreen> {
               width: double.infinity,
               color: Theme.of(context).cardColor,
               padding: EdgeInsets.zero,
+              child: child,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStaticSection(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
+    final color = Theme.of(context).primaryColor;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Container(
+        color: color.withOpacity(0.08),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(icon, color: color, size: 32),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
+                        Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              width: double.infinity,
+              color: Theme.of(context).cardColor,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: child,
             ),
           ],
@@ -398,37 +439,303 @@ class _TimetableScreenState extends State<TimetableScreen> {
     return result;
   }
 
-  Widget _buildSuspensionCard(BuildContext context) {
-    final oneDayActive = controller.isSuspended && _suspensionLooksLikeDays(1);
-    final threeDaysActive = controller.isSuspended && _suspensionLooksLikeDays(3);
-    final suspensionValue = controller.autoMowSuspension;
-    final statusText = controller.isSuspended ? 'Ausgesetzt bis: $suspensionValue' : 'Aktuell keine Aussetzung aktiv.';
+  Widget _buildSuspensionSection(BuildContext context) {
+    final color = Theme.of(context).primaryColor;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: Row(
+              children: [
+                _headerStatusIcon(color: color, active: controller.isSuspended),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Mähzeit aussetzen',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Mähbetrieb vorübergehend pausieren',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: _buildSuspensionCard(context),
+          ),
+        ],
+      ),
+    );
+  }
 
-    return Wrap(
-      spacing: 12,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
+  Widget _buildSuspensionCard(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 760;
+    final state = controller.suspensionUiState;
+    final active = state != SuspensionUiState.none;
+    final oneDayActive = state == SuspensionUiState.oneDay;
+    final threeDaysActive = state == SuspensionUiState.threeDays;
+    final indefiniteActive = state == SuspensionUiState.indefinite;
+    final until = _parseSuspensionDate(controller.autoMowSuspension);
+    final headline = _suspensionHeadline(state);
+    final dateText = _suspensionDetailText(state, until);
+    final relativeText = (state == SuspensionUiState.oneDay || state == SuspensionUiState.threeDays || state == SuspensionUiState.customDate)
+        ? _formatSuspensionRelative(until)
+        : null;
+
+    final actionButtons = <Widget>[
+      _actionButton(
+        context,
+        label: '1 Tag aussetzen',
+        active: oneDayActive,
+        icon: Icons.calendar_today_outlined,
+        onPressed: () => controller.toggleSuspensionDays(1),
+      ),
+      _actionButton(
+        context,
+        label: '3 Tage aussetzen',
+        active: threeDaysActive,
+        icon: Icons.date_range_outlined,
+        onPressed: () => controller.toggleSuspensionDays(3),
+      ),
+      _actionButton(
+        context,
+        label: 'Unbestimmt aussetzen',
+        active: indefiniteActive,
+        icon: Icons.all_inclusive,
+        onPressed: controller.toggleSuspensionIndefinite,
+      ),
+      if (active)
+        _actionButton(
+          context,
+          label: 'Aufheben',
+          active: false,
+          icon: Icons.play_arrow,
+          danger: true,
+          onPressed: controller.clearSuspension,
+        ),
+    ];
+
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(child: _bodyStatusIcon(context, state: state)),
+          const SizedBox(height: 18),
+          Text(headline, textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).hintColor)),
+          const SizedBox(height: 6),
+          Text(
+            dateText,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          if (relativeText != null && relativeText.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(relativeText, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor)),
+          ],
+          const SizedBox(height: 20),
+          for (final button in actionButtons) ...[
+            button,
+            if (button != actionButtons.last) const SizedBox(height: 12),
+          ],
+        ],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        _toggleButton(
-          context,
-          active: oneDayActive,
-          icon: Icons.looks_one,
-          label: '1 Tag aussetzen',
-          onPressed: () => controller.toggleSuspensionDays(1),
+        _bodyStatusIcon(context, state: state),
+        const SizedBox(width: 24),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(headline, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Theme.of(context).hintColor)),
+              const SizedBox(height: 8),
+              Text(
+                dateText,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              if (relativeText != null && relativeText.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(relativeText, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).hintColor)),
+              ],
+            ],
+          ),
         ),
-        _toggleButton(
-          context,
-          active: threeDaysActive,
-          icon: Icons.looks_3,
-          label: '3 Tage aussetzen',
-          onPressed: () => controller.toggleSuspensionDays(3),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(left: 8),
-          child: Text(statusText, style: Theme.of(context).textTheme.bodyMedium),
+        const SizedBox(width: 24),
+        Expanded(
+          child: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 12,
+            runSpacing: 12,
+            children: actionButtons
+                .map((button) => SizedBox(
+                      width: 220,
+                      child: button,
+                    ))
+                .toList(),
+          ),
         ),
       ],
     );
+  }
+
+  String _suspensionHeadline(SuspensionUiState state) {
+    switch (state) {
+      case SuspensionUiState.none:
+        return 'Keine Aussetzung aktiv';
+      case SuspensionUiState.indefinite:
+        return 'AutoMow ist unbestimmt pausiert';
+      case SuspensionUiState.oneDay:
+      case SuspensionUiState.threeDays:
+      case SuspensionUiState.customDate:
+        return 'AutoMow pausiert bis';
+    }
+  }
+
+  String _suspensionDetailText(SuspensionUiState state, DateTime? until) {
+    switch (state) {
+      case SuspensionUiState.none:
+        return 'AutoMow mäht nach Zeitplan.';
+      case SuspensionUiState.indefinite:
+        return 'Der Mähbetrieb startet erst wieder nach dem Aufheben.';
+      case SuspensionUiState.oneDay:
+      case SuspensionUiState.threeDays:
+      case SuspensionUiState.customDate:
+        return until == null ? controller.autoMowSuspension.toString() : _formatSuspensionDate(until);
+    }
+  }
+
+  Widget _headerStatusIcon({required Color color, required bool active}) {
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: color.withOpacity(0.65), width: 2),
+      ),
+      child: Icon(Icons.nights_stay_outlined, color: color, size: 24),
+    );
+  }
+
+  Widget _bodyStatusIcon(BuildContext context, {required SuspensionUiState state}) {
+    final color = Theme.of(context).primaryColor;
+    final isNone = state == SuspensionUiState.none;
+    IconData icon;
+    switch (state) {
+      case SuspensionUiState.none:
+        icon = Icons.check;
+        break;
+      case SuspensionUiState.indefinite:
+        icon = Icons.all_inclusive;
+        break;
+      case SuspensionUiState.oneDay:
+      case SuspensionUiState.threeDays:
+      case SuspensionUiState.customDate:
+        icon = Icons.pause;
+        break;
+    }
+    final bgColor = isNone ? Colors.green.withOpacity(0.10) : color.withOpacity(0.10);
+    final iconColor = isNone ? Colors.green : color;
+    return Container(
+      width: 132,
+      height: 132,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: bgColor,
+      ),
+      child: Icon(icon, color: iconColor, size: 64),
+    );
+  }
+
+  Widget _actionButton(
+    BuildContext context, {
+    required String label,
+    required bool active,
+    required VoidCallback? onPressed,
+    IconData? icon,
+    bool danger = false,
+  }) {
+    final childLabel = Text(active ? '✓ $label' : label, textAlign: TextAlign.center);
+    final child = icon == null
+        ? childLabel
+        : Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20),
+              const SizedBox(width: 8),
+              Flexible(child: childLabel),
+            ],
+          );
+
+    if (active) {
+      return ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        ),
+        child: child,
+      );
+    }
+
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: danger ? Colors.red : null,
+        side: danger ? const BorderSide(color: Colors.red) : null,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+        textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+      ),
+      child: child,
+    );
+  }
+
+  DateTime? _parseSuspensionDate(dynamic value) {
+    if (value == null || value == 0 || value.toString() == '0' || value.toString().trim().isEmpty) {
+      return null;
+    }
+    return DateTime.tryParse(value.toString())?.toLocal();
+  }
+
+  String _formatSuspensionDate(DateTime date) {
+    const weekdays = ['Mo.', 'Di.', 'Mi.', 'Do.', 'Fr.', 'Sa.', 'So.'];
+    final weekday = weekdays[date.weekday - 1];
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final year = date.year.toString();
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '$weekday, $day.$month.$year · $hour:$minute Uhr';
+  }
+
+  String _formatSuspensionRelative(DateTime? until) {
+    if (until == null) return '';
+    var diff = until.difference(DateTime.now());
+    if (diff.isNegative) diff = Duration.zero;
+    final days = diff.inDays;
+    final hours = diff.inHours % 24;
+    final minutes = diff.inMinutes % 60;
+    final parts = <String>[];
+    if (days > 0) parts.add('$days ${days == 1 ? 'Tag' : 'Tagen'}');
+    if (hours > 0) parts.add('$hours ${hours == 1 ? 'Stunde' : 'Stunden'}');
+    if (days == 0 && hours == 0) parts.add('$minutes ${minutes == 1 ? 'Minute' : 'Minuten'}');
+    return '(in ${parts.join(', ')})';
   }
 
   Widget _toggleButton(BuildContext context, {required bool active, required IconData icon, required String label, required VoidCallback onPressed}) {
@@ -535,8 +842,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           _entryDayDropdown(id, item, enabled: editing),
-          _smallTextField(id, item, 'start', 'Start', enabled: editing, width: 120),
-          _smallTextField(id, item, 'end', 'Ende', enabled: editing, width: 120),
+          _entryTimeField(context, id, item, 'start', 'Start', enabled: editing, width: 120),
+          _entryTimeField(context, id, item, 'end', 'Ende', enabled: editing, width: 120),
           _entryEndBehaviorDropdown(id, item, enabled: editing),
           _fieldsButton(context, id, item),
           _boolSwitch('Aktiv', item['enabled'] == true, editing ? (value) => controller.updateEntry(id, 'enabled', value) : null),
@@ -608,8 +915,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
               },
             ),
           ),
-          _newEntryTextField('start', 'Start', width: 120),
-          _newEntryTextField('end', 'Ende', width: 120),
+          _newEntryTimeField(context, 'start', 'Start', width: 120),
+          _newEntryTimeField(context, 'end', 'Ende', width: 120),
           SizedBox(
             width: 220,
             child: DropdownButtonFormField<String>(
@@ -672,33 +979,97 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  Widget _smallTextField(String id, Map<String, dynamic> item, String field, String label, {double width = 120, bool enabled = true}) {
+  Widget _entryTimeField(
+    BuildContext context,
+    String id,
+    Map<String, dynamic> item,
+    String field,
+    String label, {
+    double width = 120,
+    bool enabled = true,
+  }) {
+    final value = (item[field] ?? '').toString();
     return SizedBox(
       width: width,
       child: TextFormField(
-        key: ValueKey('$id-$field-${item[field]}-$enabled'),
-        initialValue: (item[field] ?? '').toString(),
-        decoration: InputDecoration(labelText: label, hintText: 'HH:MM'),
+        key: ValueKey('$id-$field-$value-$enabled'),
+        initialValue: value,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: 'HH:MM',
+          suffixIcon: const Icon(Icons.access_time, size: 18),
+        ),
         keyboardType: TextInputType.datetime,
-        readOnly: !enabled,
-        onChanged: enabled ? (value) => controller.updateEntry(id, field, value) : null,
+        inputFormatters: _timeInputFormatters,
+        readOnly: true,
+        enabled: enabled,
+        onTap: enabled ? () => _pickEntryTime(context, id, item, field) : null,
       ),
     );
   }
 
-  Widget _newEntryTextField(String field, String label, {double width = 120}) {
-    final value = controller.newEntryDraft[field];
+  Widget _newEntryTimeField(BuildContext context, String field, String label, {double width = 120}) {
+    final value = (controller.newEntryDraft[field] ?? '').toString();
     return SizedBox(
       width: width,
       child: TextFormField(
         key: ValueKey('new-entry-$field-$value'),
-        initialValue: (value ?? '').toString(),
-        decoration: InputDecoration(labelText: label, hintText: 'HH:MM'),
+        initialValue: value,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: 'HH:MM',
+          suffixIcon: const Icon(Icons.access_time, size: 18),
+        ),
         keyboardType: TextInputType.datetime,
-        onChanged: (text) => controller.updateNewEntry(field, text),
+        inputFormatters: _timeInputFormatters,
+        readOnly: true,
+        onTap: () => _pickNewEntryTime(context, field),
       ),
     );
   }
+
+  List<TextInputFormatter> get _timeInputFormatters => [
+        LengthLimitingTextInputFormatter(5),
+      ];
+
+  Future<void> _pickEntryTime(BuildContext context, String id, Map<String, dynamic> item, String field) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _parseTimeOfDay((item[field] ?? '').toString()) ?? const TimeOfDay(hour: 0, minute: 0),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+        child: child ?? const SizedBox.shrink(),
+      ),
+    );
+    if (picked != null) {
+      controller.updateEntry(id, field, _formatTimeOfDay(picked));
+    }
+  }
+
+  Future<void> _pickNewEntryTime(BuildContext context, String field) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _parseTimeOfDay((controller.newEntryDraft[field] ?? '').toString()) ?? const TimeOfDay(hour: 0, minute: 0),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+        child: child ?? const SizedBox.shrink(),
+      ),
+    );
+    if (picked != null) {
+      controller.updateNewEntry(field, _formatTimeOfDay(picked));
+    }
+  }
+
+  TimeOfDay? _parseTimeOfDay(String value) {
+    final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(value.trim());
+    if (match == null) return null;
+    final hour = int.tryParse(match.group(1) ?? '');
+    final minute = int.tryParse(match.group(2) ?? '');
+    if (hour == null || minute == null || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  String _formatTimeOfDay(TimeOfDay time) => '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
   Widget _fieldsButton(BuildContext context, String id, Map<String, dynamic> item) {
     final count = controller.extraFieldsCount(item);

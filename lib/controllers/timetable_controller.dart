@@ -4,7 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/io/mqtt_connection.dart';
 
+enum SuspensionUiState {
+  none,
+  oneDay,
+  threeDays,
+  indefinite,
+  customDate,
+}
+
 class TimetableController extends GetxController {
+  static const String indefiniteSuspensionValue = '9999-12-31T23:59:59Z';
+
   static String _todayDateText() {
     final now = DateTime.now();
     return '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
@@ -54,6 +64,7 @@ class TimetableController extends GetxController {
     'gps': 'GPS',
     'manual': 'Manuell',
   };
+
   final editingEntryIds = <String>{}.obs;
   final newEntryDraft = <String, dynamic>{
     'day': 'Sunday',
@@ -68,7 +79,42 @@ class TimetableController extends GetxController {
   bool get hasRobotState => robotState.isNotEmpty;
 
   dynamic get autoMowSuspension => robotState['AutoMowSuspension'] ?? 0;
-  bool get isSuspended => autoMowSuspension != null && autoMowSuspension != 0 && autoMowSuspension.toString() != '0' && autoMowSuspension.toString().isNotEmpty;
+  bool get isSuspended => autoMowSuspension != null && autoMowSuspension != 0 && autoMowSuspension.toString() != '0' && autoMowSuspension.toString().trim().isNotEmpty;
+
+  bool get isIndefinitelySuspended {
+    final value = autoMowSuspension;
+    if (value == null || value == 0 || value.toString() == '0' || value.toString().trim().isEmpty) {
+      return false;
+    }
+
+    final text = value.toString().trim();
+    if (text.startsWith('9999-')) {
+      return true;
+    }
+
+    final parsed = DateTime.tryParse(text);
+    return parsed != null && parsed.year >= 9999;
+  }
+
+  SuspensionUiState get suspensionUiState {
+    if (!isSuspended) {
+      return SuspensionUiState.none;
+    }
+
+    if (isIndefinitelySuspended) {
+      return SuspensionUiState.indefinite;
+    }
+
+    if (_suspensionMatchesDays(1)) {
+      return SuspensionUiState.oneDay;
+    }
+
+    if (_suspensionMatchesDays(3)) {
+      return SuspensionUiState.threeDays;
+    }
+
+    return SuspensionUiState.customDate;
+  }
 
   String get selectedTimezone {
     final value = timezoneController.text.trim();
@@ -156,23 +202,51 @@ class TimetableController extends GetxController {
   }
 
   void setActionResult(Map<String, dynamic> payload) {
-    final ok = _validOrNull(payload['valid']) ?? _validOrNull(payload['ok']) ?? false;
-    lastRemarks.assignAll(_stringList(payload['remarks']));
+    final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
+    final status = (root['status'] ?? '').toString().toLowerCase().trim();
+    final result = (root['result'] ?? '').toString().toLowerCase().trim();
+    final ok = _validOrNull(root['valid']) ??
+        _validOrNull(root['ok']) ??
+        _validOrNull(root['accepted']) ??
+        _validOrNull(root['success']) ??
+        (status == 'ok' || status == 'accepted' ? true : null) ??
+        (result == 'valid' || result == 'ok' ? true : null);
+    lastRemarks.assignAll(_stringList(root['remarks']));
     lastUpdated.value = DateTime.now();
     lastTopic.value = 'legacy/action_result';
     lastStatusOk.value = ok;
-    final action = (payload['action'] ?? 'Action').toString();
-    lastStatus.value = ok ? '$action bestätigt.' : '$action abgelehnt.';
+    final action = (root['action'] ?? 'Action').toString();
+    if (ok == true) {
+      lastStatus.value = '$action bestätigt.';
+    } else if (ok == false) {
+      lastStatus.value = '$action abgelehnt.';
+    } else {
+      lastStatus.value = '$action verarbeitet. Warte auf Bestätigung ...';
+    }
     waitingForResponse.value = false;
   }
 
   void setValidation(Map<String, dynamic> payload, {String topic = 'timetable/validation/json'}) {
-    final ok = _validOrNull(payload['valid']) ?? false;
+    final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
+    final status = (root['status'] ?? '').toString().toLowerCase().trim();
+    final result = (root['result'] ?? '').toString().toLowerCase().trim();
+    final ok = _validOrNull(root['valid']) ??
+        _validOrNull(root['ok']) ??
+        _validOrNull(root['accepted']) ??
+        _validOrNull(root['success']) ??
+        (status == 'ok' || status == 'accepted' ? true : null) ??
+        (result == 'valid' || result == 'ok' ? true : null);
     lastUpdated.value = DateTime.now();
     lastTopic.value = topic;
     lastStatusOk.value = ok;
-    lastRemarks.assignAll(_stringList(payload['remarks']));
-    lastStatus.value = ok ? 'Server-Validierung erfolgreich.' : 'Speichern fehlgeschlagen. Server hat die Timetable abgelehnt.';
+    lastRemarks.assignAll(_stringList(root['remarks']));
+    if (ok == true) {
+      lastStatus.value = 'Server-Validierung erfolgreich.';
+    } else if (ok == false) {
+      lastStatus.value = 'Speichern fehlgeschlagen. Server hat die Timetable abgelehnt.';
+    } else {
+      lastStatus.value = 'Validierungsantwort empfangen. Warte auf eindeutige Bestätigung ...';
+    }
     waitingForResponse.value = false;
   }
 
@@ -207,7 +281,7 @@ class TimetableController extends GetxController {
   void requestTimetable() {
     Get.find<MqttConnection>().requestTimetable();
     lastStatus.value = 'Timetable wird vom Server angefordert ...';
-    lastTopic.value = 'timetable/renew/json';
+    lastTopic.value = 'timetable/set/renew/json';
     lastStatusOk.value = null;
   }
 
@@ -453,7 +527,7 @@ class TimetableController extends GetxController {
     Get.find<MqttConnection>().publishSuspension(value);
     waitingForResponse.value = true;
     lastUpdated.value = DateTime.now();
-    lastTopic.value = 'timetable/suspension/set/json';
+    lastTopic.value = 'timetable/set/suspension/json';
     lastStatus.value = 'Aussetzung bis $value gesendet. Warte auf robot_state ...';
     lastStatusOk.value = null;
   }
@@ -462,9 +536,26 @@ class TimetableController extends GetxController {
     Get.find<MqttConnection>().publishSuspension(0);
     waitingForResponse.value = true;
     lastUpdated.value = DateTime.now();
-    lastTopic.value = 'timetable/suspension/set/json';
+    lastTopic.value = 'timetable/set/suspension/json';
     lastStatus.value = 'Aufheben der Aussetzung gesendet. Warte auf robot_state ...';
     lastStatusOk.value = null;
+  }
+
+  void setSuspensionIndefinite() {
+    Get.find<MqttConnection>().publishSuspension(indefiniteSuspensionValue);
+    waitingForResponse.value = true;
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = 'timetable/set/suspension/json';
+    lastStatus.value = 'Unbestimmte Aussetzung gesendet. Warte auf robot_state ...';
+    lastStatusOk.value = null;
+  }
+
+  void toggleSuspensionIndefinite() {
+    if (isIndefinitelySuspended) {
+      clearSuspension();
+      return;
+    }
+    setSuspensionIndefinite();
   }
 
   void toggleSuspensionDays(int days) {
@@ -477,6 +568,7 @@ class TimetableController extends GetxController {
   }
 
   bool _suspensionMatchesDays(int days) {
+    if (isIndefinitelySuspended) return false;
     final value = autoMowSuspension;
     if (value == null || value == 0) return false;
     final until = DateTime.tryParse(value.toString());
@@ -604,14 +696,14 @@ class TimetableController extends GetxController {
 
   bool? _validOrNull(dynamic value) {
     if (value is bool) return value;
+    if (value is String) {
+      final lower = value.toLowerCase().trim();
+      if (lower == 'true' || lower == 'ok' || lower == 'accepted' || lower == 'valid' || lower == 'success') return true;
+      if (lower == 'false' || lower == 'invalid' || lower == 'rejected' || lower == 'error' || lower == 'failed') return false;
+    }
     if (value is num) {
       if (value == 1) return true;
       if (value == 0) return false;
-    }
-    if (value is String) {
-      final normalized = value.trim().toLowerCase();
-      if (normalized == 'true' || normalized == 'ok' || normalized == 'accepted' || normalized == 'valid' || normalized == 'success') return true;
-      if (normalized == 'false' || normalized == 'error' || normalized == 'rejected' || normalized == 'invalid' || normalized == 'failed') return false;
     }
     return null;
   }
