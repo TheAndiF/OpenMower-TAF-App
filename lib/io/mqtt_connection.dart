@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:mqtt5_client/mqtt5_client.dart';
 import 'package:open_mower_app/controllers/sensors_controller.dart';
 import 'package:open_mower_app/controllers/timetable_controller.dart';
+import 'package:open_mower_app/controllers/mqtt_areas_controller.dart';
 import 'package:open_mower_app/models/map_model.dart';
 import 'package:open_mower_app/models/robot_state.dart';
 import 'package:open_mower_app/models/sensor_state.dart';
@@ -40,6 +41,7 @@ class MqttConnection  {
   final RobotStateController robotStateController = Get.find();
   final SensorsController sensorsController = Get.find();
   final TimetableController timetableController = Get.find();
+  final MqttAreasController mqttAreasController = Get.find();
 
   final RegExp exp = RegExp(r'sensors/(.*)/bson');
 
@@ -705,6 +707,7 @@ class MqttConnection  {
                 continue;
               }
               final object = BsonCodec.deserialize(BsonBinary.from(bytes));
+              mqttAreasController.setAreaPayload(object, topic: "map/bson");
               if (object["d"].containsKey("areas")) {
                 parseMap(object);
               } else {
