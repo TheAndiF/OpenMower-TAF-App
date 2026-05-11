@@ -17,6 +17,7 @@ class TimetableScreen extends StatefulWidget {
 class _TimetableScreenState extends State<TimetableScreen> {
   final TimetableController controller = Get.find<TimetableController>();
   bool _renewSent = false;
+  bool _jsonExpanded = true;
 
   static const days = <String>[
     'Monday',
@@ -101,8 +102,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
     final color = Theme.of(context).primaryColor;
     return Card(
       margin: EdgeInsets.zero,
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -110,7 +109,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
           backgroundColor: color.withOpacity(0.08),
           collapsedBackgroundColor: color.withOpacity(0.08),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          childrenPadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           leading: Icon(icon, color: color, size: 32),
           iconColor: color,
           collapsedIconColor: color,
@@ -119,11 +118,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
           children: [
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.04),
-                border: Border(top: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.45))),
-              ),
+              color: Theme.of(context).cardColor,
+              padding: EdgeInsets.zero,
               child: child,
             ),
           ],
@@ -142,15 +138,13 @@ class _TimetableScreenState extends State<TimetableScreen> {
     final color = Theme.of(context).primaryColor;
     return Card(
       margin: EdgeInsets.zero,
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       child: Container(
         color: color.withOpacity(0.08),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -170,40 +164,13 @@ class _TimetableScreenState extends State<TimetableScreen> {
             ),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.04),
-                border: Border(top: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.45))),
-              ),
+              color: Theme.of(context).cardColor,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: child,
             ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _panelCard(
-    BuildContext context, {
-    required Widget child,
-    EdgeInsetsGeometry padding = const EdgeInsets.all(16),
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.65)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-      child: child,
     );
   }
 
@@ -214,161 +181,101 @@ class _TimetableScreenState extends State<TimetableScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 640;
-        final topCards = <Widget>[
-          _timeStatusCard(context, isMobile: isMobile),
-          _timezoneCard(context, isMobile: isMobile),
-        ];
-
-        return Column(
+        final content = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (isMobile)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: _withSpacing(topCards, vertical: 12),
-              )
-            else
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: topCards[0]),
-                  const SizedBox(width: 12),
-                  Expanded(child: topCards[1]),
-                ],
-              ),
-            const SizedBox(height: 12),
-            _panelCard(
+            _timeSettingsBlock(
               context,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('Zeit aktualisieren über', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade700)),
-                  const SizedBox(height: 10),
-                  _timeSourceSelector(context, source: source, isMobile: isMobile),
-                  const SizedBox(height: 12),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: color.withOpacity(0.12)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _timeSourceDetailTitle(source),
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 10),
-                        _timeSourceDetails(context, source: source, isMobile: isMobile),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Align(
-                    alignment: isMobile ? Alignment.center : Alignment.centerRight,
-                    child: SizedBox(
-                      width: isMobile ? double.infinity : 260,
-                      child: ElevatedButton.icon(
-                        onPressed: controller.updateTimeSettingsNow,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Zeit aktualisieren'),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+              label: 'Aktuelle Systemzeit',
+              child: Text(
+                controller.formattedSystemTime,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
               ),
             ),
-            const SizedBox(height: 12),
-            _infoBanner(
+            _timeDivider(context),
+            _timeSettingsBlock(
               context,
-              'Die ausgewählte Zeitquelle und Zeitzone werden erst beim Klick auf „Zeit aktualisieren“ angewendet.',
+              label: 'Zeitzone',
+              child: SizedBox(
+                width: isMobile ? double.infinity : 420,
+                child: DropdownButtonFormField<String>(
+                  value: _safeValue(controller.selectedTimezone, TimetableController.availableTimezones),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: UnderlineInputBorder(),
+                  ),
+                  items: TimetableController.availableTimezones
+                      .map((value) => DropdownMenuItem<String>(value: value, child: Text(value)))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      controller.timezoneController.text = value;
+                      controller.updateTimezone(value);
+                    }
+                  },
+                ),
+              ),
+            ),
+            _timeDivider(context),
+            _timeSettingsBlock(
+              context,
+              label: 'Zeit aktualisieren über',
+              child: _timeSourceSelector(context, source: source, isMobile: isMobile),
+            ),
+            _timeDivider(context),
+            _timeSettingsBlock(
+              context,
+              label: _timeSourceDetailTitle(source),
+              child: _timeSourceDetails(context, source: source, isMobile: isMobile),
+            ),
+            _timeDivider(context),
+            Align(
+              alignment: isMobile ? Alignment.center : Alignment.centerLeft,
+              child: SizedBox(
+                width: isMobile ? double.infinity : 260,
+                child: ElevatedButton.icon(
+                  onPressed: controller.updateTimeSettingsNow,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Zeit aktualisieren'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: color.withOpacity(0.35)),
+                borderRadius: BorderRadius.circular(4),
+                color: color.withOpacity(0.03),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline, color: color, size: 22),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Die ausgewählte Zeitquelle und Zeitzone werden erst beim Aktualisieren angewendet.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         );
+
+        return Container(
+          width: double.infinity,
+          padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, 18, isMobile ? 16 : 24, 22),
+          color: Theme.of(context).cardColor,
+          child: content,
+        );
       },
-    );
-  }
-
-  Widget _timeStatusCard(BuildContext context, {required bool isMobile}) {
-    return _panelCard(
-      context,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Aktuelle Systemzeit', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade700)),
-          const SizedBox(height: 8),
-          Text(
-            controller.formattedSystemTime,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Die angezeigte Zeit wird aus dem zuletzt bestätigten Robot-State gelesen.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).primaryColor),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _timezoneCard(BuildContext context, {required bool isMobile}) {
-    return _panelCard(
-      context,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Zeitzone', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade700)),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            value: _safeValue(controller.selectedTimezone, TimetableController.availableTimezones),
-            decoration: const InputDecoration(
-              isDense: true,
-              border: UnderlineInputBorder(),
-            ),
-            items: TimetableController.availableTimezones
-                .map((value) => DropdownMenuItem<String>(value: value, child: Text(value)))
-                .toList(),
-            onChanged: (value) {
-              if (value != null) {
-                controller.timezoneController.text = value;
-                controller.updateTimezone(value);
-              }
-            },
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Wird beim Aktualisieren zusammen mit der gewählten Zeitquelle angewendet.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _infoBanner(BuildContext context, String text) {
-    final color = Theme.of(context).primaryColor;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        border: Border.all(color: color.withOpacity(0.35)),
-        borderRadius: BorderRadius.circular(6),
-        color: color.withOpacity(0.03),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.info_outline, color: color, size: 22),
-          const SizedBox(width: 12),
-          Expanded(child: Text(text, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color))),
-        ],
-      ),
     );
   }
 
@@ -422,30 +329,19 @@ class _TimetableScreenState extends State<TimetableScreen> {
     final label = TimetableController.timeSourceLabels[source] ?? source;
     return InkWell(
       onTap: () => controller.setSelectedTimeSource(source),
-      borderRadius: BorderRadius.circular(4),
       child: Container(
         height: compact ? 46 : 50,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: active ? color : color.withOpacity(0.65)),
-          color: active ? color : Theme.of(context).cardColor,
-          boxShadow: active
-              ? const [
-                  BoxShadow(
-                    color: Color(0x1F000000),
-                    blurRadius: 3,
-                    offset: Offset(0, 1),
-                  ),
-                ]
-              : null,
+          border: Border.all(color: active ? color : Theme.of(context).dividerColor),
+          color: active ? color.withOpacity(0.08) : Theme.of(context).cardColor,
         ),
         child: Text(
-          active ? '✓ $label' : label,
+          label,
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: active ? Colors.white : color,
-            fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+            color: active ? color : Theme.of(context).textTheme.bodyMedium?.color,
+            fontWeight: active ? FontWeight.w600 : FontWeight.w400,
           ),
         ),
       ),
@@ -548,13 +444,10 @@ class _TimetableScreenState extends State<TimetableScreen> {
     final color = Theme.of(context).primaryColor;
     return Card(
       margin: EdgeInsets.zero,
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            color: color.withOpacity(0.08),
+          Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
             child: Row(
               children: [
@@ -579,14 +472,10 @@ class _TimetableScreenState extends State<TimetableScreen> {
               ],
             ),
           ),
-          Container(
-            width: double.infinity,
+          const Divider(height: 1),
+          Padding(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.04),
-              border: Border(top: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.45))),
-            ),
-            child: _panelCard(context, child: _buildSuspensionCard(context)),
+            child: _buildSuspensionCard(context),
           ),
         ],
       ),
@@ -659,7 +548,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
           ],
           const SizedBox(height: 20),
           for (final button in actionButtons) ...[
-            button,
+            SizedBox(height: 56, child: button),
             if (button != actionButtons.last) const SizedBox(height: 12),
           ],
         ],
@@ -697,6 +586,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
             children: actionButtons
                 .map((button) => SizedBox(
                       width: 220,
+                      height: 56,
                       child: button,
                     ))
                 .toList(),
@@ -782,7 +672,12 @@ class _TimetableScreenState extends State<TimetableScreen> {
     IconData? icon,
     bool danger = false,
   }) {
-    final childLabel = Text(active ? '✓ $label' : label, textAlign: TextAlign.center);
+    final childLabel = Text(
+      active ? '✓ $label' : label,
+      textAlign: TextAlign.center,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
     final child = icon == null
         ? childLabel
         : Row(
@@ -799,8 +694,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
       return ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
         ),
         child: child,
       );
@@ -811,8 +706,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
       style: OutlinedButton.styleFrom(
         foregroundColor: danger ? Colors.red : null,
         side: danger ? const BorderSide(color: Colors.red) : null,
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-        textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
       ),
       child: child,
     );
@@ -912,35 +807,31 @@ class _TimetableScreenState extends State<TimetableScreen> {
   Widget _buildEntriesSection(BuildContext context, Map<String, dynamic> timetable) {
     final entries = timetable.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
 
-    return _panelCard(
-      context,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Die technische ID wird automatisch erzeugt, intern als Key unter timetable verwendet und nicht angezeigt.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 12),
-          if (entries.isEmpty)
-            Padding(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Die technische ID wird automatisch erzeugt, intern als Key unter timetable verwendet und nicht angezeigt.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
+        if (entries.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text('Noch keine Mähzeiten vorhanden.', style: Theme.of(context).textTheme.bodyMedium),
+          )
+        else
+          ...entries.map((entry) {
+            final item = Map<String, dynamic>.from((entry.value as Map?) ?? <String, dynamic>{});
+            return Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: Text('Noch keine Mähzeiten vorhanden.', style: Theme.of(context).textTheme.bodyMedium),
-            )
-          else
-            ...entries.map((entry) {
-              final item = Map<String, dynamic>.from((entry.value as Map?) ?? <String, dynamic>{});
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _buildEntryRow(context, entry.key, item),
-              );
-            }),
-          const SizedBox(height: 4),
-          Text('Neuer Eintrag', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
-          _buildNewEntryRow(context),
-        ],
-      ),
+              child: _buildEntryRow(context, entry.key, item),
+            );
+          }),
+        Text('Neuer Eintrag', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        _buildNewEntryRow(context),
+      ],
     );
   }
 
@@ -1248,110 +1139,119 @@ class _TimetableScreenState extends State<TimetableScreen> {
 
   Widget _buildJsonSection(BuildContext context) {
     final color = Theme.of(context).primaryColor;
-    final statusIcon = controller.lastStatusOk.value == null
-        ? Icons.hourglass_empty
-        : controller.lastStatusOk.value == true
-            ? Icons.check_circle_outline
-            : Icons.error_outline;
-    final statusText = controller.lastStatus.value.isEmpty ? 'Noch keine Rückmeldung.' : controller.lastStatus.value;
 
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Wrap(
-              spacing: 16,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              alignment: WrapAlignment.spaceBetween,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 720;
+        return Card(
+          margin: EdgeInsets.zero,
+          child: Container(
+            color: color.withOpacity(0.08),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.code, color: color, size: 32),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('JSON-Ansicht', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
-                        const SizedBox(height: 2),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(statusIcon, size: 16, color: controller.lastStatusOk.value == false ? Colors.red : color),
-                            const SizedBox(width: 6),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 520),
-                              child: Text(statusText, overflow: TextOverflow.ellipsis),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 12, isMobile ? 8 : 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.code, color: color, size: 32),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'JSON-Ansicht',
+                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Timetable-Konfiguration anzeigen, importieren und speichern',
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                          if (!isMobile) _jsonActionButtons(context, isMobile: false),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: _jsonExpanded ? 'JSON-Ansicht einklappen' : 'JSON-Ansicht ausklappen',
+                            onPressed: () => setState(() => _jsonExpanded = !_jsonExpanded),
+                            icon: Icon(_jsonExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: color),
+                          ),
+                        ],
+                      ),
+                      if (isMobile) ...[
+                        const SizedBox(height: 12),
+                        _jsonActionButtons(context, isMobile: true),
+                      ],
+                    ],
+                  ),
+                ),
+                if (_jsonExpanded)
+                  Container(
+                    width: double.infinity,
+                    color: Theme.of(context).cardColor,
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildStatusCard(context),
+                        const SizedBox(height: 12),
+                        _buildJsonEditorCard(context, isMobile: isMobile),
                       ],
                     ),
-                  ],
-                ),
-                _jsonActionButtons(),
-              ],
-            ),
-          ),
-          Theme(
-            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              initiallyExpanded: false,
-              tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              title: Text('JSON-Inhalt anzeigen', style: Theme.of(context).textTheme.titleMedium),
-              subtitle: Text(
-                'Download speichert die aktuelle lokale JSON als Datei. Upload lädt eine Datei lokal. Speichern sendet an timetable/set/json.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              children: [
-                _buildStatusCard(context),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: controller.rawJsonController,
-                  minLines: 8,
-                  maxLines: 20,
-                  keyboardType: TextInputType.multiline,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    labelText: 'timetable.json',
                   ),
-                  style: const TextStyle(fontFamily: 'monospace'),
-                ),
               ],
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _jsonActionButtons() {
+  Widget _jsonActionButtons(BuildContext context, {required bool isMobile}) {
+    final buttons = <Widget>[
+      OutlinedButton.icon(
+        onPressed: _downloadJsonFile,
+        icon: const Icon(Icons.download),
+        label: Text(isMobile ? 'Herunterladen' : 'Download'),
+      ),
+      OutlinedButton.icon(
+        onPressed: _uploadJsonFile,
+        icon: const Icon(Icons.upload),
+        label: Text(isMobile ? 'Hochladen' : 'Upload'),
+      ),
+      ElevatedButton.icon(
+        onPressed: controller.hasData ? controller.sendTimetable : null,
+        icon: const Icon(Icons.save_outlined),
+        label: const Text('Speichern'),
+      ),
+    ];
+
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < buttons.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            SizedBox(width: double.infinity, child: buttons[i]),
+          ],
+        ],
+      );
+    }
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        OutlinedButton.icon(
-          onPressed: _downloadJsonFile,
-          icon: const Icon(Icons.download),
-          label: const Text('Download'),
-        ),
-        const SizedBox(width: 8),
-        OutlinedButton.icon(
-          onPressed: _uploadJsonFile,
-          icon: const Icon(Icons.upload),
-          label: const Text('Upload'),
-        ),
-        const SizedBox(width: 8),
-        ElevatedButton.icon(
-          onPressed: controller.hasData ? controller.sendTimetable : null,
-          icon: const Icon(Icons.save_outlined),
-          label: const Text('Speichern'),
-        ),
+        for (var i = 0; i < buttons.length; i++) ...[
+          if (i > 0) const SizedBox(width: 8),
+          buttons[i],
+        ],
       ],
     );
   }
@@ -1361,28 +1261,169 @@ class _TimetableScreenState extends State<TimetableScreen> {
     final topic = controller.lastTopic.value;
     final updated = controller.lastUpdated.value;
     final remarks = controller.lastRemarks;
-    final color = ok == false ? Colors.red.shade50 : ok == true ? Colors.green.shade50 : Colors.grey.shade100;
+
+    final Color accent;
+    final Color background;
+    final IconData icon;
+    final String headline;
+    if (ok == true) {
+      accent = Colors.green.shade700;
+      background = Colors.green.shade50;
+      icon = Icons.check_circle_outline;
+      headline = controller.lastStatus.value.isEmpty ? 'Timetable vom Server empfangen.' : controller.lastStatus.value;
+    } else if (ok == false) {
+      accent = Colors.red.shade700;
+      background = Colors.red.shade50;
+      icon = Icons.error_outline;
+      headline = controller.lastStatus.value.isEmpty ? 'Aktion fehlgeschlagen.' : controller.lastStatus.value;
+    } else if (controller.waitingForResponse.value) {
+      accent = Theme.of(context).primaryColor;
+      background = accent.withOpacity(0.06);
+      icon = Icons.sync;
+      headline = controller.lastStatus.value.isEmpty ? 'Warte auf Serverantwort ...' : controller.lastStatus.value;
+    } else {
+      accent = Theme.of(context).primaryColor;
+      background = accent.withOpacity(0.04);
+      icon = Icons.info_outline;
+      headline = controller.lastStatus.value.isEmpty ? 'Noch keine Rückmeldung.' : controller.lastStatus.value;
+    }
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: color,
-        border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(4),
+        color: background,
+        border: Border.all(color: accent.withOpacity(0.28)),
+        borderRadius: BorderRadius.circular(6),
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(controller.lastStatus.value.isEmpty ? 'Noch keine Rückmeldung.' : controller.lastStatus.value),
-          if (topic.isNotEmpty) Text('Letztes Topic: $topic', style: Theme.of(context).textTheme.bodySmall),
-          if (updated != null) Text('Zeit: ${_formatTime(updated)}', style: Theme.of(context).textTheme.bodySmall),
-          if (remarks.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text('Server-Hinweise:', style: Theme.of(context).textTheme.bodySmall),
-            ...remarks.map((r) => Text('- $r', style: Theme.of(context).textTheme.bodySmall)),
-          ],
+          Icon(icon, color: accent, size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  headline,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: accent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                if (topic.isNotEmpty || updated != null) ...[
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 4,
+                    children: [
+                      if (topic.isNotEmpty)
+                        Text('Topic: $topic', style: Theme.of(context).textTheme.bodySmall),
+                      if (updated != null)
+                        Text('Zeit: ${_formatTime(updated)}', style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  ),
+                ],
+                if (remarks.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('Server-Hinweise', style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  ...remarks.map((remark) => Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text('• $remark', style: Theme.of(context).textTheme.bodySmall),
+                      )),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildJsonEditorCard(BuildContext context, {required bool isMobile}) {
+    final color = Theme.of(context).primaryColor;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(6),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          isMobile
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _jsonEditorTitle(context),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: () => _copyJsonToClipboard(context),
+                      icon: const Icon(Icons.copy_outlined),
+                      label: const Text('Kopieren'),
+                    ),
+                  ],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: _jsonEditorTitle(context)),
+                    OutlinedButton.icon(
+                      onPressed: () => _copyJsonToClipboard(context),
+                      icon: const Icon(Icons.copy_outlined),
+                      label: const Text('Kopieren'),
+                    ),
+                  ],
+                ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller.rawJsonController,
+            minLines: 10,
+            maxLines: 22,
+            keyboardType: TextInputType.multiline,
+            decoration: InputDecoration(
+              border: const OutlineInputBorder(),
+              labelText: 'timetable.json',
+              alignLabelWithHint: true,
+              helperText: 'Änderungen im Editor werden erst mit „Speichern“ an MQTT gesendet.',
+              helperStyle: TextStyle(color: color.withOpacity(0.9)),
+            ),
+            style: const TextStyle(fontFamily: 'monospace'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _jsonEditorTitle(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('JSON-Inhalt', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 2),
+        Text(
+          'Lokale Timetable-Konfiguration. Upload übernimmt lokal, Speichern sendet an timetable/set/json.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
+
+  void _copyJsonToClipboard(BuildContext context) {
+    Clipboard.setData(ClipboardData(text: controller.rawJsonController.text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('JSON wurde in die Zwischenablage kopiert.')),
     );
   }
 
