@@ -20,7 +20,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     return Stack(
       children: [
         Obx(() {
-          final areas = controller.areas;
+          final mowAreas = controller.mowAreas;
           return SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(16, 60, 16, 16),
             child: Column(
@@ -30,8 +30,8 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
                   context,
                   icon: Icons.grass,
                   title: 'Mähzeiten',
-                  subtitle: 'MQTT-Flächen aus map/bson anzeigen',
-                  child: _buildAreasSection(context, areas),
+                  subtitle: 'Nur MQTT-Flächen vom Typ mow, sortiert nach Mähreihenfolge',
+                  child: _buildMowAreasSection(context, mowAreas),
                 ),
                 const SizedBox(height: 16),
                 _buildJsonSection(context),
@@ -85,115 +85,161 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     );
   }
 
-  Widget _buildAreasSection(BuildContext context, List<Map<String, dynamic>> areas) {
+  Widget _buildMowAreasSection(BuildContext context, List<Map<String, dynamic>> mowAreas) {
     if (!controller.hasData) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Text(
-          'Noch keine MQTT-Flächen empfangen. Sobald ein map/bson Payload eintrifft, erscheinen die Flächen hier.',
+          'Noch keine MQTT-Flächen empfangen. Sobald ein map/bson Payload eintrifft, erscheinen die Mähflächen hier.',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       );
     }
 
-    if (areas.isEmpty) {
+    if (mowAreas.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Text(
-          'Der letzte MQTT-Payload enthält keine areas- oder working_areas-Liste.',
+          'Der letzte MQTT-Payload enthält keine Fläche mit properties.type = mow.',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       );
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isMobile = constraints.maxWidth < 760;
-        if (isMobile) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: areas.map((area) => _areaCard(context, area)).toList(),
-          );
-        }
-
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            columns: const [
-              DataColumn(label: Text('Name')),
-              DataColumn(label: Text('ID')),
-              DataColumn(label: Text('Typ')),
-              DataColumn(label: Text('Aktiv')),
-              DataColumn(label: Text('Reihenfolge')),
-              DataColumn(label: Text('Punkte')),
-            ],
-            rows: areas.map((area) {
-              final props = controller.propertiesFor(area);
-              return DataRow(
-                cells: [
-                  DataCell(Text(_areaName(area, props))),
-                  DataCell(Text(_shortId((area['id'] ?? props['id'] ?? '').toString()))),
-                  DataCell(Text((props['type'] ?? area['type'] ?? '-').toString())),
-                  DataCell(Icon(_mowingEnabled(props) ? Icons.check_circle_outline : Icons.radio_button_unchecked)),
-                  DataCell(Text((props['mowing_order'] ?? '-').toString())),
-                  DataCell(Text(controller.pointCountFor(area).toString())),
-                ],
-              );
-            }).toList(),
-          ),
-        );
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 8),
+        for (final area in mowAreas) _mowAreaTimeBox(context, area),
+      ],
     );
   }
 
-  Widget _areaCard(BuildContext context, Map<String, dynamic> area) {
-    final props = controller.propertiesFor(area);
+  Widget _mowAreaTimeBox(BuildContext context, Map<String, dynamic> area) {
     final color = Theme.of(context).primaryColor;
+    final enabled = controller.mowingEnabledFor(area);
+    final order = controller.mowingOrderFor(area);
+    final name = controller.areaNameFor(area);
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
         border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(4),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.grass, color: color),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _areaName(area, props),
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 720;
+          final content = <Widget>[
+            _readOnlyField(
+              context,
+              label: 'Name',
+              value: name,
+              flex: isCompact ? 1 : 4,
+              icon: Icons.grass,
+            ),
+            _readOnlyField(
+              context,
+              label: 'Mähreihenfolge',
+              value: order?.toString() ?? '-',
+              flex: isCompact ? 1 : 1,
+              icon: Icons.format_list_numbered,
+            ),
+            _enabledSwitchBox(context, enabled),
+          ];
+
+          if (isCompact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                content[0],
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(child: content[1]),
+                    const SizedBox(width: 16),
+                    content[2],
+                  ],
                 ),
-              ),
+              ],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(flex: 4, child: content[0]),
+              const SizedBox(width: 16),
+              SizedBox(width: 170, child: content[1]),
+              const SizedBox(width: 20),
+              content[2],
+              const Spacer(),
+              Icon(Icons.drag_indicator, color: color.withOpacity(0.45)),
             ],
-          ),
-          const SizedBox(height: 8),
-          _detailLine(context, 'ID', (area['id'] ?? props['id'] ?? '-').toString()),
-          _detailLine(context, 'Typ', (props['type'] ?? area['type'] ?? '-').toString()),
-          _detailLine(context, 'Aktiv', _mowingEnabled(props) ? 'Ja' : 'Nein'),
-          _detailLine(context, 'Reihenfolge', (props['mowing_order'] ?? '-').toString()),
-          _detailLine(context, 'Punkte', controller.pointCountFor(area).toString()),
-        ],
+          );
+        },
       ),
     );
   }
 
-  Widget _detailLine(BuildContext context, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 3),
-      child: RichText(
-        text: TextSpan(
-          style: Theme.of(context).textTheme.bodyMedium,
+  Widget _readOnlyField(
+    BuildContext context, {
+    required String label,
+    required String value,
+    required IconData icon,
+    int flex = 1,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
           children: [
-            TextSpan(text: '$label: ', style: const TextStyle(fontWeight: FontWeight.w600)),
-            TextSpan(text: value),
+            Icon(icon, size: 14, color: Theme.of(context).hintColor),
+            const SizedBox(width: 4),
+            Text(label, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor)),
           ],
         ),
-      ),
+        const SizedBox(height: 2),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.only(bottom: 4),
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
+          ),
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _enabledSwitchBox(BuildContext context, bool enabled) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Aktiv', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor)),
+            const SizedBox(height: 2),
+            Text(enabled ? 'aktiviert' : 'nicht aktiviert', style: Theme.of(context).textTheme.bodyMedium),
+          ],
+        ),
+        const SizedBox(width: 10),
+        IgnorePointer(
+          child: Switch(
+            value: enabled,
+            onChanged: (_) {},
+          ),
+        ),
+      ],
     );
   }
 
@@ -349,26 +395,6 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('JSON wurde in die Zwischenablage kopiert.')),
     );
-  }
-
-  String _areaName(Map<String, dynamic> area, Map<String, dynamic> props) {
-    final name = (props['name'] ?? area['name'] ?? '').toString().trim();
-    if (name.isNotEmpty) {
-      return name;
-    }
-    return _shortId((area['id'] ?? props['id'] ?? 'Unbenannte Fläche').toString());
-  }
-
-  String _shortId(String value) {
-    if (value.length <= 12) return value.isEmpty ? '-' : value;
-    return '${value.substring(0, 8)}…${value.substring(value.length - 4)}';
-  }
-
-  bool _mowingEnabled(Map<String, dynamic> props) {
-    final value = props['mowing_enabled'];
-    if (value is bool) return value;
-    if (value is num) return value != 0;
-    return value.toString().toLowerCase() == 'true';
   }
 
   String _formatTime(DateTime time) {

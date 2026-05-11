@@ -33,6 +33,60 @@ class MqttAreasController extends GetxController {
     return const <Map<String, dynamic>>[];
   }
 
+
+
+  List<Map<String, dynamic>> get mowAreas {
+    final filtered = areas.where((area) {
+      final props = propertiesFor(area);
+      final type = (props['type'] ?? area['type'] ?? '').toString().toLowerCase().trim();
+      return type == 'mow';
+    }).toList(growable: false);
+
+    final sorted = List<Map<String, dynamic>>.from(filtered);
+    sorted.sort((a, b) {
+      final propsA = propertiesFor(a);
+      final propsB = propertiesFor(b);
+      final orderCompare = _mowingOrderFor(propsA).compareTo(_mowingOrderFor(propsB));
+      if (orderCompare != 0) return orderCompare;
+      return areaNameFor(a).compareTo(areaNameFor(b));
+    });
+    return sorted;
+  }
+
+  String areaNameFor(Map<String, dynamic> area) {
+    final props = propertiesFor(area);
+    final name = (props['name'] ?? area['name'] ?? '').toString().trim();
+    if (name.isNotEmpty) return name;
+
+    final id = (area['id'] ?? props['id'] ?? '').toString();
+    if (id.isEmpty) return 'Unbenannte Fläche';
+    if (id.length <= 12) return id;
+    return '${id.substring(0, 8)}…${id.substring(id.length - 4)}';
+  }
+
+  bool mowingEnabledFor(Map<String, dynamic> area) {
+    final props = propertiesFor(area);
+    final value = props['mowing_enabled'] ?? area['mowing_enabled'];
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    return value.toString().toLowerCase() == 'true';
+  }
+
+  int? mowingOrderFor(Map<String, dynamic> area) {
+    final props = propertiesFor(area);
+    final value = props['mowing_order'] ?? area['mowing_order'];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
+  }
+
+  int _mowingOrderFor(Map<String, dynamic> props) {
+    final value = props['mowing_order'];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString()) ?? 0x7fffffff;
+  }
+
   String get jsonString {
     if (areaPayload.isEmpty) {
       return '{}';
@@ -54,7 +108,7 @@ class MqttAreasController extends GetxController {
     lastStatusOk.value = true;
     lastStatus.value = areas.isEmpty
         ? 'MQTT-Flächen empfangen, aber keine Flächenliste gefunden.'
-        : '${areas.length} MQTT-Fläche(n) empfangen.';
+        : '${mowAreas.length} Mähfläche(n) empfangen.';
   }
 
   void setError(String message, {String topic = 'map/bson'}) {
