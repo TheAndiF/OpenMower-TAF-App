@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/timetable_controller.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
@@ -58,14 +57,20 @@ class _TimetableScreenState extends State<TimetableScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildSuspensionSection(context),
-                const SizedBox(height: 16),
                 _buildSection(
                   context,
                   icon: Icons.schedule,
                   title: 'Time Settings',
                   subtitle: 'Zeitzone und Quelle für die einmalige Systemzeit-Synchronisation',
                   child: _buildTimeSettingsCard(context),
+                ),
+                const SizedBox(height: 16),
+                _buildSection(
+                  context,
+                  icon: Icons.pause_circle_outline,
+                  title: 'Mähzeit aussetzen',
+                  subtitle: 'Direkte MQTT-Aussetzung; Bestätigung kommt über robot_state.AutoMowSuspension',
+                  child: _buildSuspensionCard(context),
                 ),
                 const SizedBox(height: 16),
                 _buildSection(
@@ -127,457 +132,303 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  Widget _buildStaticSection(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Widget child,
-  }) {
+  Widget _buildTimeSettingsCard(BuildContext context) {
     final color = Theme.of(context).primaryColor;
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Container(
-        color: color.withOpacity(0.08),
-        child: Column(
+    final source = controller.selectedTimeSource.value;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 640;
+        final content = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            _timeSettingsBlock(
+              context,
+              label: 'Aktuelle Systemzeit',
+              child: Text(
+                controller.formattedSystemTime,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+            _timeDivider(context),
+            _timeSettingsBlock(
+              context,
+              label: 'Zeitzone',
+              child: SizedBox(
+                width: isMobile ? double.infinity : 420,
+                child: DropdownButtonFormField<String>(
+                  value: _safeValue(controller.selectedTimezone, TimetableController.availableTimezones),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: UnderlineInputBorder(),
+                  ),
+                  items: TimetableController.availableTimezones
+                      .map((value) => DropdownMenuItem<String>(value: value, child: Text(value)))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      controller.timezoneController.text = value;
+                      controller.updateTimezone(value);
+                    }
+                  },
+                ),
+              ),
+            ),
+            _timeDivider(context),
+            _timeSettingsBlock(
+              context,
+              label: 'Zeit aktualisieren über',
+              child: _timeSourceSelector(context, source: source, isMobile: isMobile),
+            ),
+            _timeDivider(context),
+            _timeSettingsBlock(
+              context,
+              label: _timeSourceDetailTitle(source),
+              child: _timeSourceDetails(context, source: source, isMobile: isMobile),
+            ),
+            _timeDivider(context),
+            Align(
+              alignment: isMobile ? Alignment.center : Alignment.centerLeft,
+              child: SizedBox(
+                width: isMobile ? double.infinity : 260,
+                child: ElevatedButton.icon(
+                  onPressed: controller.updateTimeSettingsNow,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Zeit aktualisieren'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: color.withOpacity(0.35)),
+                borderRadius: BorderRadius.circular(4),
+                color: color.withOpacity(0.03),
+              ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(icon, color: color, size: 32),
-                  const SizedBox(width: 16),
+                  Icon(Icons.info_outline, color: color, size: 22),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
-                        Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
-                      ],
+                    child: Text(
+                      'Die ausgewählte Zeitquelle und Zeitzone werden erst beim Aktualisieren angewendet.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color),
                     ),
                   ),
                 ],
               ),
             ),
-            Container(
-              width: double.infinity,
-              color: Theme.of(context).cardColor,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: child,
-            ),
           ],
-        ),
-      ),
+        );
+
+        return Container(
+          width: double.infinity,
+          padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, 18, isMobile ? 16 : 24, 22),
+          color: Theme.of(context).cardColor,
+          child: content,
+        );
+      },
     );
   }
 
-  Widget _buildTimeSettingsCard(BuildContext context) {
-    final source = controller.selectedTimeSource.value;
-    final isManual = source == 'manual';
-    final isNtp = source == 'ntp';
-    final isGps = source == 'gps';
-    final isSystem = source == 'system';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(
-          spacing: 16,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            const SizedBox(width: 220, child: Text('Zeitzone')),
-            SizedBox(
-              width: 420,
-              child: TextFormField(
-                controller: controller.timezoneController,
-                decoration: const InputDecoration(hintText: 'Europe/Berlin'),
-                onChanged: controller.updateTimezone,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _buildSourceRow(
-          context,
-          selected: isManual,
-          selectable: true,
-          label: 'manuelle Zeit',
-          onTap: () => controller.setSelectedTimeSource('manual'),
-          children: [
-            SizedBox(
-              width: 170,
-              child: TextFormField(
-                enabled: isManual,
-                controller: controller.hourController,
-                decoration: const InputDecoration(labelText: 'Stunden'),
-                keyboardType: TextInputType.number,
-                onChanged: (_) => controller.updateManualTimeFromFields(),
-              ),
-            ),
-            SizedBox(
-              width: 170,
-              child: TextFormField(
-                enabled: isManual,
-                controller: controller.minuteController,
-                decoration: const InputDecoration(labelText: 'Minuten'),
-                keyboardType: TextInputType.number,
-                onChanged: (_) => controller.updateManualTimeFromFields(),
-              ),
-            ),
-            Text('Wird als manual.datetime gespeichert.', style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _buildSourceRow(
-          context,
-          selected: isNtp,
-          selectable: true,
-          label: 'ntp Zeit',
-          onTap: () => controller.setSelectedTimeSource('ntp'),
-          children: [
-            SizedBox(
-              width: 360,
-              child: TextFormField(
-                enabled: isNtp,
-                controller: controller.ntpServerController,
-                decoration: const InputDecoration(labelText: 'NTP Server', hintText: 'pool.ntp.org'),
-                onChanged: controller.updateNtpServer,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _buildSourceRow(
-          context,
-          selected: isGps,
-          selectable: true,
-          label: 'gps Zeit',
-          onTap: () => controller.setSelectedTimeSource('gps'),
-          children: [
-            SizedBox(
-              width: 360,
-              child: Text('keine zusätzlichen Eingaben', style: Theme.of(context).textTheme.bodyMedium),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _buildSourceRow(
-          context,
-          selected: isSystem,
-          selectable: true,
-          label: 'Systemzeit',
-          onTap: () => controller.setSelectedTimeSource('system'),
-          children: [
-            SizedBox(
-              width: 360,
-              child: Text('Aktuelle Uhrzeit: ${_currentTimeText()}', style: Theme.of(context).textTheme.bodyMedium),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSuspensionSection(BuildContext context) {
-    final color = Theme.of(context).primaryColor;
-    return Card(
-      margin: EdgeInsets.zero,
+  Widget _timeSettingsBlock(BuildContext context, {required String label, required Widget child}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-            child: Row(
-              children: [
-                _headerStatusIcon(color: color, active: controller.isSuspended),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Mähzeit aussetzen',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Mähbetrieb vorübergehend pausieren',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: _buildSuspensionCard(context),
-          ),
+          Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade700)),
+          const SizedBox(height: 8),
+          child,
         ],
       ),
     );
+  }
+
+  Widget _timeDivider(BuildContext context) {
+    return Divider(height: 24, color: Theme.of(context).dividerColor.withOpacity(0.75));
+  }
+
+  Widget _timeSourceSelector(BuildContext context, {required String source, required bool isMobile}) {
+    final entries = const <String>['system', 'ntp', 'gps', 'manual'];
+    if (isMobile) {
+      return Row(
+        children: entries
+            .map((entry) => Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: _timeSourceButton(context, source: entry, active: source == entry, compact: true),
+                  ),
+                ))
+            .toList(),
+      );
+    }
+
+    return SizedBox(
+      width: 760,
+      child: Row(
+        children: entries
+            .map((entry) => Expanded(
+                  child: _timeSourceButton(context, source: entry, active: source == entry, compact: false),
+                ))
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _timeSourceButton(BuildContext context, {required String source, required bool active, required bool compact}) {
+    final color = Theme.of(context).primaryColor;
+    final label = TimetableController.timeSourceLabels[source] ?? source;
+    return InkWell(
+      onTap: () => controller.setSelectedTimeSource(source),
+      child: Container(
+        height: compact ? 46 : 50,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          border: Border.all(color: active ? color : Theme.of(context).dividerColor),
+          color: active ? color.withOpacity(0.08) : Theme.of(context).cardColor,
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: active ? color : Theme.of(context).textTheme.bodyMedium?.color,
+            fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _timeSourceDetailTitle(String source) {
+    switch (source) {
+      case 'system':
+        return 'Systemzeit verwenden';
+      case 'gps':
+        return 'GPS-Zeit verwenden';
+      case 'manual':
+        return 'Manuelle Zeit setzen';
+      case 'ntp':
+      default:
+        return 'NTP-Server';
+    }
+  }
+
+  Widget _timeSourceDetails(BuildContext context, {required String source, required bool isMobile}) {
+    if (source == 'ntp') {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: isMobile ? double.infinity : 420,
+            child: TextFormField(
+              controller: controller.ntpServerController,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: OutlineInputBorder(),
+                hintText: 'pool.ntp.org',
+              ),
+              onChanged: controller.updateNtpServer,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(controller.timeSourceDescription, style: Theme.of(context).textTheme.bodySmall),
+        ],
+      );
+    }
+
+    if (source == 'manual') {
+      final fields = <Widget>[
+        SizedBox(
+          width: isMobile ? double.infinity : 180,
+          child: TextFormField(
+            controller: controller.manualDateController,
+            decoration: const InputDecoration(labelText: 'Datum', hintText: 'YYYY-MM-DD'),
+            keyboardType: TextInputType.datetime,
+            onChanged: (_) => controller.updateManualTimeFromFields(),
+          ),
+        ),
+        SizedBox(
+          width: isMobile ? double.infinity : 120,
+          child: TextFormField(
+            controller: controller.hourController,
+            decoration: const InputDecoration(labelText: 'Stunden'),
+            keyboardType: TextInputType.number,
+            onChanged: (_) => controller.updateManualTimeFromFields(),
+          ),
+        ),
+        SizedBox(
+          width: isMobile ? double.infinity : 120,
+          child: TextFormField(
+            controller: controller.minuteController,
+            decoration: const InputDecoration(labelText: 'Minuten'),
+            keyboardType: TextInputType.number,
+            onChanged: (_) => controller.updateManualTimeFromFields(),
+          ),
+        ),
+      ];
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          isMobile
+              ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: _withSpacing(fields, vertical: 8))
+              : Wrap(spacing: 16, runSpacing: 8, children: fields),
+          const SizedBox(height: 8),
+          Text(controller.timeSourceDescription, style: Theme.of(context).textTheme.bodySmall),
+        ],
+      );
+    }
+
+    return Text(controller.timeSourceDescription, style: Theme.of(context).textTheme.bodyMedium);
+  }
+
+  List<Widget> _withSpacing(List<Widget> children, {double vertical = 8}) {
+    final result = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      if (i > 0) result.add(SizedBox(height: vertical));
+      result.add(children[i]);
+    }
+    return result;
   }
 
   Widget _buildSuspensionCard(BuildContext context) {
-    final isMobile = MediaQuery.of(context).size.width < 760;
-    final state = controller.suspensionUiState;
-    final active = state != SuspensionUiState.none;
-    final oneDayActive = state == SuspensionUiState.oneDay;
-    final threeDaysActive = state == SuspensionUiState.threeDays;
-    final indefiniteActive = state == SuspensionUiState.indefinite;
-    final until = _parseSuspensionDate(controller.autoMowSuspension);
-    final headline = _suspensionHeadline(state);
-    final dateText = _suspensionDetailText(state, until);
-    final relativeText = (state == SuspensionUiState.oneDay || state == SuspensionUiState.threeDays || state == SuspensionUiState.customDate)
-        ? _formatSuspensionRelative(until)
-        : null;
+    final oneDayActive = controller.isSuspended && _suspensionLooksLikeDays(1);
+    final threeDaysActive = controller.isSuspended && _suspensionLooksLikeDays(3);
+    final suspensionValue = controller.autoMowSuspension;
+    final statusText = controller.isSuspended ? 'Ausgesetzt bis: $suspensionValue' : 'Aktuell keine Aussetzung aktiv.';
 
-    final actionButtons = <Widget>[
-      _actionButton(
-        context,
-        label: '1 Tag aussetzen',
-        active: oneDayActive,
-        icon: Icons.calendar_today_outlined,
-        onPressed: () => controller.toggleSuspensionDays(1),
-      ),
-      _actionButton(
-        context,
-        label: '3 Tage aussetzen',
-        active: threeDaysActive,
-        icon: Icons.date_range_outlined,
-        onPressed: () => controller.toggleSuspensionDays(3),
-      ),
-      _actionButton(
-        context,
-        label: 'Unbestimmt aussetzen',
-        active: indefiniteActive,
-        icon: Icons.all_inclusive,
-        onPressed: controller.toggleSuspensionIndefinite,
-      ),
-      if (active)
-        _actionButton(
-          context,
-          label: 'Aufheben',
-          active: false,
-          icon: Icons.play_arrow,
-          danger: true,
-          onPressed: controller.clearSuspension,
-        ),
-    ];
-
-    if (isMobile) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(child: _bodyStatusIcon(context, state: state)),
-          const SizedBox(height: 18),
-          Text(headline, textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).hintColor)),
-          const SizedBox(height: 6),
-          Text(
-            dateText,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          if (relativeText != null && relativeText.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(relativeText, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor)),
-          ],
-          const SizedBox(height: 20),
-          for (final button in actionButtons) ...[
-            button,
-            if (button != actionButtons.last) const SizedBox(height: 12),
-          ],
-        ],
-      );
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    return Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        _bodyStatusIcon(context, state: state),
-        const SizedBox(width: 24),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(headline, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Theme.of(context).hintColor)),
-              const SizedBox(height: 8),
-              Text(
-                dateText,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              if (relativeText != null && relativeText.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(relativeText, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).hintColor)),
-              ],
-            ],
-          ),
+        _toggleButton(
+          context,
+          active: oneDayActive,
+          icon: Icons.looks_one,
+          label: '1 Tag aussetzen',
+          onPressed: () => controller.toggleSuspensionDays(1),
         ),
-        const SizedBox(width: 24),
-        Expanded(
-          child: Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 12,
-            runSpacing: 12,
-            children: actionButtons
-                .map((button) => SizedBox(
-                      width: 220,
-                      child: button,
-                    ))
-                .toList(),
-          ),
+        _toggleButton(
+          context,
+          active: threeDaysActive,
+          icon: Icons.looks_3,
+          label: '3 Tage aussetzen',
+          onPressed: () => controller.toggleSuspensionDays(3),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Text(statusText, style: Theme.of(context).textTheme.bodyMedium),
         ),
       ],
     );
-  }
-
-  String _suspensionHeadline(SuspensionUiState state) {
-    switch (state) {
-      case SuspensionUiState.none:
-        return 'Keine Aussetzung aktiv';
-      case SuspensionUiState.indefinite:
-        return 'AutoMow ist unbestimmt pausiert';
-      case SuspensionUiState.oneDay:
-      case SuspensionUiState.threeDays:
-      case SuspensionUiState.customDate:
-        return 'AutoMow pausiert bis';
-    }
-  }
-
-  String _suspensionDetailText(SuspensionUiState state, DateTime? until) {
-    switch (state) {
-      case SuspensionUiState.none:
-        return 'AutoMow mäht nach Zeitplan.';
-      case SuspensionUiState.indefinite:
-        return 'Der Mähbetrieb startet erst wieder nach dem Aufheben.';
-      case SuspensionUiState.oneDay:
-      case SuspensionUiState.threeDays:
-      case SuspensionUiState.customDate:
-        return until == null ? controller.autoMowSuspension.toString() : _formatSuspensionDate(until);
-    }
-  }
-
-  Widget _headerStatusIcon({required Color color, required bool active}) {
-    return Container(
-      width: 42,
-      height: 42,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: color.withOpacity(0.65), width: 2),
-      ),
-      child: Icon(Icons.nights_stay_outlined, color: color, size: 24),
-    );
-  }
-
-  Widget _bodyStatusIcon(BuildContext context, {required SuspensionUiState state}) {
-    final color = Theme.of(context).primaryColor;
-    final isNone = state == SuspensionUiState.none;
-    IconData icon;
-    switch (state) {
-      case SuspensionUiState.none:
-        icon = Icons.check;
-        break;
-      case SuspensionUiState.indefinite:
-        icon = Icons.all_inclusive;
-        break;
-      case SuspensionUiState.oneDay:
-      case SuspensionUiState.threeDays:
-      case SuspensionUiState.customDate:
-        icon = Icons.pause;
-        break;
-    }
-    final bgColor = isNone ? Colors.green.withOpacity(0.10) : color.withOpacity(0.10);
-    final iconColor = isNone ? Colors.green : color;
-    return Container(
-      width: 132,
-      height: 132,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: bgColor,
-      ),
-      child: Icon(icon, color: iconColor, size: 64),
-    );
-  }
-
-  Widget _actionButton(
-    BuildContext context, {
-    required String label,
-    required bool active,
-    required VoidCallback? onPressed,
-    IconData? icon,
-    bool danger = false,
-  }) {
-    final childLabel = Text(active ? '✓ $label' : label, textAlign: TextAlign.center);
-    final child = icon == null
-        ? childLabel
-        : Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 20),
-              const SizedBox(width: 8),
-              Flexible(child: childLabel),
-            ],
-          );
-
-    if (active) {
-      return ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-        ),
-        child: child,
-      );
-    }
-
-    return OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: danger ? Colors.red : null,
-        side: danger ? const BorderSide(color: Colors.red) : null,
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-        textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-      ),
-      child: child,
-    );
-  }
-
-  DateTime? _parseSuspensionDate(dynamic value) {
-    if (value == null || value == 0 || value.toString() == '0' || value.toString().trim().isEmpty) {
-      return null;
-    }
-    return DateTime.tryParse(value.toString())?.toLocal();
-  }
-
-  String _formatSuspensionDate(DateTime date) {
-    const weekdays = ['Mo.', 'Di.', 'Mi.', 'Do.', 'Fr.', 'Sa.', 'So.'];
-    final weekday = weekdays[date.weekday - 1];
-    final day = date.day.toString().padLeft(2, '0');
-    final month = date.month.toString().padLeft(2, '0');
-    final year = date.year.toString();
-    final hour = date.hour.toString().padLeft(2, '0');
-    final minute = date.minute.toString().padLeft(2, '0');
-    return '$weekday, $day.$month.$year · $hour:$minute Uhr';
-  }
-
-  String _formatSuspensionRelative(DateTime? until) {
-    if (until == null) return '';
-    var diff = until.difference(DateTime.now());
-    if (diff.isNegative) diff = Duration.zero;
-    final days = diff.inDays;
-    final hours = diff.inHours % 24;
-    final minutes = diff.inMinutes % 60;
-    final parts = <String>[];
-    if (days > 0) parts.add('$days ${days == 1 ? 'Tag' : 'Tagen'}');
-    if (hours > 0) parts.add('$hours ${hours == 1 ? 'Stunde' : 'Stunden'}');
-    if (days == 0 && hours == 0) parts.add('$minutes ${minutes == 1 ? 'Minute' : 'Minuten'}');
-    return '(in ${parts.join(', ')})';
   }
 
   Widget _toggleButton(BuildContext context, {required bool active, required IconData icon, required String label, required VoidCallback onPressed}) {
@@ -684,8 +535,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           _entryDayDropdown(id, item, enabled: editing),
-          _entryTimeField(context, id, item, 'start', 'Start', enabled: editing, width: 120),
-          _entryTimeField(context, id, item, 'end', 'Ende', enabled: editing, width: 120),
+          _smallTextField(id, item, 'start', 'Start', enabled: editing, width: 120),
+          _smallTextField(id, item, 'end', 'Ende', enabled: editing, width: 120),
           _entryEndBehaviorDropdown(id, item, enabled: editing),
           _fieldsButton(context, id, item),
           _boolSwitch('Aktiv', item['enabled'] == true, editing ? (value) => controller.updateEntry(id, 'enabled', value) : null),
@@ -757,8 +608,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
               },
             ),
           ),
-          _newEntryTimeField(context, 'start', 'Start', width: 120),
-          _newEntryTimeField(context, 'end', 'Ende', width: 120),
+          _newEntryTextField('start', 'Start', width: 120),
+          _newEntryTextField('end', 'Ende', width: 120),
           SizedBox(
             width: 220,
             child: DropdownButtonFormField<String>(
@@ -821,97 +672,33 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  Widget _entryTimeField(
-    BuildContext context,
-    String id,
-    Map<String, dynamic> item,
-    String field,
-    String label, {
-    double width = 120,
-    bool enabled = true,
-  }) {
-    final value = (item[field] ?? '').toString();
+  Widget _smallTextField(String id, Map<String, dynamic> item, String field, String label, {double width = 120, bool enabled = true}) {
     return SizedBox(
       width: width,
       child: TextFormField(
-        key: ValueKey('$id-$field-$value-$enabled'),
-        initialValue: value,
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: 'HH:MM',
-          suffixIcon: const Icon(Icons.access_time, size: 18),
-        ),
+        key: ValueKey('$id-$field-${item[field]}-$enabled'),
+        initialValue: (item[field] ?? '').toString(),
+        decoration: InputDecoration(labelText: label, hintText: 'HH:MM'),
         keyboardType: TextInputType.datetime,
-        inputFormatters: _timeInputFormatters,
-        readOnly: true,
-        enabled: enabled,
-        onTap: enabled ? () => _pickEntryTime(context, id, item, field) : null,
+        readOnly: !enabled,
+        onChanged: enabled ? (value) => controller.updateEntry(id, field, value) : null,
       ),
     );
   }
 
-  Widget _newEntryTimeField(BuildContext context, String field, String label, {double width = 120}) {
-    final value = (controller.newEntryDraft[field] ?? '').toString();
+  Widget _newEntryTextField(String field, String label, {double width = 120}) {
+    final value = controller.newEntryDraft[field];
     return SizedBox(
       width: width,
       child: TextFormField(
         key: ValueKey('new-entry-$field-$value'),
-        initialValue: value,
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: 'HH:MM',
-          suffixIcon: const Icon(Icons.access_time, size: 18),
-        ),
+        initialValue: (value ?? '').toString(),
+        decoration: InputDecoration(labelText: label, hintText: 'HH:MM'),
         keyboardType: TextInputType.datetime,
-        inputFormatters: _timeInputFormatters,
-        readOnly: true,
-        onTap: () => _pickNewEntryTime(context, field),
+        onChanged: (text) => controller.updateNewEntry(field, text),
       ),
     );
   }
-
-  List<TextInputFormatter> get _timeInputFormatters => [
-        LengthLimitingTextInputFormatter(5),
-      ];
-
-  Future<void> _pickEntryTime(BuildContext context, String id, Map<String, dynamic> item, String field) async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _parseTimeOfDay((item[field] ?? '').toString()) ?? const TimeOfDay(hour: 0, minute: 0),
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-        child: child ?? const SizedBox.shrink(),
-      ),
-    );
-    if (picked != null) {
-      controller.updateEntry(id, field, _formatTimeOfDay(picked));
-    }
-  }
-
-  Future<void> _pickNewEntryTime(BuildContext context, String field) async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _parseTimeOfDay((controller.newEntryDraft[field] ?? '').toString()) ?? const TimeOfDay(hour: 0, minute: 0),
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-        child: child ?? const SizedBox.shrink(),
-      ),
-    );
-    if (picked != null) {
-      controller.updateNewEntry(field, _formatTimeOfDay(picked));
-    }
-  }
-
-  TimeOfDay? _parseTimeOfDay(String value) {
-    final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(value.trim());
-    if (match == null) return null;
-    final hour = int.tryParse(match.group(1) ?? '');
-    final minute = int.tryParse(match.group(2) ?? '');
-    if (hour == null || minute == null || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-    return TimeOfDay(hour: hour, minute: minute);
-  }
-
-  String _formatTimeOfDay(TimeOfDay time) => '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
   Widget _fieldsButton(BuildContext context, String id, Map<String, dynamic> item) {
     final count = controller.extraFieldsCount(item);

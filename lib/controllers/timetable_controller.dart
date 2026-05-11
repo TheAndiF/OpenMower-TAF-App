@@ -4,16 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/io/mqtt_connection.dart';
 
-enum SuspensionUiState {
-  none,
-  oneDay,
-  threeDays,
-  indefinite,
-  customDate,
-}
-
 class TimetableController extends GetxController {
-  static const String indefiniteSuspensionValue = '9999-12-31T23:59:59Z';
+  static String _todayDateText() {
+    final now = DateTime.now();
+    return '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
 
   static const visibleEntryFields = <String>{
     'day',
@@ -32,14 +27,33 @@ class TimetableController extends GetxController {
   final lastStatusOk = RxnBool();
   final lastUpdated = Rxn<DateTime>();
   final waitingForResponse = false.obs;
+  final currentSystemTimeIso = RxnString();
 
   final rawJsonController = TextEditingController();
   final timezoneController = TextEditingController(text: 'Europe/Berlin');
+  final manualDateController = TextEditingController(text: _todayDateText());
   final hourController = TextEditingController(text: '22');
   final minuteController = TextEditingController(text: '30');
   final ntpServerController = TextEditingController(text: 'pool.ntp.org');
 
   final selectedTimeSource = 'ntp'.obs;
+
+  static const availableTimezones = <String>[
+    'Europe/Berlin',
+    'Europe/Vienna',
+    'Europe/Zurich',
+    'Europe/Amsterdam',
+    'Europe/Paris',
+    'Europe/London',
+    'UTC',
+  ];
+
+  static const timeSourceLabels = <String, String>{
+    'system': 'Systemzeit',
+    'ntp': 'NTP',
+    'gps': 'GPS',
+    'manual': 'Manuell',
+  };
   final editingEntryIds = <String>{}.obs;
   final newEntryDraft = <String, dynamic>{
     'day': 'Sunday',
@@ -54,48 +68,39 @@ class TimetableController extends GetxController {
   bool get hasRobotState => robotState.isNotEmpty;
 
   dynamic get autoMowSuspension => robotState['AutoMowSuspension'] ?? 0;
-  bool get isSuspended => autoMowSuspension != null && autoMowSuspension != 0 && autoMowSuspension.toString() != '0' && autoMowSuspension.toString().trim().isNotEmpty;
+  bool get isSuspended => autoMowSuspension != null && autoMowSuspension != 0 && autoMowSuspension.toString() != '0' && autoMowSuspension.toString().isNotEmpty;
 
-  bool get isIndefinitelySuspended {
-    final value = autoMowSuspension;
-    if (value == null || value == 0 || value.toString() == '0' || value.toString().trim().isEmpty) {
-      return false;
-    }
-
-    final text = value.toString().trim();
-    if (text.startsWith('9999-')) {
-      return true;
-    }
-
-    final parsed = DateTime.tryParse(text);
-    return parsed != null && parsed.year >= 9999;
+  String get selectedTimezone {
+    final value = timezoneController.text.trim();
+    return value.isEmpty ? 'Europe/Berlin' : value;
   }
 
-  SuspensionUiState get suspensionUiState {
-    if (!isSuspended) {
-      return SuspensionUiState.none;
-    }
+  String get formattedSystemTime {
+    final raw = currentSystemTimeIso.value;
+    final parsed = raw == null ? null : DateTime.tryParse(raw);
+    return _formatDateTimeForUi(parsed ?? DateTime.now());
+  }
 
-    if (isIndefinitelySuspended) {
-      return SuspensionUiState.indefinite;
+  String get timeSourceDescription {
+    switch (selectedTimeSource.value) {
+      case 'system':
+        return 'Vorhandene Systemzeit übernehmen.';
+      case 'gps':
+        return 'Zeit aus GPS-Signal übernehmen.';
+      case 'manual':
+        return 'Datum und Uhrzeit manuell setzen.';
+      case 'ntp':
+      default:
+        return 'Zeit über NTP-Server synchronisieren.';
     }
-
-    if (_suspensionMatchesDays(1)) {
-      return SuspensionUiState.oneDay;
-    }
-
-    if (_suspensionMatchesDays(3)) {
-      return SuspensionUiState.threeDays;
-    }
-
-    return SuspensionUiState.customDate;
   }
 
   String get localTimeForManualSet {
     final hour = int.tryParse(hourController.text.trim()) ?? 0;
     final minute = int.tryParse(minuteController.text.trim()) ?? 0;
-    final now = DateTime.now();
-    final manual = DateTime(now.year, now.month, now.day, hour.clamp(0, 23), minute.clamp(0, 59));
+    final dateText = manualDateController.text.trim();
+    final date = DateTime.tryParse(dateText) ?? DateTime.now();
+    final manual = DateTime(date.year, date.month, date.day, hour.clamp(0, 23), minute.clamp(0, 59));
     final offset = manual.timeZoneOffset;
     final sign = offset.isNegative ? '-' : '+';
     final abs = offset.abs();
@@ -129,10 +134,11 @@ class TimetableController extends GetxController {
   // Compatibility handlers for older OpenMower time/timetable topics.
   void setTimeStatus(Map<String, dynamic> payload) {
     final state = _mapOrEmpty(payload['time_state']).isNotEmpty ? _mapOrEmpty(payload['time_state']) : payload;
-    final source = state['source']?.toString();
+    final source = (state['source'] ?? state['active_source'])?.toString();
     if (source == 'manual' || source == 'ntp' || source == 'gps' || source == 'system') {
       selectedTimeSource.value = source!;
     }
+    _updateSystemTimeFromMap(state);
     lastRemarks.assignAll(_stringList(payload['remarks']));
     lastUpdated.value = DateTime.now();
     lastTopic.value = 'legacy/time/status';
@@ -150,51 +156,23 @@ class TimetableController extends GetxController {
   }
 
   void setActionResult(Map<String, dynamic> payload) {
-    final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
-    final status = (root['status'] ?? '').toString().toLowerCase().trim();
-    final result = (root['result'] ?? '').toString().toLowerCase().trim();
-    final ok = _validOrNull(root['valid']) ??
-        _validOrNull(root['ok']) ??
-        _validOrNull(root['accepted']) ??
-        _validOrNull(root['success']) ??
-        (status == 'ok' || status == 'accepted' ? true : null) ??
-        (result == 'valid' || result == 'ok' ? true : null);
-    lastRemarks.assignAll(_stringList(root['remarks']));
+    final ok = _validOrNull(payload['valid']) ?? _validOrNull(payload['ok']) ?? false;
+    lastRemarks.assignAll(_stringList(payload['remarks']));
     lastUpdated.value = DateTime.now();
     lastTopic.value = 'legacy/action_result';
     lastStatusOk.value = ok;
-    final action = (root['action'] ?? 'Action').toString();
-    if (ok == true) {
-      lastStatus.value = '$action bestätigt.';
-    } else if (ok == false) {
-      lastStatus.value = '$action abgelehnt.';
-    } else {
-      lastStatus.value = '$action verarbeitet. Warte auf Bestätigung ...';
-    }
+    final action = (payload['action'] ?? 'Action').toString();
+    lastStatus.value = ok ? '$action bestätigt.' : '$action abgelehnt.';
     waitingForResponse.value = false;
   }
 
   void setValidation(Map<String, dynamic> payload, {String topic = 'timetable/validation/json'}) {
-    final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
-    final status = (root['status'] ?? '').toString().toLowerCase().trim();
-    final result = (root['result'] ?? '').toString().toLowerCase().trim();
-    final ok = _validOrNull(root['valid']) ??
-        _validOrNull(root['ok']) ??
-        _validOrNull(root['accepted']) ??
-        _validOrNull(root['success']) ??
-        (status == 'ok' || status == 'accepted' ? true : null) ??
-        (result == 'valid' || result == 'ok' ? true : null);
+    final ok = _validOrNull(payload['valid']) ?? false;
     lastUpdated.value = DateTime.now();
     lastTopic.value = topic;
     lastStatusOk.value = ok;
-    lastRemarks.assignAll(_stringList(root['remarks']));
-    if (ok == true) {
-      lastStatus.value = 'Server-Validierung erfolgreich.';
-    } else if (ok == false) {
-      lastStatus.value = 'Speichern fehlgeschlagen. Server hat die Timetable abgelehnt.';
-    } else {
-      lastStatus.value = 'Validierungsantwort empfangen. Warte auf eindeutige Bestätigung ...';
-    }
+    lastRemarks.assignAll(_stringList(payload['remarks']));
+    lastStatus.value = ok ? 'Server-Validierung erfolgreich.' : 'Speichern fehlgeschlagen. Server hat die Timetable abgelehnt.';
     waitingForResponse.value = false;
   }
 
@@ -203,6 +181,7 @@ class TimetableController extends GetxController {
     robotState
       ..clear()
       ..addAll(_deepCopy(state));
+    _updateSystemTimeFromMap(state);
     lastUpdated.value = DateTime.now();
     lastTopic.value = topic;
   }
@@ -228,7 +207,7 @@ class TimetableController extends GetxController {
   void requestTimetable() {
     Get.find<MqttConnection>().requestTimetable();
     lastStatus.value = 'Timetable wird vom Server angefordert ...';
-    lastTopic.value = 'timetable/set/renew/json';
+    lastTopic.value = 'timetable/renew/json';
     lastStatusOk.value = null;
   }
 
@@ -260,6 +239,21 @@ class TimetableController extends GetxController {
     });
   }
 
+  void updateTimeSettingsNow() {
+    _updateTimeSettings((settings) {
+      settings['timezone'] = selectedTimezone;
+      settings['active_source'] = selectedTimeSource.value;
+      _applySourceSpecificValues(settings);
+    }, setLocalStatus: false);
+    syncRawJsonFromData();
+    Get.find<MqttConnection>().publishTimetable(Map<String, dynamic>.from(timetableData));
+    waitingForResponse.value = true;
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = 'timetable/set/json';
+    lastStatus.value = 'Zeitaktualisierung gesendet. Warte auf Serverantwort ...';
+    lastStatusOk.value = null;
+  }
+
   void _applySourceSpecificValues(Map<String, dynamic> settings) {
     final source = (settings['active_source'] ?? 'ntp').toString();
     if (source == 'manual') {
@@ -271,7 +265,7 @@ class TimetableController extends GetxController {
     settings['gps'] = _mapOrEmpty(settings['gps']);
   }
 
-  void _updateTimeSettings(void Function(Map<String, dynamic> settings) mutate) {
+  void _updateTimeSettings(void Function(Map<String, dynamic> settings) mutate, {bool setLocalStatus = true}) {
     final next = _deepCopy(timetableData.isEmpty ? _emptyTimetableData() : timetableData);
     final settings = Map<String, dynamic>.from((next['timeSettings'] as Map?) ?? _defaultTimeSettings());
     mutate(settings);
@@ -280,8 +274,10 @@ class TimetableController extends GetxController {
       ..clear()
       ..addAll(next);
     syncRawJsonFromData();
-    lastStatus.value = 'Time Settings lokal aktualisiert, noch nicht gesendet.';
-    lastStatusOk.value = true;
+    if (setLocalStatus) {
+      lastStatus.value = 'Time Settings lokal aktualisiert, noch nicht gesendet.';
+      lastStatusOk.value = true;
+    }
   }
 
   void sendTimetable() {
@@ -457,7 +453,7 @@ class TimetableController extends GetxController {
     Get.find<MqttConnection>().publishSuspension(value);
     waitingForResponse.value = true;
     lastUpdated.value = DateTime.now();
-    lastTopic.value = 'timetable/set/suspension/json';
+    lastTopic.value = 'timetable/suspension/set/json';
     lastStatus.value = 'Aussetzung bis $value gesendet. Warte auf robot_state ...';
     lastStatusOk.value = null;
   }
@@ -466,26 +462,9 @@ class TimetableController extends GetxController {
     Get.find<MqttConnection>().publishSuspension(0);
     waitingForResponse.value = true;
     lastUpdated.value = DateTime.now();
-    lastTopic.value = 'timetable/set/suspension/json';
+    lastTopic.value = 'timetable/suspension/set/json';
     lastStatus.value = 'Aufheben der Aussetzung gesendet. Warte auf robot_state ...';
     lastStatusOk.value = null;
-  }
-
-  void setSuspensionIndefinite() {
-    Get.find<MqttConnection>().publishSuspension(indefiniteSuspensionValue);
-    waitingForResponse.value = true;
-    lastUpdated.value = DateTime.now();
-    lastTopic.value = 'timetable/set/suspension/json';
-    lastStatus.value = 'Unbestimmte Aussetzung gesendet. Warte auf robot_state ...';
-    lastStatusOk.value = null;
-  }
-
-  void toggleSuspensionIndefinite() {
-    if (isIndefinitelySuspended) {
-      clearSuspension();
-      return;
-    }
-    setSuspensionIndefinite();
   }
 
   void toggleSuspensionDays(int days) {
@@ -498,7 +477,6 @@ class TimetableController extends GetxController {
   }
 
   bool _suspensionMatchesDays(int days) {
-    if (isIndefinitelySuspended) return false;
     final value = autoMowSuspension;
     if (value == null || value == 0) return false;
     final until = DateTime.tryParse(value.toString());
@@ -611,6 +589,7 @@ class TimetableController extends GetxController {
     final manual = _mapOrEmpty(settings['manual']);
     final manualDate = DateTime.tryParse(manual['datetime']?.toString() ?? '');
     if (manualDate != null) {
+      manualDateController.text = '${manualDate.year.toString().padLeft(4, '0')}-${manualDate.month.toString().padLeft(2, '0')}-${manualDate.day.toString().padLeft(2, '0')}';
       hourController.text = manualDate.hour.toString().padLeft(2, '0');
       minuteController.text = manualDate.minute.toString().padLeft(2, '0');
     }
@@ -625,16 +604,47 @@ class TimetableController extends GetxController {
 
   bool? _validOrNull(dynamic value) {
     if (value is bool) return value;
-    if (value is String) {
-      final lower = value.toLowerCase().trim();
-      if (lower == 'true' || lower == 'ok' || lower == 'accepted' || lower == 'valid' || lower == 'success') return true;
-      if (lower == 'false' || lower == 'invalid' || lower == 'rejected' || lower == 'error' || lower == 'failed') return false;
-    }
     if (value is num) {
       if (value == 1) return true;
       if (value == 0) return false;
     }
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized == 'true' || normalized == 'ok' || normalized == 'accepted' || normalized == 'valid' || normalized == 'success') return true;
+      if (normalized == 'false' || normalized == 'error' || normalized == 'rejected' || normalized == 'invalid' || normalized == 'failed') return false;
+    }
     return null;
+  }
+
+  void _updateSystemTimeFromMap(Map<String, dynamic> map) {
+    final candidates = <dynamic>[
+      map['system_time'],
+      map['current_time'],
+      map['datetime'],
+      map['date_time'],
+      map['time'],
+      _mapOrEmpty(map['system'])['time'],
+    ];
+    for (final candidate in candidates) {
+      if (candidate == null) continue;
+      final text = candidate.toString();
+      if (text.isEmpty) continue;
+      if (DateTime.tryParse(text) != null) {
+        currentSystemTimeIso.value = text;
+        return;
+      }
+    }
+  }
+
+  String _formatDateTimeForUi(DateTime dateTime) {
+    const weekdays = <String>['Mo.', 'Di.', 'Mi.', 'Do.', 'Fr.', 'Sa.', 'So.'];
+    final weekday = weekdays[dateTime.weekday - 1];
+    final day = dateTime.day.toString().padLeft(2, '0');
+    final month = dateTime.month.toString().padLeft(2, '0');
+    final year = dateTime.year.toString().padLeft(4, '0');
+    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    return '$weekday, $day.$month.$year · $hour:$minute Uhr';
   }
 
   List<String> _stringList(dynamic value) {
@@ -664,6 +674,7 @@ class TimetableController extends GetxController {
   void onClose() {
     rawJsonController.dispose();
     timezoneController.dispose();
+    manualDateController.dispose();
     hourController.dispose();
     minuteController.dispose();
     ntpServerController.dispose();
