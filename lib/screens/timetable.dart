@@ -101,6 +101,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
     final color = Theme.of(context).primaryColor;
     return Card(
       margin: EdgeInsets.zero,
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -108,7 +110,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
           backgroundColor: color.withOpacity(0.08),
           collapsedBackgroundColor: color.withOpacity(0.08),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          childrenPadding: EdgeInsets.zero,
           leading: Icon(icon, color: color, size: 32),
           iconColor: color,
           collapsedIconColor: color,
@@ -117,8 +119,11 @@ class _TimetableScreenState extends State<TimetableScreen> {
           children: [
             Container(
               width: double.infinity,
-              color: Theme.of(context).cardColor,
-              padding: EdgeInsets.zero,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.04),
+                border: Border(top: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.45))),
+              ),
               child: child,
             ),
           ],
@@ -137,13 +142,15 @@ class _TimetableScreenState extends State<TimetableScreen> {
     final color = Theme.of(context).primaryColor;
     return Card(
       margin: EdgeInsets.zero,
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       child: Container(
         color: color.withOpacity(0.08),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -163,8 +170,11 @@ class _TimetableScreenState extends State<TimetableScreen> {
             ),
             Container(
               width: double.infinity,
-              color: Theme.of(context).cardColor,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.04),
+                border: Border(top: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.45))),
+              ),
               child: child,
             ),
           ],
@@ -173,91 +183,134 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
+  Widget _panelCard(
+    BuildContext context, {
+    required Widget child,
+    EdgeInsetsGeometry padding = const EdgeInsets.all(16),
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: padding,
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.65)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
   Widget _buildTimeSettingsCard(BuildContext context) {
+    final color = Theme.of(context).primaryColor;
     final source = controller.selectedTimeSource.value;
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 640;
-        final horizontalPadding = isMobile ? 16.0 : 24.0;
-        final contentMaxWidth = isMobile ? double.infinity : 1120.0;
+        final topCards = <Widget>[
+          _timeStatusCard(context, isMobile: isMobile),
+          _timezoneCard(context, isMobile: isMobile),
+        ];
 
-        final content = Column(
+        return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            isMobile
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _timeInfoCard(
-                        context,
-                        title: 'Aktuelle Systemzeit',
-                        value: controller.formattedSystemTime,
-                      ),
-                      const SizedBox(height: 12),
-                      _timezoneCard(context, isMobile: true),
-                    ],
-                  )
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: _timeInfoCard(
-                          context,
-                          title: 'Aktuelle Systemzeit',
-                          value: controller.formattedSystemTime,
+            if (isMobile)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _withSpacing(topCards, vertical: 12),
+              )
+            else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: topCards[0]),
+                  const SizedBox(width: 12),
+                  Expanded(child: topCards[1]),
+                ],
+              ),
+            const SizedBox(height: 12),
+            _panelCard(
+              context,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Zeit aktualisieren über', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade700)),
+                  const SizedBox(height: 10),
+                  _timeSourceSelector(context, source: source, isMobile: isMobile),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: color.withOpacity(0.12)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _timeSourceDetailTitle(source),
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 10),
+                        _timeSourceDetails(context, source: source, isMobile: isMobile),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: isMobile ? Alignment.center : Alignment.centerRight,
+                    child: SizedBox(
+                      width: isMobile ? double.infinity : 260,
+                      child: ElevatedButton.icon(
+                        onPressed: controller.updateTimeSettingsNow,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Zeit aktualisieren'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(child: _timezoneCard(context, isMobile: false)),
-                    ],
+                    ),
                   ),
-            const SizedBox(height: 16),
-            _timeSourcePanel(context, source: source, isMobile: isMobile),
-            const SizedBox(height: 16),
-            _timeActionBar(context, isMobile: isMobile),
-            const SizedBox(height: 12),
-            _timeInfoNotice(context),
-          ],
-        );
-
-        return Container(
-          width: double.infinity,
-          padding: EdgeInsets.fromLTRB(horizontalPadding, 18, horizontalPadding, 22),
-          color: Theme.of(context).cardColor,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: contentMaxWidth),
-              child: content,
+                ],
+              ),
             ),
-          ),
+            const SizedBox(height: 12),
+            _infoBanner(
+              context,
+              'Die ausgewählte Zeitquelle und Zeitzone werden erst beim Klick auf „Zeit aktualisieren“ angewendet.',
+            ),
+          ],
         );
       },
     );
   }
 
-  Widget _timeInfoCard(BuildContext context, {required String title, required String value}) {
-    final color = Theme.of(context).primaryColor;
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: _softCardDecoration(context),
+  Widget _timeStatusCard(BuildContext context, {required bool isMobile}) {
+    return _panelCard(
+      context,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade700)),
+          Text('Aktuelle Systemzeit', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade700)),
           const SizedBox(height: 8),
           Text(
-            value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: Theme.of(context).textTheme.titleLarge?.color,
-                ),
+            controller.formattedSystemTime,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
           Text(
-            'Die angezeigte Zeit wird aus dem letzten bestätigten Robot-State gelesen.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color.withOpacity(0.85)),
+            'Die angezeigte Zeit wird aus dem zuletzt bestätigten Robot-State gelesen.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).primaryColor),
           ),
         ],
       ),
@@ -265,9 +318,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
   }
 
   Widget _timezoneCard(BuildContext context, {required bool isMobile}) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: _softCardDecoration(context),
+    return _panelCard(
+      context,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -275,11 +327,9 @@ class _TimetableScreenState extends State<TimetableScreen> {
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             value: _safeValue(controller.selectedTimezone, TimetableController.availableTimezones),
-            isExpanded: true,
             decoration: const InputDecoration(
               isDense: true,
               border: UnderlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(vertical: 10),
             ),
             items: TimetableController.availableTimezones
                 .map((value) => DropdownMenuItem<String>(value: value, child: Text(value)))
@@ -301,48 +351,13 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  Widget _timeSourcePanel(BuildContext context, {required String source, required bool isMobile}) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: _softCardDecoration(context),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('Zeit aktualisieren über', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade700)),
-          const SizedBox(height: 12),
-          _timeSourceSelector(context, source: source, isMobile: isMobile),
-          const SizedBox(height: 16),
-          _timeSourceDetailsCard(context, source: source, isMobile: isMobile),
-        ],
-      ),
-    );
-  }
-
-  Widget _timeActionBar(BuildContext context, {required bool isMobile}) {
-    return Align(
-      alignment: isMobile ? Alignment.center : Alignment.centerRight,
-      child: SizedBox(
-        width: isMobile ? double.infinity : 260,
-        child: ElevatedButton.icon(
-          onPressed: controller.updateTimeSettingsNow,
-          icon: const Icon(Icons.refresh),
-          label: const Text('Zeit aktualisieren'),
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
-            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _timeInfoNotice(BuildContext context) {
+  Widget _infoBanner(BuildContext context, String text) {
     final color = Theme.of(context).primaryColor;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        border: Border.all(color: color.withOpacity(0.28)),
+        border: Border.all(color: color.withOpacity(0.35)),
         borderRadius: BorderRadius.circular(6),
         color: color.withOpacity(0.03),
       ),
@@ -351,101 +366,88 @@ class _TimetableScreenState extends State<TimetableScreen> {
         children: [
           Icon(Icons.info_outline, color: color, size: 22),
           const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Die ausgewählte Zeitquelle und Zeitzone werden erst beim Klick auf „Zeit aktualisieren“ angewendet.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color),
-            ),
-          ),
+          Expanded(child: Text(text, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color))),
         ],
       ),
     );
   }
 
-  BoxDecoration _softCardDecoration(BuildContext context) {
-    return BoxDecoration(
-      color: Theme.of(context).cardColor,
-      borderRadius: BorderRadius.circular(6),
-      border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.65)),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.03),
-          blurRadius: 10,
-          offset: const Offset(0, 2),
-        ),
-      ],
+  Widget _timeSettingsBlock(BuildContext context, {required String label, required Widget child}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade700)),
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
     );
+  }
+
+  Widget _timeDivider(BuildContext context) {
+    return Divider(height: 24, color: Theme.of(context).dividerColor.withOpacity(0.75));
   }
 
   Widget _timeSourceSelector(BuildContext context, {required String source, required bool isMobile}) {
     final entries = const <String>['system', 'ntp', 'gps', 'manual'];
     if (isMobile) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < entries.length; i++) ...[
-            _timeSourceButton(context, source: entries[i], active: source == entries[i], compact: false),
-            if (i < entries.length - 1) const SizedBox(height: 8),
-          ],
-        ],
+      return Row(
+        children: entries
+            .map((entry) => Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: _timeSourceButton(context, source: entry, active: source == entry, compact: true),
+                  ),
+                ))
+            .toList(),
       );
     }
 
-    return Row(
-      children: entries
-          .map((entry) => Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(right: entry == entries.last ? 0 : 10),
+    return SizedBox(
+      width: 760,
+      child: Row(
+        children: entries
+            .map((entry) => Expanded(
                   child: _timeSourceButton(context, source: entry, active: source == entry, compact: false),
-                ),
-              ))
-          .toList(),
+                ))
+            .toList(),
+      ),
     );
   }
 
   Widget _timeSourceButton(BuildContext context, {required String source, required bool active, required bool compact}) {
     final color = Theme.of(context).primaryColor;
     final label = TimetableController.timeSourceLabels[source] ?? source;
-
-    if (active) {
-      return ElevatedButton(
-        onPressed: () => controller.setSelectedTimeSource(source),
-        style: ElevatedButton.styleFrom(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: compact ? 12 : 15),
-          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+    return InkWell(
+      onTap: () => controller.setSelectedTimeSource(source),
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        height: compact ? 46 : 50,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: active ? color : color.withOpacity(0.65)),
+          color: active ? color : Theme.of(context).cardColor,
+          boxShadow: active
+              ? const [
+                  BoxShadow(
+                    color: Color(0x1F000000),
+                    blurRadius: 3,
+                    offset: Offset(0, 1),
+                  ),
+                ]
+              : null,
         ),
-        child: Text('✓ $label', textAlign: TextAlign.center),
-      );
-    }
-
-    return OutlinedButton(
-      onPressed: () => controller.setSelectedTimeSource(source),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: color,
-        side: BorderSide(color: color.withOpacity(0.75)),
-        padding: EdgeInsets.symmetric(horizontal: 16, vertical: compact ? 12 : 15),
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-      ),
-      child: Text(label, textAlign: TextAlign.center),
-    );
-  }
-
-  Widget _timeSourceDetailsCard(BuildContext context, {required String source, required bool isMobile}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(6),
-        color: Theme.of(context).primaryColor.withOpacity(0.04),
-        border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.18)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(_timeSourceDetailTitle(source), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 10),
-          _timeSourceDetails(context, source: source, isMobile: isMobile),
-        ],
+        child: Text(
+          active ? '✓ $label' : label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: active ? Colors.white : color,
+            fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+          ),
+        ),
       ),
     );
   }
@@ -455,12 +457,12 @@ class _TimetableScreenState extends State<TimetableScreen> {
       case 'system':
         return 'Systemzeit verwenden';
       case 'gps':
-        return 'GPS-Zeit übernehmen';
+        return 'GPS-Zeit verwenden';
       case 'manual':
         return 'Manuelle Zeit setzen';
       case 'ntp':
       default:
-        return 'NTP synchronisieren';
+        return 'NTP-Server';
     }
   }
 
@@ -474,7 +476,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
             child: TextFormField(
               controller: controller.ntpServerController,
               decoration: const InputDecoration(
-                labelText: 'NTP-Server',
                 isDense: true,
                 border: OutlineInputBorder(),
                 hintText: 'pool.ntp.org',
@@ -547,10 +548,13 @@ class _TimetableScreenState extends State<TimetableScreen> {
     final color = Theme.of(context).primaryColor;
     return Card(
       margin: EdgeInsets.zero,
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
+          Container(
+            color: color.withOpacity(0.08),
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
             child: Row(
               children: [
@@ -575,10 +579,14 @@ class _TimetableScreenState extends State<TimetableScreen> {
               ],
             ),
           ),
-          const Divider(height: 1),
-          Padding(
+          Container(
+            width: double.infinity,
             padding: const EdgeInsets.all(16),
-            child: _buildSuspensionCard(context),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.04),
+              border: Border(top: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.45))),
+            ),
+            child: _panelCard(context, child: _buildSuspensionCard(context)),
           ),
         ],
       ),
@@ -904,31 +912,35 @@ class _TimetableScreenState extends State<TimetableScreen> {
   Widget _buildEntriesSection(BuildContext context, Map<String, dynamic> timetable) {
     final entries = timetable.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Die technische ID wird automatisch erzeugt, intern als Key unter timetable verwendet und nicht angezeigt.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: 12),
-        if (entries.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Text('Noch keine Mähzeiten vorhanden.', style: Theme.of(context).textTheme.bodyMedium),
-          )
-        else
-          ...entries.map((entry) {
-            final item = Map<String, dynamic>.from((entry.value as Map?) ?? <String, dynamic>{});
-            return Padding(
+    return _panelCard(
+      context,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Die technische ID wird automatisch erzeugt, intern als Key unter timetable verwendet und nicht angezeigt.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          if (entries.isEmpty)
+            Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: _buildEntryRow(context, entry.key, item),
-            );
-          }),
-        Text('Neuer Eintrag', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        _buildNewEntryRow(context),
-      ],
+              child: Text('Noch keine Mähzeiten vorhanden.', style: Theme.of(context).textTheme.bodyMedium),
+            )
+          else
+            ...entries.map((entry) {
+              final item = Map<String, dynamic>.from((entry.value as Map?) ?? <String, dynamic>{});
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildEntryRow(context, entry.key, item),
+              );
+            }),
+          const SizedBox(height: 4),
+          Text('Neuer Eintrag', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          _buildNewEntryRow(context),
+        ],
+      ),
     );
   }
 
