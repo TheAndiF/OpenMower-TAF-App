@@ -83,16 +83,15 @@ class TimetableController extends GetxController {
 
   // Compatibility handlers for older OpenMower time/timetable topics.
   void setTimeStatus(Map<String, dynamic> payload) {
-    final root = _unwrapResponseRoot(payload);
-    final state = _mapOrEmpty(root['time_state']).isNotEmpty ? _mapOrEmpty(root['time_state']) : root;
+    final state = _mapOrEmpty(payload['time_state']).isNotEmpty ? _mapOrEmpty(payload['time_state']) : payload;
     final source = state['source']?.toString();
     if (source == 'manual' || source == 'ntp' || source == 'gps' || source == 'system') {
       selectedTimeSource.value = source!;
     }
-    lastRemarks.assignAll(_stringList(root['remarks']));
+    lastRemarks.assignAll(_stringList(payload['remarks']));
     lastUpdated.value = DateTime.now();
     lastTopic.value = 'legacy/time/status';
-    lastStatusOk.value = _acceptanceOrNull(root) ?? _acceptanceOrNull(state);
+    lastStatusOk.value = _validOrNull(payload['valid']) ?? _validOrNull(state['valid']);
     lastStatus.value = 'Zeitstatus empfangen.';
     waitingForResponse.value = false;
   }
@@ -106,8 +105,15 @@ class TimetableController extends GetxController {
   }
 
   void setActionResult(Map<String, dynamic> payload) {
-    final root = _unwrapResponseRoot(payload);
-    final ok = _acceptanceOrNull(root);
+    final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
+    final status = (root['status'] ?? '').toString().toLowerCase().trim();
+    final result = (root['result'] ?? '').toString().toLowerCase().trim();
+    final ok = _validOrNull(root['valid']) ??
+        _validOrNull(root['ok']) ??
+        _validOrNull(root['accepted']) ??
+        _validOrNull(root['success']) ??
+        (status == 'ok' || status == 'accepted' ? true : null) ??
+        (result == 'valid' || result == 'ok' ? true : null);
     lastRemarks.assignAll(_stringList(root['remarks']));
     lastUpdated.value = DateTime.now();
     lastTopic.value = 'legacy/action_result';
@@ -115,35 +121,40 @@ class TimetableController extends GetxController {
     final action = (root['action'] ?? 'Action').toString();
     if (ok == true) {
       lastStatus.value = '$action bestätigt.';
-      waitingForResponse.value = false;
     } else if (ok == false) {
       lastStatus.value = '$action abgelehnt.';
-      waitingForResponse.value = false;
     } else {
-      lastStatus.value = '$action-Antwort empfangen. Warte auf eindeutige Serverbestätigung ...';
+      lastStatus.value = '$action verarbeitet. Warte auf Bestätigung ...';
     }
+    waitingForResponse.value = false;
   }
 
   void setValidation(Map<String, dynamic> payload, {String topic = 'timetable/validation/json'}) {
-    final root = _unwrapResponseRoot(payload);
-    final ok = _acceptanceOrNull(root);
+    final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
+    final status = (root['status'] ?? '').toString().toLowerCase().trim();
+    final result = (root['result'] ?? '').toString().toLowerCase().trim();
+    final ok = _validOrNull(root['valid']) ??
+        _validOrNull(root['ok']) ??
+        _validOrNull(root['accepted']) ??
+        _validOrNull(root['success']) ??
+        (status == 'ok' || status == 'accepted' ? true : null) ??
+        (result == 'valid' || result == 'ok' ? true : null);
     lastUpdated.value = DateTime.now();
     lastTopic.value = topic;
     lastStatusOk.value = ok;
     lastRemarks.assignAll(_stringList(root['remarks']));
     if (ok == true) {
-      lastStatus.value = 'Gespeichert. Server hat die Timetable bestätigt.';
-      waitingForResponse.value = false;
+      lastStatus.value = 'Server-Validierung erfolgreich.';
     } else if (ok == false) {
       lastStatus.value = 'Speichern fehlgeschlagen. Server hat die Timetable abgelehnt.';
-      waitingForResponse.value = false;
     } else {
-      lastStatus.value = 'Validierungsantwort empfangen. Warte auf eindeutige Serverbestätigung ...';
+      lastStatus.value = 'Validierungsantwort empfangen. Warte auf eindeutige Bestätigung ...';
     }
+    waitingForResponse.value = false;
   }
 
   void setRobotState(Map<String, dynamic> payload, {String topic = 'robot_state/json'}) {
-    final state = _unwrapResponseRoot(payload);
+    final state = _mapOrEmpty(payload['d']).isNotEmpty ? _mapOrEmpty(payload['d']) : payload;
     robotState
       ..clear()
       ..addAll(_deepCopy(state));
@@ -151,19 +162,14 @@ class TimetableController extends GetxController {
     lastTopic.value = topic;
   }
 
-  void setResponse(bool? accepted, String reason, {String topic = 'timetable/response/json'}) {
+  void setResponse(bool accepted, String reason, {String topic = 'timetable/response/json'}) {
+    waitingForResponse.value = false;
     lastUpdated.value = DateTime.now();
     lastTopic.value = topic;
     lastStatusOk.value = accepted;
-    if (accepted == true) {
-      lastStatus.value = reason.isEmpty ? 'Service hat die Änderung bestätigt.' : 'Bestätigt: $reason';
-      waitingForResponse.value = false;
-    } else if (accepted == false) {
-      lastStatus.value = reason.isEmpty ? 'Service hat die Änderung abgelehnt.' : 'Abgelehnt: $reason';
-      waitingForResponse.value = false;
-    } else {
-      lastStatus.value = reason.isEmpty ? 'Antwort empfangen. Warte auf eindeutige Serverbestätigung ...' : reason;
-    }
+    lastStatus.value = accepted
+        ? (reason.isEmpty ? 'Service hat die Änderung bestätigt.' : 'Bestätigt: $reason')
+        : (reason.isEmpty ? 'Service hat die Änderung abgelehnt.' : 'Abgelehnt: $reason');
   }
 
   void setError(String message, {String topic = ''}) {
@@ -177,7 +183,7 @@ class TimetableController extends GetxController {
   void requestTimetable() {
     Get.find<MqttConnection>().requestTimetable();
     lastStatus.value = 'Timetable wird vom Server angefordert ...';
-    lastTopic.value = 'timetable/renew/json';
+    lastTopic.value = 'timetable/set/renew/json';
     lastStatusOk.value = null;
   }
 
@@ -406,7 +412,7 @@ class TimetableController extends GetxController {
     Get.find<MqttConnection>().publishSuspension(value);
     waitingForResponse.value = true;
     lastUpdated.value = DateTime.now();
-    lastTopic.value = 'timetable/suspension/set/json';
+    lastTopic.value = 'timetable/set/suspension/json';
     lastStatus.value = 'Aussetzung bis $value gesendet. Warte auf robot_state ...';
     lastStatusOk.value = null;
   }
@@ -415,7 +421,7 @@ class TimetableController extends GetxController {
     Get.find<MqttConnection>().publishSuspension(0);
     waitingForResponse.value = true;
     lastUpdated.value = DateTime.now();
-    lastTopic.value = 'timetable/suspension/set/json';
+    lastTopic.value = 'timetable/set/suspension/json';
     lastStatus.value = 'Aufheben der Aussetzung gesendet. Warte auf robot_state ...';
     lastStatusOk.value = null;
   }
@@ -554,34 +560,16 @@ class TimetableController extends GetxController {
     return <String, dynamic>{};
   }
 
-  Map<String, dynamic> _unwrapResponseRoot(Map<String, dynamic> data) {
-    final wrapped = _mapOrEmpty(data['d']);
-    return wrapped.isNotEmpty ? wrapped : data;
-  }
-
-  bool? _acceptanceOrNull(Map<String, dynamic> data) {
-    return _validOrNull(data['valid']) ??
-        _validOrNull(data['ok']) ??
-        _validOrNull(data['accepted']) ??
-        _validOrNull(data['success']) ??
-        _validOrNull(data['result']) ??
-        _validOrNull(data['status']);
-  }
-
   bool? _validOrNull(dynamic value) {
     if (value is bool) return value;
+    if (value is String) {
+      final lower = value.toLowerCase().trim();
+      if (lower == 'true' || lower == 'ok' || lower == 'accepted' || lower == 'valid' || lower == 'success') return true;
+      if (lower == 'false' || lower == 'invalid' || lower == 'rejected' || lower == 'error' || lower == 'failed') return false;
+    }
     if (value is num) {
       if (value == 1) return true;
       if (value == 0) return false;
-    }
-    if (value is String) {
-      final lower = value.trim().toLowerCase();
-      if (lower == 'true' || lower == '1' || lower == 'ok' || lower == 'accepted' || lower == 'success' || lower == 'successful' || lower == 'valid') {
-        return true;
-      }
-      if (lower == 'false' || lower == '0' || lower == 'failed' || lower == 'failure' || lower == 'rejected' || lower == 'invalid' || lower == 'error') {
-        return false;
-      }
     }
     return null;
   }

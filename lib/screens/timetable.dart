@@ -58,13 +58,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildStaticSection(
-                  context,
-                  icon: Icons.pause_circle_outline,
-                  title: 'Mähzeit aussetzen',
-                  subtitle: 'Direkte MQTT-Aussetzung; Bestätigung kommt über robot_state.AutoMowSuspension',
-                  child: _buildSuspensionCard(context),
-                ),
+                _buildSuspensionSection(context),
                 const SizedBox(height: 16),
                 _buildSection(
                   context,
@@ -287,37 +281,211 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
+  Widget _buildSuspensionSection(BuildContext context) {
+    final color = Theme.of(context).primaryColor;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: Row(
+              children: [
+                _headerStatusIcon(color: color, active: controller.isSuspended),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Mähzeit aussetzen',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Mähbetrieb vorübergehend pausieren',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: _buildSuspensionCard(context),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSuspensionCard(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 760;
     final oneDayActive = controller.isSuspended && _suspensionLooksLikeDays(1);
     final threeDaysActive = controller.isSuspended && _suspensionLooksLikeDays(3);
-    final suspensionValue = controller.autoMowSuspension;
-    final statusText = controller.isSuspended ? 'Ausgesetzt bis: $suspensionValue' : 'Aktuell keine Aussetzung aktiv.';
+    final until = _parseSuspensionDate(controller.autoMowSuspension);
+    final active = controller.isSuspended;
+    final headline = active ? 'AutoMow pausiert bis' : 'Keine Aussetzung aktiv';
+    final dateText = active ? _formatSuspensionDate(until!) : 'AutoMow ist nicht pausiert';
+    final relativeText = active ? _formatSuspensionRelative(until) : null;
 
-    return Wrap(
-      spacing: 12,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(child: _bodyStatusIcon(context, active: active)),
+          const SizedBox(height: 18),
+          Text(headline, textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).hintColor)),
+          const SizedBox(height: 6),
+          Text(
+            dateText,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          if (relativeText != null) ...[
+            const SizedBox(height: 6),
+            Text(relativeText, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor)),
+          ],
+          const SizedBox(height: 20),
+          _actionButton(context, label: '1 Tag aussetzen', active: oneDayActive, onPressed: () => controller.toggleSuspensionDays(1)),
+          const SizedBox(height: 12),
+          _actionButton(context, label: '3 Tage aussetzen', active: threeDaysActive, onPressed: () => controller.toggleSuspensionDays(3)),
+          const SizedBox(height: 12),
+          _actionButton(context, label: 'Aufheben', active: false, onPressed: active ? controller.clearSuspension : null),
+        ],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        _toggleButton(
-          context,
-          active: oneDayActive,
-          icon: Icons.looks_one,
-          label: '1 Tag aussetzen',
-          onPressed: () => controller.toggleSuspensionDays(1),
+        _bodyStatusIcon(context, active: active),
+        const SizedBox(width: 24),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(headline, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Theme.of(context).hintColor)),
+              const SizedBox(height: 8),
+              Text(
+                dateText,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              if (relativeText != null) ...[
+                const SizedBox(height: 8),
+                Text(relativeText, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).hintColor)),
+              ],
+            ],
+          ),
         ),
-        _toggleButton(
-          context,
-          active: threeDaysActive,
-          icon: Icons.looks_3,
-          label: '3 Tage aussetzen',
-          onPressed: () => controller.toggleSuspensionDays(3),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(left: 8),
-          child: Text(statusText, style: Theme.of(context).textTheme.bodyMedium),
+        const SizedBox(width: 24),
+        Expanded(
+          child: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              SizedBox(
+                width: 180,
+                child: _actionButton(context, label: '1 Tag aussetzen', active: oneDayActive, onPressed: () => controller.toggleSuspensionDays(1)),
+              ),
+              SizedBox(
+                width: 180,
+                child: _actionButton(context, label: '3 Tage aussetzen', active: threeDaysActive, onPressed: () => controller.toggleSuspensionDays(3)),
+              ),
+              SizedBox(
+                width: 180,
+                child: _actionButton(context, label: 'Aufheben', active: false, onPressed: active ? controller.clearSuspension : null),
+              ),
+            ],
+          ),
         ),
       ],
     );
+  }
+
+  Widget _headerStatusIcon({required Color color, required bool active}) {
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: active ? color : Colors.grey.shade400, width: 2),
+      ),
+      child: Icon(Icons.pause, color: active ? color : Colors.grey.shade500, size: 24),
+    );
+  }
+
+  Widget _bodyStatusIcon(BuildContext context, {required bool active}) {
+    final color = Theme.of(context).primaryColor;
+    final bgColor = active ? color.withOpacity(0.10) : Colors.grey.shade100;
+    final iconColor = active ? color : Colors.grey.shade500;
+    return Container(
+      width: 132,
+      height: 132,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: bgColor,
+      ),
+      child: Icon(Icons.pause, color: iconColor, size: 64),
+    );
+  }
+
+  Widget _actionButton(BuildContext context, {required String label, required bool active, required VoidCallback? onPressed}) {
+    if (active) {
+      return ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        ),
+        child: Text(label, textAlign: TextAlign.center),
+      );
+    }
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+        textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+      ),
+      child: Text(label, textAlign: TextAlign.center),
+    );
+  }
+
+  DateTime? _parseSuspensionDate(dynamic value) {
+    if (value == null || value == 0 || value.toString() == '0' || value.toString().trim().isEmpty) {
+      return null;
+    }
+    return DateTime.tryParse(value.toString())?.toLocal();
+  }
+
+  String _formatSuspensionDate(DateTime date) {
+    const weekdays = ['Mo.', 'Di.', 'Mi.', 'Do.', 'Fr.', 'Sa.', 'So.'];
+    final weekday = weekdays[date.weekday - 1];
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final year = date.year.toString();
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '$weekday, $day.$month.$year · $hour:$minute Uhr';
+  }
+
+  String _formatSuspensionRelative(DateTime? until) {
+    if (until == null) return '';
+    var diff = until.difference(DateTime.now());
+    if (diff.isNegative) diff = Duration.zero;
+    final days = diff.inDays;
+    final hours = diff.inHours % 24;
+    final minutes = diff.inMinutes % 60;
+    final parts = <String>[];
+    if (days > 0) parts.add('$days ${days == 1 ? 'Tag' : 'Tagen'}');
+    if (hours > 0) parts.add('$hours ${hours == 1 ? 'Stunde' : 'Stunden'}');
+    if (days == 0 && hours == 0) parts.add('$minutes ${minutes == 1 ? 'Minute' : 'Minuten'}');
+    return '(in ${parts.join(', ')})';
   }
 
   Widget _toggleButton(BuildContext context, {required bool active, required IconData icon, required String label, required VoidCallback onPressed}) {

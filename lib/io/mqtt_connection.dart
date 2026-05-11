@@ -47,11 +47,11 @@ class MqttConnection  {
 
   static const String timetableTopic = "timetable/json";
   static const String timetableBsonTopic = "timetable/bson";
-  static const String timetableRenewJsonTopic = "timetable/renew/json";
+  static const String timetableRenewJsonTopic = "timetable/set/renew/json";
   static const String timetableSetTopic = "timetable/set/json";
   static const String timetableValidationJsonTopic = "timetable/validation/json";
   static const String timetableValidationBsonTopic = "timetable/validation/bson";
-  static const String timetableSuspensionSetJsonTopic = "timetable/suspension/set/json";
+  static const String timetableSuspensionSetJsonTopic = "timetable/set/suspension/json";
 
   // Legacy topics kept for compatibility with older services.
   static const String timetableRequestTopic = "timetable/request";
@@ -101,14 +101,6 @@ class MqttConnection  {
     return bson ? _decodeBsonMap(_payloadBytes(payload)) : _decodeJsonMap(_payloadBytes(payload));
   }
 
-  Map<String, dynamic> _unwrapMap(Map<String, dynamic> map) {
-    final wrapped = map["d"];
-    if (wrapped is Map) {
-      return Map<String, dynamic>.from(wrapped);
-    }
-    return map;
-  }
-
   void parseTimetableMessage(MqttPublishMessage payload, {bool bson = false}) {
     try {
       final map = _decodeMap(payload, bson: bson);
@@ -129,25 +121,33 @@ class MqttConnection  {
         timetableController.setError("Leere oder ungültige Timetable-Antwort empfangen.");
         return;
       }
-      final root = _unwrapMap(map);
+      final root = map['d'] is Map ? Map<String, dynamic>.from(map['d'] as Map) : map;
       if (root.containsKey("timetable")) {
         timetableController.setTimetablePayload(root);
         return;
       }
       if (root.containsKey("valid") ||
+          root.containsKey("remarks") ||
+          root.containsKey("time_state") ||
+          root.containsKey("robot_state") ||
           root.containsKey("ok") ||
           root.containsKey("accepted") ||
           root.containsKey("success") ||
           root.containsKey("status") ||
-          root.containsKey("result") ||
-          root.containsKey("remarks") ||
-          root.containsKey("time_state") ||
-          root.containsKey("robot_state")) {
+          root.containsKey("result")) {
         timetableController.setActionResult(root);
         return;
       }
+      final status = (root["status"] ?? '').toString().toLowerCase();
+      final result = (root["result"] ?? '').toString().toLowerCase();
+      final accepted = root["accepted"] == true ||
+          root["ok"] == true ||
+          root["success"] == true ||
+          status == "accepted" ||
+          status == "ok" ||
+          result == "valid";
       final reason = (root["reason"] ?? root["message"] ?? "").toString();
-      timetableController.setResponse(null, reason);
+      timetableController.setResponse(accepted, reason);
     } catch (e) {
       timetableController.setError("Timetable-Antwort konnte nicht gelesen werden: $e");
     }
