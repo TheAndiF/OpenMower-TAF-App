@@ -358,7 +358,7 @@ class MqttConnection  {
       _publishJson(mapRenewJsonTopic, {"request": "renew", "source": "app", "request_id": _requestId("map_renew")});
     } catch(e) {
       debugPrint("error requesting map via mqtt");
-      mqttAreasController.setError("MQTT-Flächen-Anfrage konnte nicht gesendet werden.");
+      mqttAreasController.setError("Flächen-Anfrage konnte nicht gesendet werden.");
     }
   }
 
@@ -367,7 +367,7 @@ class MqttConnection  {
       _publishJson(mapSetJsonTopic, map, qos: MqttQos.exactlyOnce);
     } catch(e) {
       debugPrint("error publishing map to mqtt");
-      mqttAreasController.setError("MQTT-Flächen konnten nicht gesendet werden.");
+      mqttAreasController.setError("Flächen konnten nicht gesendet werden.");
     }
   }
 

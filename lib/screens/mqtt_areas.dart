@@ -52,8 +52,8 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
                 _buildSection(
                   context,
                   icon: Icons.grass,
-                  title: 'Mähzeiten',
-                  subtitle: 'Nur MQTT-Flächen vom Typ mow, sortiert nach Mähreihenfolge',
+                  title: 'Flächen',
+                  subtitle: 'Nur Flächen vom Typ mow, sortiert nach Mähreihenfolge',
                   child: _buildMowAreasSection(context, mowAreas),
                 ),
                 const SizedBox(height: 16),
@@ -307,7 +307,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Text(
-          'Noch keine MQTT-Flächen empfangen. Sobald ein map/json Payload eintrifft, erscheinen die Mähflächen hier.',
+          'Noch keine Flächen empfangen. Sobald ein map/json Payload eintrifft, erscheinen die Mähflächen hier.',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       );
@@ -317,7 +317,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Text(
-          'Der letzte MQTT-Payload enthält keine Fläche mit properties.type = mow.',
+          'Der letzte Payload enthält keine Fläche mit properties.type = mow.',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       );
@@ -452,7 +452,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
                               children: [
                                 Text('JSON-Ansicht', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
                                 const SizedBox(height: 2),
-                                Text('MQTT-Flächen anzeigen, importieren und speichern', style: Theme.of(context).textTheme.bodyMedium),
+                                Text('Flächen anzeigen, importieren und speichern', style: Theme.of(context).textTheme.bodyMedium),
                               ],
                             ),
                           ),
@@ -550,7 +550,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
       accent = Colors.green.shade700;
       background = Colors.green.shade50;
       icon = Icons.check_circle_outline;
-      headline = controller.lastStatus.value.isEmpty ? 'MQTT-Flächen vom Server empfangen.' : controller.lastStatus.value;
+      headline = controller.lastStatus.value.isEmpty ? 'Flächen vom Server empfangen.' : controller.lastStatus.value;
     } else if (ok == false) {
       accent = Colors.red.shade700;
       background = Colors.red.shade50;
@@ -565,7 +565,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
       accent = Theme.of(context).primaryColor;
       background = accent.withOpacity(0.04);
       icon = Icons.info_outline;
-      headline = controller.lastStatus.value.isEmpty ? 'Noch keine MQTT-Flächen empfangen.' : controller.lastStatus.value;
+      headline = controller.lastStatus.value.isEmpty ? 'Noch keine Flächen empfangen.' : controller.lastStatus.value;
     }
 
     return Container(
@@ -691,7 +691,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
         Text('JSON-Inhalt', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
         const SizedBox(height: 2),
         Text(
-          'Lokale MQTT-Flächen. Upload übernimmt lokal, Speichern sendet an map/set/json.',
+          'Lokale Flächen. Upload übernimmt lokal, Speichern sendet an map/set/json.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],

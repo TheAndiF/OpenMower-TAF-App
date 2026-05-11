@@ -78,6 +78,33 @@ class TimetableController extends GetxController {
   bool get hasData => timetableData.isNotEmpty;
   bool get hasRobotState => robotState.isNotEmpty;
 
+  /// Interne Timetable-ID des aktuell abgearbeiteten AutoMow-Auftrags.
+  ///
+  /// Das Backend veröffentlicht diese ID normalerweise als `AutoMowID` im
+  /// `robot_state/json`. Die UI nutzt sie nur zur optischen Markierung des
+  /// passenden Timetable-Eintrags; die technische ID bleibt ansonsten verborgen.
+  String get currentAutoMowId {
+    final candidates = <dynamic>[
+      robotState['AutoMowID'],
+      robotState['AutoMowId'],
+      robotState['autoMowId'],
+      robotState['auto_mow_id'],
+      robotState['automow_id'],
+      robotState['current_timetable_id'],
+      robotState['timetable_id'],
+    ];
+
+    for (final candidate in candidates) {
+      final value = candidate?.toString().trim() ?? '';
+      if (value.isNotEmpty && value != '0' && value.toLowerCase() != 'null') {
+        return value;
+      }
+    }
+    return '';
+  }
+
+  bool isCurrentMowEntry(String entryId) => currentAutoMowId == entryId;
+
   dynamic get autoMowSuspension => robotState['AutoMowSuspension'] ?? 0;
   bool get isSuspended => autoMowSuspension != null && autoMowSuspension != 0 && autoMowSuspension.toString() != '0' && autoMowSuspension.toString().trim().isNotEmpty;
 

@@ -837,40 +837,92 @@ class _TimetableScreenState extends State<TimetableScreen> {
 
   Widget _buildEntryRow(BuildContext context, String id, Map<String, dynamic> item) {
     final editing = controller.isEntryEditing(id);
-    return Container(
+    final isCurrent = controller.isCurrentMowEntry(id);
+    final color = Theme.of(context).primaryColor;
+    final borderColor = isCurrent ? color : Theme.of(context).dividerColor;
+    final backgroundColor = isCurrent ? color.withOpacity(0.08) : Theme.of(context).cardColor;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor),
+        color: backgroundColor,
+        border: Border.all(color: borderColor, width: isCurrent ? 2 : 1),
+        borderRadius: BorderRadius.circular(6),
+        boxShadow: isCurrent
+            ? [
+                BoxShadow(
+                  color: color.withOpacity(0.10),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (isCurrent) ...[
+            _currentEntryBanner(context),
+            const SizedBox(height: 10),
+          ],
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _entryDayDropdown(id, item, enabled: editing),
+              _entryTimeField(context, id, item, 'start', 'Start', enabled: editing, width: 120),
+              _entryTimeField(context, id, item, 'end', 'Ende', enabled: editing, width: 120),
+              _entryEndBehaviorDropdown(id, item, enabled: editing),
+              _fieldsButton(context, id, item),
+              _boolSwitch('Aktiv', item['enabled'] == true, editing ? (value) => controller.updateEntry(id, 'enabled', value) : null),
+              _boolSwitch('Auto-Start', item['auto_start'] == true, editing ? (value) => controller.updateEntry(id, 'auto_start', value) : null),
+              SizedBox(
+                width: 56,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Eintrag löschen',
+                      onPressed: () => _confirmRemoveEntry(context, id),
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                    IconButton(
+                      tooltip: editing ? 'Eintrag speichern' : 'Eintrag ändern',
+                      onPressed: () => controller.toggleEditEntry(id),
+                      icon: Icon(editing ? Icons.save_outlined : Icons.edit_outlined),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _currentEntryBanner(BuildContext context) {
+    final color = Theme.of(context).primaryColor;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        crossAxisAlignment: WrapCrossAlignment.center,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _entryDayDropdown(id, item, enabled: editing),
-          _entryTimeField(context, id, item, 'start', 'Start', enabled: editing, width: 120),
-          _entryTimeField(context, id, item, 'end', 'Ende', enabled: editing, width: 120),
-          _entryEndBehaviorDropdown(id, item, enabled: editing),
-          _fieldsButton(context, id, item),
-          _boolSwitch('Aktiv', item['enabled'] == true, editing ? (value) => controller.updateEntry(id, 'enabled', value) : null),
-          _boolSwitch('Auto-Start', item['auto_start'] == true, editing ? (value) => controller.updateEntry(id, 'auto_start', value) : null),
-          SizedBox(
-            width: 56,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  tooltip: 'Eintrag löschen',
-                  onPressed: () => _confirmRemoveEntry(context, id),
-                  icon: const Icon(Icons.delete_outline),
-                ),
-                IconButton(
-                  tooltip: editing ? 'Eintrag speichern' : 'Eintrag ändern',
-                  onPressed: () => controller.toggleEditEntry(id),
-                  icon: Icon(editing ? Icons.save_outlined : Icons.edit_outlined),
-                ),
-              ],
+          Icon(Icons.play_circle_outline, color: color, size: 20),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              'Aktuell abgearbeiteter Mähzeit-Eintrag',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
             ),
           ),
         ],

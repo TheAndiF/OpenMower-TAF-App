@@ -150,13 +150,13 @@ class MqttAreasController extends GetxController {
     lastStatusOk.value = true;
     waitingForResponse.value = false;
     lastStatus.value = areas.isEmpty
-        ? 'MQTT-Flächen empfangen, aber keine Flächenliste gefunden.'
+        ? 'Flächen empfangen, aber keine Flächenliste gefunden.'
         : '${mowAreas.length} Mähfläche(n) empfangen.';
   }
 
   void requestMap() {
     Get.find<MqttConnection>().requestMap();
-    lastStatus.value = 'MQTT-Flächen werden vom Server angefordert ...';
+    lastStatus.value = 'Flächen werden vom Server angefordert ...';
     lastTopic.value = 'map/set/renew/json';
     lastStatusOk.value = null;
     waitingForResponse.value = true;
@@ -173,7 +173,7 @@ class MqttAreasController extends GetxController {
     waitingForResponse.value = true;
     lastUpdated.value = DateTime.now();
     lastTopic.value = 'map/set/json';
-    lastStatus.value = 'MQTT-Flächen gesendet. Warte auf Serverantwort ...';
+    lastStatus.value = 'Flächen gesendet. Warte auf Serverantwort ...';
     lastStatusOk.value = null;
   }
 
@@ -345,7 +345,7 @@ class MqttAreasController extends GetxController {
     if (ok == true) {
       lastStatus.value = 'Server-Validierung erfolgreich.';
     } else if (ok == false) {
-      lastStatus.value = 'Speichern fehlgeschlagen. Server hat die MQTT-Flächen abgelehnt.';
+      lastStatus.value = 'Speichern fehlgeschlagen. Server hat die Flächen abgelehnt.';
     } else {
       lastStatus.value = 'Validierungsantwort empfangen. Warte auf eindeutige Bestätigung ...';
     }

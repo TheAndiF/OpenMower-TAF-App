@@ -91,7 +91,7 @@ class MainScreen extends GetView<RobotStateController> {
       ),
       ListTile(
         leading: n.Icon(Icons.grass),
-        title: const Text('MQTT Flächen'),
+        title: const Text('Flächen'),
         onTap: () {
           Get.back();
           _index.value= 4;
