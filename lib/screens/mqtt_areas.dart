@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/mqtt_areas_controller.dart';
+import 'package:open_mower_app/controllers/remote_controller.dart';
+import 'package:open_mower_app/controllers/robot_state_controller.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 
 class MqttAreasScreen extends StatefulWidget {
@@ -16,7 +18,9 @@ class MqttAreasScreen extends StatefulWidget {
 
 class _MqttAreasScreenState extends State<MqttAreasScreen> {
   final MqttAreasController controller = Get.find<MqttAreasController>();
-  bool _jsonExpanded = true;
+  final RobotStateController robotStateController = Get.find<RobotStateController>();
+  final RemoteController remoteController = Get.find<RemoteController>();
+  bool _jsonExpanded = false;
   bool _renewSent = false;
 
   @override
@@ -43,6 +47,8 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                _buildCurrentAreaSection(context),
+                const SizedBox(height: 16),
                 _buildSection(
                   context,
                   icon: Icons.grass,
@@ -63,6 +69,200 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
           child: RobotStateWidget(),
         ),
       ],
+    );
+  }
+
+  Widget _buildCurrentAreaSection(BuildContext context) {
+    final color = Theme.of(context).primaryColor;
+    final currentAreaId = robotStateController.robotState.value.currentAreaId.trim();
+    final currentArea = controller.findAreaById(currentAreaId);
+    final hasCurrentArea = currentArea != null;
+    final currentName = currentArea == null ? 'Keine aktive Fläche' : controller.areaNameFor(currentArea);
+    final currentOrder = currentArea == null ? '-' : controller.formatMowingOrder(controller.mowingOrderFor(currentArea));
+    final skipAvailable = robotStateController.hasAction('mower_logic:mowing/skip_area');
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: Row(
+              children: [
+                _currentAreaHeaderIcon(color: color, active: hasCurrentArea),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Fläche anzeigen',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Aktuelle Mähfläche anzeigen und bei Bedarf überspringen',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: _buildCurrentAreaCard(
+              context,
+              currentName: currentName,
+              currentOrder: currentOrder,
+              hasCurrentArea: hasCurrentArea,
+              skipAvailable: skipAvailable,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCurrentAreaCard(
+    BuildContext context, {
+    required String currentName,
+    required String currentOrder,
+    required bool hasCurrentArea,
+    required bool skipAvailable,
+  }) {
+    final isMobile = MediaQuery.of(context).size.width < 760;
+    final headline = hasCurrentArea ? 'Aktuelle Fläche' : 'Keine aktive Fläche';
+    final detail = hasCurrentArea ? currentName : 'Aktuell meldet robot_state/json keine zuordenbare Mähfläche.';
+    final orderText = hasCurrentArea ? 'Mähreihenfolge $currentOrder' : 'Mähreihenfolge -';
+    final skipButton = _currentAreaActionButton(
+      context,
+      label: 'Fläche skippen',
+      active: false,
+      icon: Icons.skip_next,
+      onPressed: (hasCurrentArea && skipAvailable)
+          ? () => remoteController.callAction('mower_logic:mowing/skip_area')
+          : null,
+    );
+
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(child: _currentAreaBodyIcon(context, active: hasCurrentArea)),
+          const SizedBox(height: 18),
+          Text(headline, textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).hintColor)),
+          const SizedBox(height: 6),
+          Text(
+            detail,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          Text(orderText, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor)),
+          const SizedBox(height: 20),
+          SizedBox(height: 56, child: skipButton),
+        ],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        _currentAreaBodyIcon(context, active: hasCurrentArea),
+        const SizedBox(width: 24),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(headline, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Theme.of(context).hintColor)),
+              const SizedBox(height: 8),
+              Text(
+                detail,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(orderText, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).hintColor)),
+            ],
+          ),
+        ),
+        const SizedBox(width: 24),
+        SizedBox(width: 220, height: 56, child: skipButton),
+      ],
+    );
+  }
+
+  Widget _currentAreaHeaderIcon({required Color color, required bool active}) {
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: color.withOpacity(0.65), width: 2),
+      ),
+      child: Icon(active ? Icons.grass : Icons.info_outline, color: color, size: 24),
+    );
+  }
+
+  Widget _currentAreaBodyIcon(BuildContext context, {required bool active}) {
+    final color = Theme.of(context).primaryColor;
+    return Container(
+      width: 132,
+      height: 132,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: active ? Colors.green.withOpacity(0.10) : color.withOpacity(0.08),
+      ),
+      child: Icon(active ? Icons.grass : Icons.remove_circle_outline, color: active ? Colors.green : color, size: 64),
+    );
+  }
+
+  Widget _currentAreaActionButton(
+    BuildContext context, {
+    required String label,
+    required bool active,
+    required VoidCallback? onPressed,
+    IconData? icon,
+  }) {
+    final childLabel = Text(
+      active ? '✓ $label' : label,
+      textAlign: TextAlign.center,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
+    final child = icon == null
+        ? childLabel
+        : Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20),
+              const SizedBox(width: 8),
+              Flexible(child: childLabel),
+            ],
+          );
+
+    if (active) {
+      return ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        ),
+        child: child,
+      );
+    }
+
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      ),
+      child: child,
     );
   }
 
@@ -143,11 +343,13 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     final enabled = controller.mowingEnabledFor(area);
     final order = controller.mowingOrderFor(area);
     final name = controller.areaNameFor(area);
+    final isCurrentArea = id.isNotEmpty && id == robotStateController.robotState.value.currentAreaId.trim();
 
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor),
+        color: isCurrentArea ? Colors.green.withOpacity(0.12) : null,
+        border: Border.all(color: isCurrentArea ? Colors.green.withOpacity(0.65) : Theme.of(context).dividerColor),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Wrap(
@@ -185,7 +387,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
   }
 
   Widget _areaOrderField(String id, int? value, {bool enabled = true}) {
-    final text = value?.toString() ?? '';
+    final text = controller.formatMowingOrder(value);
     return SizedBox(
       width: 160,
       child: TextFormField(
@@ -193,9 +395,17 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
         initialValue: text,
         decoration: const InputDecoration(labelText: 'Mähreihenfolge'),
         keyboardType: TextInputType.number,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(2)],
+        maxLength: 2,
+        buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
         enabled: enabled,
-        onChanged: enabled ? (next) => controller.updateMowingOrder(id, next) : null,
+        onChanged: enabled
+            ? (next) {
+                if (next.length == 2) {
+                  controller.updateMowingOrder(id, next);
+                }
+              }
+            : null,
       ),
     );
   }

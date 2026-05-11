@@ -183,10 +183,37 @@ class MqttConnection  {
       final map = _decodeMap(payload);
       if (map != null) {
         timetableController.setRobotState(map, topic: "robot_state/json");
+        final raw = map["d"] is Map ? Map<String, dynamic>.from(map["d"] as Map) : map;
+        _updateRobotStateControllerFromRaw(raw);
       }
     } catch (e) {
       timetableController.setError("Robot-State konnte nicht gelesen werden: $e", topic: "robot_state/json");
     }
+  }
+
+  void _updateRobotStateControllerFromRaw(Map<String, dynamic> raw) {
+    final state = robotStateController.robotState.value;
+    state.isConnected = true;
+    if (raw.containsKey("current_area_id")) {
+      state.currentAreaId = raw["current_area_id"]?.toString() ?? "";
+    }
+    if (raw.containsKey("current_area")) {
+      final value = raw["current_area"];
+      if (value is int) {
+        state.currentArea = value;
+      } else if (value is num) {
+        state.currentArea = value.toInt();
+      } else {
+        state.currentArea = int.tryParse(value?.toString() ?? "") ?? state.currentArea;
+      }
+    }
+    if (raw.containsKey("current_state")) {
+      state.currentState = raw["current_state"]?.toString() ?? state.currentState;
+    }
+    if (raw.containsKey("current_sub_state")) {
+      state.currentSubState = raw["current_sub_state"]?.toString() ?? state.currentSubState;
+    }
+    robotStateController.robotState.refresh();
   }
 
   void parseTimeStatus(MqttPublishMessage payload, {bool bson = false}) {
@@ -653,6 +680,7 @@ class MqttConnection  {
     final raw = obj is Map && obj["d"] is Map ? Map<String, dynamic>.from(obj["d"] as Map) : <String, dynamic>{};
     if (raw.isNotEmpty) {
       timetableController.setRobotState(raw, topic: "robot_state/bson");
+      _updateRobotStateControllerFromRaw(raw);
     }
     if (obj["d"] == null || obj["d"]["pose"] == null) {
       return;
@@ -812,28 +840,8 @@ class MqttConnection  {
               parseMapMessage(payload);
             }
             break;
-            case mapBsonTopic: {
-              parseMapMessage(payload, bson: true);
-            }
-            break;
             case mapValidationJsonTopic: {
               parseMapValidation(payload);
-            }
-            break;
-            case mapValidationBsonTopic: {
-              parseMapValidation(payload, bson: true);
-            }
-            break;
-            case mapResponseJsonTopic: {
-              parseMapResponse(payload, topic: mapResponseJsonTopic);
-            }
-            break;
-            case mapAckJsonTopic: {
-              parseMapResponse(payload, topic: mapAckJsonTopic);
-            }
-            break;
-            case mapActionResultJsonTopic: {
-              parseMapResponse(payload, topic: mapActionResultJsonTopic);
             }
             break;
             case "map_overlay/bson": {
@@ -893,12 +901,7 @@ class MqttConnection  {
 
     client.subscribe("actions/bson", MqttQos.exactlyOnce);
     client.subscribe(mapJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(mapBsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mapValidationJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(mapValidationBsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(mapResponseJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(mapAckJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(mapActionResultJsonTopic, MqttQos.atLeastOnce);
     client.subscribe("map_overlay/bson", MqttQos.atMostOnce);
     client.subscribe("sensor_infos/bson", MqttQos.atLeastOnce);
     client.subscribe("robot_state/json", MqttQos.atMostOnce);

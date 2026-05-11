@@ -87,6 +87,39 @@ class MqttAreasController extends GetxController {
     return int.tryParse(value.toString());
   }
 
+  String formatMowingOrder(int? value) {
+    if (value == null) {
+      return '';
+    }
+    return value.clamp(1, 99).toString().padLeft(2, '0');
+  }
+
+  Map<String, dynamic>? findAreaById(String areaId) {
+    final trimmed = areaId.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    for (final area in mowAreas) {
+      if (areaIdFor(area) == trimmed) {
+        return area;
+      }
+    }
+    return null;
+  }
+
+  bool isMowingOrderAvailable(String areaId, int order) {
+    for (final area in mowAreas) {
+      final id = areaIdFor(area);
+      if (id == areaId) {
+        continue;
+      }
+      if (mowingOrderFor(area) == order) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   int _mowingOrderFor(Map<String, dynamic> props) {
     final value = props['mowing_order'];
     if (value is int) return value;
@@ -131,6 +164,9 @@ class MqttAreasController extends GetxController {
 
   void sendMap() {
     if (!applyRawJson(setLocalStatus: false)) {
+      return;
+    }
+    if (!_validateUniqueMowingOrders()) {
       return;
     }
     Get.find<MqttConnection>().publishMap(Map<String, dynamic>.from(areaPayload));
@@ -198,6 +234,9 @@ class MqttAreasController extends GetxController {
 
   void toggleEditArea(String areaId) {
     if (isAreaEditing(areaId)) {
+      if (!_validateUniqueMowingOrders()) {
+        return;
+      }
       editingAreaIds.remove(areaId);
       editingAreaIds.refresh();
       syncRawJsonFromData();
@@ -222,13 +261,52 @@ class MqttAreasController extends GetxController {
   }
 
   void updateMowingOrder(String areaId, String value) {
-    final parsed = int.tryParse(value.trim());
+    final trimmed = value.trim();
+    if (!RegExp(r'^\d{2}$').hasMatch(trimmed)) {
+      setError('Die Mähreihenfolge muss zweistellig sein, z. B. 01 oder 02.', topic: 'local/edit');
+      return;
+    }
+    final parsed = int.tryParse(trimmed);
     if (parsed == null) {
+      return;
+    }
+    if (parsed < 1 || parsed > 99) {
+      setError('Die Mähreihenfolge muss zwischen 01 und 99 liegen.', topic: 'local/edit');
+      return;
+    }
+    if (!isMowingOrderAvailable(areaId, parsed)) {
+      setError('Mähreihenfolge ${formatMowingOrder(parsed)} ist bereits vergeben.', topic: 'local/edit');
       return;
     }
     _updateAreaProperties(areaId, (properties) {
       properties['mowing_order'] = parsed;
     });
+    lastStatus.value = 'Mähreihenfolge ${formatMowingOrder(parsed)} lokal übernommen. Zum Übertragen bitte Speichern drücken.';
+    lastStatusOk.value = true;
+    lastTopic.value = 'local/edit';
+  }
+
+  bool _validateUniqueMowingOrders() {
+    final seen = <int, String>{};
+    for (final area in mowAreas) {
+      final id = areaIdFor(area);
+      final order = mowingOrderFor(area);
+      if (order == null) {
+        setError('Jede mow-Fläche benötigt eine zweistellige Mähreihenfolge.', topic: 'local/validation');
+        return false;
+      }
+      if (order < 1 || order > 99) {
+        setError('Mähreihenfolge ${order.toString()} ist ungültig. Erlaubt sind zweistellige Werte von 01 bis 99.', topic: 'local/validation');
+        return false;
+      }
+      final existing = seen[order];
+      if (existing != null && existing != id) {
+        setError('Mähreihenfolge ${formatMowingOrder(order)} ist mehrfach vergeben.', topic: 'local/validation');
+        return false;
+      }
+      seen[order] = id;
+    }
+    return true;
   }
 
   void _updateAreaProperties(String areaId, void Function(Map<String, dynamic> properties) mutate) {
