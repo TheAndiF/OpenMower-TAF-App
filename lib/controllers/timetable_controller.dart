@@ -4,7 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/io/mqtt_connection.dart';
 
+enum SuspensionUiState {
+  none,
+  oneDay,
+  threeDays,
+  indefinite,
+  customDate,
+}
+
 class TimetableController extends GetxController {
+  static const String indefiniteSuspensionValue = '9999-12-31T23:59:59Z';
+
   static const visibleEntryFields = <String>{
     'day',
     'start',
@@ -44,7 +54,42 @@ class TimetableController extends GetxController {
   bool get hasRobotState => robotState.isNotEmpty;
 
   dynamic get autoMowSuspension => robotState['AutoMowSuspension'] ?? 0;
-  bool get isSuspended => autoMowSuspension != null && autoMowSuspension != 0 && autoMowSuspension.toString() != '0' && autoMowSuspension.toString().isNotEmpty;
+  bool get isSuspended => autoMowSuspension != null && autoMowSuspension != 0 && autoMowSuspension.toString() != '0' && autoMowSuspension.toString().trim().isNotEmpty;
+
+  bool get isIndefinitelySuspended {
+    final value = autoMowSuspension;
+    if (value == null || value == 0 || value.toString() == '0' || value.toString().trim().isEmpty) {
+      return false;
+    }
+
+    final text = value.toString().trim();
+    if (text.startsWith('9999-')) {
+      return true;
+    }
+
+    final parsed = DateTime.tryParse(text);
+    return parsed != null && parsed.year >= 9999;
+  }
+
+  SuspensionUiState get suspensionUiState {
+    if (!isSuspended) {
+      return SuspensionUiState.none;
+    }
+
+    if (isIndefinitelySuspended) {
+      return SuspensionUiState.indefinite;
+    }
+
+    if (_suspensionMatchesDays(1)) {
+      return SuspensionUiState.oneDay;
+    }
+
+    if (_suspensionMatchesDays(3)) {
+      return SuspensionUiState.threeDays;
+    }
+
+    return SuspensionUiState.customDate;
+  }
 
   String get localTimeForManualSet {
     final hour = int.tryParse(hourController.text.trim()) ?? 0;
@@ -426,6 +471,23 @@ class TimetableController extends GetxController {
     lastStatusOk.value = null;
   }
 
+  void setSuspensionIndefinite() {
+    Get.find<MqttConnection>().publishSuspension(indefiniteSuspensionValue);
+    waitingForResponse.value = true;
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = 'timetable/set/suspension/json';
+    lastStatus.value = 'Unbestimmte Aussetzung gesendet. Warte auf robot_state ...';
+    lastStatusOk.value = null;
+  }
+
+  void toggleSuspensionIndefinite() {
+    if (isIndefinitelySuspended) {
+      clearSuspension();
+      return;
+    }
+    setSuspensionIndefinite();
+  }
+
   void toggleSuspensionDays(int days) {
     if (isSuspended && _suspensionMatchesDays(days)) {
       clearSuspension();
@@ -436,6 +498,7 @@ class TimetableController extends GetxController {
   }
 
   bool _suspensionMatchesDays(int days) {
+    if (isIndefinitelySuspended) return false;
     final value = autoMowSuspension;
     if (value == null || value == 0) return false;
     final until = DateTime.tryParse(value.toString());

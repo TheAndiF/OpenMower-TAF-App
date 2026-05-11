@@ -325,19 +325,56 @@ class _TimetableScreenState extends State<TimetableScreen> {
 
   Widget _buildSuspensionCard(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 760;
-    final oneDayActive = controller.isSuspended && _suspensionLooksLikeDays(1);
-    final threeDaysActive = controller.isSuspended && _suspensionLooksLikeDays(3);
+    final state = controller.suspensionUiState;
+    final active = state != SuspensionUiState.none;
+    final oneDayActive = state == SuspensionUiState.oneDay;
+    final threeDaysActive = state == SuspensionUiState.threeDays;
+    final indefiniteActive = state == SuspensionUiState.indefinite;
     final until = _parseSuspensionDate(controller.autoMowSuspension);
-    final active = controller.isSuspended;
-    final headline = active ? 'AutoMow pausiert bis' : 'Keine Aussetzung aktiv';
-    final dateText = active ? _formatSuspensionDate(until!) : 'AutoMow ist nicht pausiert';
-    final relativeText = active ? _formatSuspensionRelative(until) : null;
+    final headline = _suspensionHeadline(state);
+    final dateText = _suspensionDetailText(state, until);
+    final relativeText = (state == SuspensionUiState.oneDay || state == SuspensionUiState.threeDays || state == SuspensionUiState.customDate)
+        ? _formatSuspensionRelative(until)
+        : null;
+
+    final actionButtons = <Widget>[
+      _actionButton(
+        context,
+        label: '1 Tag aussetzen',
+        active: oneDayActive,
+        icon: Icons.calendar_today_outlined,
+        onPressed: () => controller.toggleSuspensionDays(1),
+      ),
+      _actionButton(
+        context,
+        label: '3 Tage aussetzen',
+        active: threeDaysActive,
+        icon: Icons.date_range_outlined,
+        onPressed: () => controller.toggleSuspensionDays(3),
+      ),
+      _actionButton(
+        context,
+        label: 'Unbestimmt aussetzen',
+        active: indefiniteActive,
+        icon: Icons.all_inclusive,
+        onPressed: controller.toggleSuspensionIndefinite,
+      ),
+      if (active)
+        _actionButton(
+          context,
+          label: 'Aufheben',
+          active: false,
+          icon: Icons.play_arrow,
+          danger: true,
+          onPressed: controller.clearSuspension,
+        ),
+    ];
 
     if (isMobile) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Center(child: _bodyStatusIcon(context, active: active)),
+          Center(child: _bodyStatusIcon(context, state: state)),
           const SizedBox(height: 18),
           Text(headline, textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).hintColor)),
           const SizedBox(height: 6),
@@ -346,16 +383,15 @@ class _TimetableScreenState extends State<TimetableScreen> {
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
           ),
-          if (relativeText != null) ...[
+          if (relativeText != null && relativeText.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(relativeText, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor)),
           ],
           const SizedBox(height: 20),
-          _actionButton(context, label: '1 Tag aussetzen', active: oneDayActive, onPressed: () => controller.toggleSuspensionDays(1)),
-          const SizedBox(height: 12),
-          _actionButton(context, label: '3 Tage aussetzen', active: threeDaysActive, onPressed: () => controller.toggleSuspensionDays(3)),
-          const SizedBox(height: 12),
-          _actionButton(context, label: 'Aufheben', active: false, onPressed: active ? controller.clearSuspension : null),
+          for (final button in actionButtons) ...[
+            button,
+            if (button != actionButtons.last) const SizedBox(height: 12),
+          ],
         ],
       );
     }
@@ -363,7 +399,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        _bodyStatusIcon(context, active: active),
+        _bodyStatusIcon(context, state: state),
         const SizedBox(width: 24),
         Expanded(
           child: Column(
@@ -375,7 +411,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                 dateText,
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
-              if (relativeText != null) ...[
+              if (relativeText != null && relativeText.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text(relativeText, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).hintColor)),
               ],
@@ -388,24 +424,42 @@ class _TimetableScreenState extends State<TimetableScreen> {
             alignment: WrapAlignment.end,
             spacing: 12,
             runSpacing: 12,
-            children: [
-              SizedBox(
-                width: 180,
-                child: _actionButton(context, label: '1 Tag aussetzen', active: oneDayActive, onPressed: () => controller.toggleSuspensionDays(1)),
-              ),
-              SizedBox(
-                width: 180,
-                child: _actionButton(context, label: '3 Tage aussetzen', active: threeDaysActive, onPressed: () => controller.toggleSuspensionDays(3)),
-              ),
-              SizedBox(
-                width: 180,
-                child: _actionButton(context, label: 'Aufheben', active: false, onPressed: active ? controller.clearSuspension : null),
-              ),
-            ],
+            children: actionButtons
+                .map((button) => SizedBox(
+                      width: 220,
+                      child: button,
+                    ))
+                .toList(),
           ),
         ),
       ],
     );
+  }
+
+  String _suspensionHeadline(SuspensionUiState state) {
+    switch (state) {
+      case SuspensionUiState.none:
+        return 'Keine Aussetzung aktiv';
+      case SuspensionUiState.indefinite:
+        return 'AutoMow ist unbestimmt pausiert';
+      case SuspensionUiState.oneDay:
+      case SuspensionUiState.threeDays:
+      case SuspensionUiState.customDate:
+        return 'AutoMow pausiert bis';
+    }
+  }
+
+  String _suspensionDetailText(SuspensionUiState state, DateTime? until) {
+    switch (state) {
+      case SuspensionUiState.none:
+        return 'AutoMow mäht nach Zeitplan.';
+      case SuspensionUiState.indefinite:
+        return 'Der Mähbetrieb startet erst wieder nach dem Aufheben.';
+      case SuspensionUiState.oneDay:
+      case SuspensionUiState.threeDays:
+      case SuspensionUiState.customDate:
+        return until == null ? controller.autoMowSuspension.toString() : _formatSuspensionDate(until);
+    }
   }
 
   Widget _headerStatusIcon({required Color color, required bool active}) {
@@ -414,16 +468,31 @@ class _TimetableScreenState extends State<TimetableScreen> {
       height: 42,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(color: active ? color : Colors.grey.shade400, width: 2),
+        border: Border.all(color: color.withOpacity(0.65), width: 2),
       ),
-      child: Icon(Icons.pause, color: active ? color : Colors.grey.shade500, size: 24),
+      child: Icon(Icons.nights_stay_outlined, color: color, size: 24),
     );
   }
 
-  Widget _bodyStatusIcon(BuildContext context, {required bool active}) {
+  Widget _bodyStatusIcon(BuildContext context, {required SuspensionUiState state}) {
     final color = Theme.of(context).primaryColor;
-    final bgColor = active ? color.withOpacity(0.10) : Colors.grey.shade100;
-    final iconColor = active ? color : Colors.grey.shade500;
+    final isNone = state == SuspensionUiState.none;
+    IconData icon;
+    switch (state) {
+      case SuspensionUiState.none:
+        icon = Icons.check;
+        break;
+      case SuspensionUiState.indefinite:
+        icon = Icons.all_inclusive;
+        break;
+      case SuspensionUiState.oneDay:
+      case SuspensionUiState.threeDays:
+      case SuspensionUiState.customDate:
+        icon = Icons.pause;
+        break;
+    }
+    final bgColor = isNone ? Colors.green.withOpacity(0.10) : color.withOpacity(0.10);
+    final iconColor = isNone ? Colors.green : color;
     return Container(
       width: 132,
       height: 132,
@@ -431,11 +500,31 @@ class _TimetableScreenState extends State<TimetableScreen> {
         shape: BoxShape.circle,
         color: bgColor,
       ),
-      child: Icon(Icons.pause, color: iconColor, size: 64),
+      child: Icon(icon, color: iconColor, size: 64),
     );
   }
 
-  Widget _actionButton(BuildContext context, {required String label, required bool active, required VoidCallback? onPressed}) {
+  Widget _actionButton(
+    BuildContext context, {
+    required String label,
+    required bool active,
+    required VoidCallback? onPressed,
+    IconData? icon,
+    bool danger = false,
+  }) {
+    final childLabel = Text(active ? '✓ $label' : label, textAlign: TextAlign.center);
+    final child = icon == null
+        ? childLabel
+        : Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20),
+              const SizedBox(width: 8),
+              Flexible(child: childLabel),
+            ],
+          );
+
     if (active) {
       return ElevatedButton(
         onPressed: onPressed,
@@ -443,16 +532,19 @@ class _TimetableScreenState extends State<TimetableScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
           textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
         ),
-        child: Text(label, textAlign: TextAlign.center),
+        child: child,
       );
     }
+
     return OutlinedButton(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
+        foregroundColor: danger ? Colors.red : null,
+        side: danger ? const BorderSide(color: Colors.red) : null,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
         textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
       ),
-      child: Text(label, textAlign: TextAlign.center),
+      child: child,
     );
   }
 
