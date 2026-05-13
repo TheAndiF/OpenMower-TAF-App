@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_material_design_icons/flutter_material_design_icons.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/robot_state_controller.dart';
+import 'package:open_mower_app/controllers/mqtt_areas_controller.dart';
 import 'package:open_mower_app/views/emergency_widget.dart';
 import 'package:niku/namespace.dart' as n;
 
 class RobotStateWidget extends GetView<RobotStateController> {
   const RobotStateWidget({super.key});
 
+<<<<<<< HEAD
   Widget getStateWidget() {
     final stateName = controller.robotState.value.currentState.toUpperCase();
 
@@ -40,6 +42,25 @@ class RobotStateWidget extends GetView<RobotStateController> {
       message: controller.robotState.value.currentState,
       child: Icon(iconData, color: Colors.black87),
     );
+=======
+  MqttAreasController get mqttAreasController => Get.find<MqttAreasController>();
+
+  String getStateText() {
+    final state = controller.robotState.value;
+
+    if (state.currentState == "MOWING") {
+      final currentArea = mqttAreasController.findAreaById(state.currentAreaId);
+      final mowingOrder = currentArea == null
+          ? null
+          : mqttAreasController.mowingOrderFor(currentArea);
+
+      if (mowingOrder != null) {
+        return "MOWING · Fläche $mowingOrder";
+      }
+    }
+
+    return state.currentState;
+>>>>>>> 7b24229a1a44d5a03eec9207a8018f5ef8afc280
   }
 
   Icon getMqttIcon(bool isConnected) {
@@ -69,9 +90,13 @@ class RobotStateWidget extends GetView<RobotStateController> {
                   style: const TextStyle(color: Colors.black87),
                   children: [
                 const TextSpan(text: "State: "),
+<<<<<<< HEAD
                 WidgetSpan(
                     child: getStateWidget(),
                     alignment: PlaceholderAlignment.middle),
+=======
+                TextSpan(text: getStateText()),
+>>>>>>> 7b24229a1a44d5a03eec9207a8018f5ef8afc280
               ])),
           RichText(
               text: TextSpan(
