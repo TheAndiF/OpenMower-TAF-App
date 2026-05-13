@@ -73,6 +73,7 @@ class TimetableController extends GetxController {
     'end_behavior': 'return_to_dock',
     'enabled': true,
     'auto_start': true,
+    'required_battery_state': 'full',
   }.obs;
 
   bool get hasData => timetableData.isNotEmpty;
@@ -616,6 +617,7 @@ class TimetableController extends GetxController {
         'end_behavior': 'return_to_dock',
         'enabled': true,
         'auto_start': true,
+        'required_battery_state': 'full',
       });
   }
 
