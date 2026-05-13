@@ -2,11 +2,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter_material_design_icons/flutter_material_design_icons.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/robot_state_controller.dart';
+import 'package:open_mower_app/controllers/mqtt_areas_controller.dart';
 import 'package:open_mower_app/views/emergency_widget.dart';
 import 'package:niku/namespace.dart' as n;
 
 class RobotStateWidget extends GetView<RobotStateController> {
   const RobotStateWidget({super.key});
+
+  MqttAreasController get mqttAreasController => Get.find<MqttAreasController>();
+
+  String getStateText() {
+    final state = controller.robotState.value;
+
+    if (state.currentState == "MOWING") {
+      final currentArea = mqttAreasController.findAreaById(state.currentAreaId);
+      final mowingOrder = currentArea == null
+          ? null
+          : mqttAreasController.mowingOrderFor(currentArea);
+
+      if (mowingOrder != null) {
+        return "MOWING · Fläche $mowingOrder";
+      }
+    }
+
+    return state.currentState;
+  }
 
   Icon getMqttIcon(bool isConnected) {
     return isConnected
@@ -28,14 +48,14 @@ class RobotStateWidget extends GetView<RobotStateController> {
   Widget build(BuildContext context) {
     return Material(
         elevation: 5,
-        child: Obx(() =>n.Row([
+        child: Obx(() => n.Row([
           EmergencyWidget(emergency: controller.robotState.value.isEmergency),
           RichText(
               text: TextSpan(
                   style: const TextStyle(color: Colors.black87),
                   children: [
                 const TextSpan(text: "State: "),
-                TextSpan(text: controller.robotState.value.currentState),
+                TextSpan(text: getStateText()),
               ])),
           RichText(
               text: TextSpan(
@@ -46,23 +66,13 @@ class RobotStateWidget extends GetView<RobotStateController> {
                     child: getMqttIcon(controller.robotState.value.isConnected),
                     alignment: PlaceholderAlignment.middle),
               ])),
-          /*RichText(
-              text: const TextSpan(
-                  style: TextStyle(color: Colors.black87),
-                  children: [
-                TextSpan(text: "WiFi: "),
-                WidgetSpan(
-                    child:
-                        Icon(Icons.network_wifi_3_bar, color: Colors.black54),
-                    alignment: PlaceholderAlignment.middle),
-              ])),*/
           RichText(
               text: TextSpan(
                   style: const TextStyle(color: Colors.black87),
                   children: [
                 const TextSpan(text: "GPS: "),
                 WidgetSpan(
-                    child: Obx(() => getGpsIcon(controller.robotState.value.gpsPercent)),
+                    child: getGpsIcon(controller.robotState.value.gpsPercent),
                     alignment: PlaceholderAlignment.middle),
               ])),
           RichText(
@@ -71,7 +81,9 @@ class RobotStateWidget extends GetView<RobotStateController> {
                   children: [
                 const TextSpan(text: "Battery: "),
                 WidgetSpan(
-                    child: getBatteryIcon(controller.robotState.value.batteryPercent, controller.robotState.value.isCharging),
+                    child: getBatteryIcon(
+                        controller.robotState.value.batteryPercent,
+                        controller.robotState.value.isCharging),
                     alignment: PlaceholderAlignment.middle),
               ]))
         ])
