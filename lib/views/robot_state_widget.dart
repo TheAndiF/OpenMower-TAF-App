@@ -8,6 +8,40 @@ import 'package:niku/namespace.dart' as n;
 class RobotStateWidget extends GetView<RobotStateController> {
   const RobotStateWidget({super.key});
 
+  Widget getStateWidget() {
+    final stateName = controller.robotState.value.currentState.toUpperCase();
+
+    IconData iconData;
+    switch (stateName) {
+      case "IDLE":
+        iconData = Icons.radio_button_unchecked;
+        break;
+      case "MOWING":
+        iconData = MdiIcons.contentCut;
+        break;
+      case "PAUSED":
+        iconData = Icons.pause;
+        break;
+      case "DOCKING":
+        iconData = Icons.home_outlined;
+        break;
+      case "UNDOCKING":
+        iconData = Icons.logout;
+        break;
+      case "AREA_RECORDING":
+        iconData = Icons.edit_location_alt_outlined;
+        break;
+      default:
+        iconData = Icons.help_outline;
+        break;
+    }
+
+    return Tooltip(
+      message: controller.robotState.value.currentState,
+      child: Icon(iconData, color: Colors.black87),
+    );
+  }
+
   Icon getMqttIcon(bool isConnected) {
     return isConnected
         ? const Icon(Icons.link, color: Colors.black54)
@@ -28,14 +62,16 @@ class RobotStateWidget extends GetView<RobotStateController> {
   Widget build(BuildContext context) {
     return Material(
         elevation: 5,
-        child: Obx(() =>n.Row([
+        child: Obx(() => n.Row([
           EmergencyWidget(emergency: controller.robotState.value.isEmergency),
           RichText(
               text: TextSpan(
                   style: const TextStyle(color: Colors.black87),
                   children: [
                 const TextSpan(text: "State: "),
-                TextSpan(text: controller.robotState.value.currentState),
+                WidgetSpan(
+                    child: getStateWidget(),
+                    alignment: PlaceholderAlignment.middle),
               ])),
           RichText(
               text: TextSpan(
@@ -46,23 +82,13 @@ class RobotStateWidget extends GetView<RobotStateController> {
                     child: getMqttIcon(controller.robotState.value.isConnected),
                     alignment: PlaceholderAlignment.middle),
               ])),
-          /*RichText(
-              text: const TextSpan(
-                  style: TextStyle(color: Colors.black87),
-                  children: [
-                TextSpan(text: "WiFi: "),
-                WidgetSpan(
-                    child:
-                        Icon(Icons.network_wifi_3_bar, color: Colors.black54),
-                    alignment: PlaceholderAlignment.middle),
-              ])),*/
           RichText(
               text: TextSpan(
                   style: const TextStyle(color: Colors.black87),
                   children: [
                 const TextSpan(text: "GPS: "),
                 WidgetSpan(
-                    child: Obx(() => getGpsIcon(controller.robotState.value.gpsPercent)),
+                    child: getGpsIcon(controller.robotState.value.gpsPercent),
                     alignment: PlaceholderAlignment.middle),
               ])),
           RichText(
@@ -71,7 +97,9 @@ class RobotStateWidget extends GetView<RobotStateController> {
                   children: [
                 const TextSpan(text: "Battery: "),
                 WidgetSpan(
-                    child: getBatteryIcon(controller.robotState.value.batteryPercent, controller.robotState.value.isCharging),
+                    child: getBatteryIcon(
+                        controller.robotState.value.batteryPercent,
+                        controller.robotState.value.isCharging),
                     alignment: PlaceholderAlignment.middle),
               ]))
         ])
