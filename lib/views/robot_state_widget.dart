@@ -34,6 +34,13 @@ class RobotStateWidget extends GetView<RobotStateController> {
               text: TextSpan(
                   style: const TextStyle(color: Colors.black87),
                   children: [
+                const TextSpan(text: "State: "),
+                TextSpan(text: controller.robotState.value.currentState),
+              ])),
+          RichText(
+              text: TextSpan(
+                  style: const TextStyle(color: Colors.black87),
+                  children: [
                 const TextSpan(text: "MQTT: "),
                 WidgetSpan(
                     child: getMqttIcon(controller.robotState.value.isConnected),
