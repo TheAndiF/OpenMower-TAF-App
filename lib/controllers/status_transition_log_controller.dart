@@ -131,10 +131,8 @@ class StatusTransitionLogController extends GetxController {
   }
 
   String stateText(Map<String, dynamic> entry) {
-    if (isCharging(entry)) {
-      return 'CHARGING';
-    }
-    return _text(entry['state'], fallback: '-');
+    final state = _text(entry['state'], fallback: '-');
+    return isCharging(entry) && state != '-' ? '$state (CHARGING)' : state;
   }
 
   String subStateText(Map<String, dynamic> entry) {
