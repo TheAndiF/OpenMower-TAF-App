@@ -431,7 +431,6 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
     final color = Theme.of(context).primaryColor;
     final current = controller.isCurrent(entry);
     final emergency = controller.isEmergency(entry);
-    final charging = controller.isCharging(entry);
     final borderColor = emergency
         ? Colors.red
         : current
@@ -473,7 +472,6 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
               ),
               if (current) _badge(context, 'Aktiv', Colors.green),
               if (emergency) _badge(context, 'Emergency', Colors.red),
-              if (charging) _badge(context, 'Lädt', Colors.blue),
             ],
           ),
           subtitle: Padding(
@@ -558,6 +556,16 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
                 _detailRow('Emergency', controller.boolText(entry['emergency'], yes: 'aktiv', no: 'inaktiv')),
               ],
             ),
+            if (controller.hasAutomowContext(entry))
+              _detailBlock(
+                context,
+                title: 'Automow',
+                rows: [
+                  _detailRow('Automow', controller.automowText(entry)),
+                  _detailRow('Automow-ID', controller.automowIdText(entry)),
+                  _detailRow('Aktuelle Fläche', controller.currentAreaIdText(entry)),
+                ],
+              ),
             if (position.isNotEmpty)
               _detailBlock(
                 context,
@@ -567,6 +575,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
                   _detailRow('Y', controller.compactNumber(position['y'])),
                   _detailRow('Heading', controller.compactNumber(position['heading'], decimals: 3)),
                   _detailRow('Positionsgenauigkeit', controller.compactNumber(position['pos_accuracy'])),
+                  _detailRow('Heading-Genauigkeit', controller.compactNumber(position['heading_accuracy'], decimals: 3)),
                   _detailRow('Heading gültig', controller.boolText(position['heading_valid'], yes: 'ja', no: 'nein')),
                 ],
               ),

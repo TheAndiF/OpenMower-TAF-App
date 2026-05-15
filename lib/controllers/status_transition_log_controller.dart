@@ -195,9 +195,30 @@ class StatusTransitionLogController extends GetxController {
     return _asBool(value) ? yes : no;
   }
 
-  bool isCurrent(Map<String, dynamic> entry) => entry['duration_is_current'] == true;
+  bool isCurrent(Map<String, dynamic> entry) => _asBool(entry['duration_is_current']);
   bool isCharging(Map<String, dynamic> entry) => _asBool(entry['is_charging']);
   bool isEmergency(Map<String, dynamic> entry) => _asBool(entry['emergency']);
+  bool hasAutomow(Map<String, dynamic> entry) => entry.containsKey('automow');
+  bool isAutomow(Map<String, dynamic> entry) => _asBool(entry['automow']);
+
+  String automowText(Map<String, dynamic> entry) {
+    if (!hasAutomow(entry)) return '-';
+    return isAutomow(entry) ? 'aktiv' : 'inaktiv';
+  }
+
+  String automowIdText(Map<String, dynamic> entry) {
+    return _text(entry['automow_id'], fallback: '-');
+  }
+
+  String currentAreaIdText(Map<String, dynamic> entry) {
+    return _text(entry['current_area_id'], fallback: '-');
+  }
+
+  bool hasAutomowContext(Map<String, dynamic> entry) {
+    return hasAutomow(entry) ||
+        automowIdText(entry) != '-' ||
+        currentAreaIdText(entry) != '-';
+  }
 
   Map<String, dynamic> positionFor(Map<String, dynamic> entry) {
     final value = entry['position'];
