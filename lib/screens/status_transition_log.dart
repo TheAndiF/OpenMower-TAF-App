@@ -116,40 +116,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 10,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _infoChip(
-                      context,
-                      icon: Icons.list_alt,
-                      label: 'Geliefert',
-                      value: '${controller.returnedEntries}',
-                    ),
-                    _infoChip(
-                      context,
-                      icon: Icons.inventory_2_outlined,
-                      label: 'Gesamt',
-                      value: '${controller.totalEntries}',
-                    ),
-                    _infoChip(
-                      context,
-                      icon: Icons.filter_alt_outlined,
-                      label: 'Limit',
-                      value: '${controller.effectiveLimit}',
-                    ),
-                    if (current != null)
-                      _infoChip(
-                        context,
-                        icon: controller.isCurrent(current) ? Icons.play_circle_outline : Icons.flag_outlined,
-                        label: controller.isCurrent(current) ? 'Aktiv' : 'Letzter Status',
-                        value: controller.stateText(current),
-                      ),
-                    const SizedBox(width: 10),
-                    ..._buildRequestControlItems(context),
-                  ],
-                ),
+                _buildSummaryToolbar(context),
                 if (controller.lastStatus.value.trim().isNotEmpty) ...[
                   const SizedBox(height: 14),
                   Container(
@@ -158,7 +125,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: statusColor.withOpacity(0.45)),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -206,49 +173,164 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
       final time = '${updated.hour.toString().padLeft(2, '0')}:${updated.minute.toString().padLeft(2, '0')}:${updated.second.toString().padLeft(2, '0')}';
       extras.add('Aktualisiert: $date $time');
     }
-    final suffix = extras.isEmpty ? '' : ' · ${extras.join(' · ')}';
+    final suffix = extras.isEmpty ? '' : '\n${extras.join(' · ')}';
     return '${controller.lastStatus.value}$suffix';
   }
 
-  List<Widget> _buildRequestControlItems(BuildContext context) {
-    final input = SizedBox(
-      width: 220,
-      child: TextField(
-        controller: controller.limitController,
-        inputFormatters: [
-          FilteringTextInputFormatter.digitsOnly,
-          LengthLimitingTextInputFormatter(3),
+  Widget _buildSummaryToolbar(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 920;
+    final metrics = _summaryMetricsPanel(context);
+    final input = SizedBox(width: 220, child: _limitInputField());
+    final button = _renewButton();
+
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          metrics,
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              input,
+              button,
+            ],
+          ),
         ],
-        keyboardType: TextInputType.number,
-        decoration: const InputDecoration(
-          labelText: 'Anzahl Einträge',
-          border: OutlineInputBorder(),
-          isDense: true,
-          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Flexible(flex: 5, child: metrics),
+        const SizedBox(width: 14),
+        input,
+        const SizedBox(width: 12),
+        button,
+      ],
+    );
+  }
+
+  Widget _summaryMetricsPanel(BuildContext context) {
+    final color = Theme.of(context).primaryColor;
+
+    return Container(
+      constraints: const BoxConstraints(minHeight: 54),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.30)),
+        color: color.withOpacity(0.06),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Expanded(
+            child: _summaryMetric(
+              context,
+              icon: Icons.list_alt,
+              label: 'Geliefert',
+              value: '${controller.returnedEntries}',
+            ),
+          ),
+          _metricDivider(context),
+          Expanded(
+            child: _summaryMetric(
+              context,
+              icon: Icons.inventory_2_outlined,
+              label: 'Gesamt',
+              value: '${controller.totalEntries}',
+            ),
+          ),
+          _metricDivider(context),
+          Expanded(
+            child: _summaryMetric(
+              context,
+              icon: Icons.filter_alt_outlined,
+              label: 'Limit',
+              value: '${controller.effectiveLimit}',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryMetric(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    final color = Theme.of(context).primaryColor;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: color, size: 18),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
         ),
-        onSubmitted: (_) => controller.requestLog(),
-      ),
+      ],
     );
+  }
 
-    final hint = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Text(
-        '1 bis 300',
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
-      ),
+  Widget _metricDivider(BuildContext context) {
+    final color = Theme.of(context).primaryColor;
+    return Container(
+      width: 1,
+      height: 34,
+      margin: const EdgeInsets.symmetric(horizontal: 10),
+      color: color.withOpacity(0.18),
     );
+  }
 
-    final button = ElevatedButton.icon(
+  Widget _limitInputField() {
+    return TextField(
+      controller: controller.limitController,
+      inputFormatters: [
+        FilteringTextInputFormatter.digitsOnly,
+        LengthLimitingTextInputFormatter(3),
+      ],
+      keyboardType: TextInputType.number,
+      decoration: const InputDecoration(
+        labelText: 'Anzahl Einträge',
+        helperText: '1 bis 300',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      onSubmitted: (_) => controller.requestLog(),
+    );
+  }
+
+  Widget _renewButton() {
+    return ElevatedButton.icon(
       onPressed: controller.waitingForResponse.value ? null : controller.requestLog,
-      icon: const Icon(Icons.refresh, size: 20),
+      icon: const Icon(Icons.refresh),
       label: const Text('Protokoll erneuern'),
       style: ElevatedButton.styleFrom(
-        minimumSize: const Size(210, 46),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        minimumSize: const Size(220, 52),
       ),
     );
-
-    return [input, hint, button];
   }
 
   Widget _infoChip(
@@ -259,18 +341,18 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
   }) {
     final color = Theme.of(context).primaryColor;
     return Container(
-      constraints: const BoxConstraints(minWidth: 112),
+      constraints: const BoxConstraints(minWidth: 128),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: color.withOpacity(0.30)),
         color: color.withOpacity(0.06),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(width: 7),
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 10),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

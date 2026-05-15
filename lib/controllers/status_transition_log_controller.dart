@@ -29,13 +29,33 @@ class StatusTransitionLogController extends GetxController {
 
   List<Map<String, dynamic>> get entries {
     final value = logPayload['entries'];
-    if (value is List) {
-      return value
-          .whereType<Map>()
-          .map((entry) => Map<String, dynamic>.from(_jsonSafe(entry) as Map))
-          .toList(growable: false);
+    if (value is! List) {
+      return const <Map<String, dynamic>>[];
     }
-    return const <Map<String, dynamic>>[];
+
+    final normalized = value
+        .whereType<Map>()
+        .map((entry) => Map<String, dynamic>.from(_jsonSafe(entry) as Map))
+        .toList(growable: true);
+
+    normalized.sort((left, right) {
+      final leftCurrent = isCurrent(left);
+      final rightCurrent = isCurrent(right);
+      if (leftCurrent != rightCurrent) {
+        return rightCurrent ? 1 : -1;
+      }
+
+      final leftTimestamp = DateTime.tryParse(left['timestamp']?.toString() ?? '');
+      final rightTimestamp = DateTime.tryParse(right['timestamp']?.toString() ?? '');
+      if (leftTimestamp != null && rightTimestamp != null) {
+        return rightTimestamp.compareTo(leftTimestamp);
+      }
+      if (leftTimestamp != null) return -1;
+      if (rightTimestamp != null) return 1;
+      return 0;
+    });
+
+    return normalized.toList(growable: false);
   }
 
   Map<String, dynamic>? get currentEntry {
@@ -114,6 +134,9 @@ class StatusTransitionLogController extends GetxController {
   }
 
   String stateText(Map<String, dynamic> entry) {
+    if (isCharging(entry)) {
+      return 'CHARGING';
+    }
     return _text(entry['state'], fallback: '-');
   }
 
