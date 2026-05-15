@@ -8,6 +8,7 @@ import 'package:open_mower_app/screens/advanced_options.dart';
 import 'package:open_mower_app/screens/sensor_values.dart';
 import 'package:open_mower_app/screens/timetable.dart';
 import 'package:open_mower_app/screens/mqtt_areas.dart';
+import 'package:open_mower_app/screens/status_transition_log.dart';
 import 'package:open_mower_app/screens/settings.dart';
 import 'package:open_mower_app/views/logo_widget.dart';
 import 'package:open_mower_app/views/logo_widget_drawer.dart';
@@ -16,7 +17,7 @@ class MainScreen extends GetView<RobotStateController> {
   MainScreen({super.key});
 
   final widgetList = <Widget>[
-    Dashboard(), AdvancedOptions(), const SensorValues(), const TimetableScreen(), const MqttAreasScreen(), const Settings()
+    Dashboard(), AdvancedOptions(), const SensorValues(), const TimetableScreen(), const MqttAreasScreen(), const StatusTransitionLogScreen(), const Settings()
   ];
 
   final _index = 0.obs;
@@ -97,6 +98,14 @@ class MainScreen extends GetView<RobotStateController> {
           _index.value= 4;
         },
       ),
+      ListTile(
+        leading: n.Icon(Icons.receipt_long),
+        title: const Text('Protokoll'),
+        onTap: () {
+          Get.back();
+          _index.value= 5;
+        },
+      ),
     ];
 
     if(!kReleaseMode || !kIsWeb) {
@@ -106,7 +115,7 @@ class MainScreen extends GetView<RobotStateController> {
         title: const Text('Settings'),
         onTap: () {
           Get.back();
-          _index.value= 5;
+          _index.value= 6;
         },
       ));
     }

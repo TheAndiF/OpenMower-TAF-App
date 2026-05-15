@@ -6,6 +6,7 @@ import 'package:mqtt5_client/mqtt5_client.dart';
 import 'package:open_mower_app/controllers/sensors_controller.dart';
 import 'package:open_mower_app/controllers/timetable_controller.dart';
 import 'package:open_mower_app/controllers/mqtt_areas_controller.dart';
+import 'package:open_mower_app/controllers/status_transition_log_controller.dart';
 import 'package:open_mower_app/models/map_model.dart';
 import 'package:open_mower_app/models/robot_state.dart';
 import 'package:open_mower_app/models/sensor_state.dart';
@@ -42,6 +43,7 @@ class MqttConnection  {
   final SensorsController sensorsController = Get.find();
   final TimetableController timetableController = Get.find();
   final MqttAreasController mqttAreasController = Get.find();
+  final StatusTransitionLogController statusTransitionLogController = Get.find();
 
   final RegExp exp = RegExp(r'sensors/(.*)/bson');
 
@@ -82,6 +84,9 @@ class MqttConnection  {
   static const String mapResponseJsonTopic = "map/response/json";
   static const String mapAckJsonTopic = "map/ack/json";
   static const String mapActionResultJsonTopic = "map/action_result/json";
+
+  static const String statusTransitionLogJsonTopic = "statustransition_log/json";
+  static const String statusTransitionLogRenewJsonTopic = "statustransition_log/set/renew/json";
 
   List<int>? _payloadBytes(MqttPublishMessage payload) {
     return payload.payload.message?.toList(growable: false);
@@ -255,6 +260,19 @@ class MqttConnection  {
     }
   }
 
+  void parseStatusTransitionLog(MqttPublishMessage payload) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) {
+        statusTransitionLogController.setError("Leere oder ungültige Protokoll-Nachricht empfangen.");
+        return;
+      }
+      statusTransitionLogController.setLogPayload(map, topic: statusTransitionLogJsonTopic);
+    } catch (e) {
+      statusTransitionLogController.setError("Protokolldaten konnten nicht gelesen werden: $e");
+    }
+  }
+
   String _requestId(String prefix) => "$prefix-${DateTime.now().millisecondsSinceEpoch}-$clientId";
 
   void _publishJson(String topic, Map<String, dynamic> map, {MqttQos qos = MqttQos.atLeastOnce}) {
@@ -359,6 +377,16 @@ class MqttConnection  {
     } catch(e) {
       debugPrint("error requesting map via mqtt");
       mqttAreasController.setError("Flächen-Anfrage konnte nicht gesendet werden.");
+    }
+  }
+
+  void requestStatusTransitionLog({int limit = 20}) {
+    try {
+      final normalizedLimit = limit.clamp(1, 300).toInt();
+      _publishJson(statusTransitionLogRenewJsonTopic, {"limit": normalizedLimit});
+    } catch(e) {
+      debugPrint("error requesting status transition log via mqtt");
+      statusTransitionLogController.setError("Protokoll-Anfrage konnte nicht gesendet werden.");
     }
   }
 
@@ -844,6 +872,10 @@ class MqttConnection  {
               parseMapValidation(payload);
             }
             break;
+            case statusTransitionLogJsonTopic: {
+              parseStatusTransitionLog(payload);
+            }
+            break;
             case "map_overlay/bson": {
               final bytes = payload.payload.message?.toList(growable: false);
               if(bytes == null || bytes.isBlank == true) {
@@ -902,6 +934,7 @@ class MqttConnection  {
     client.subscribe("actions/bson", MqttQos.exactlyOnce);
     client.subscribe(mapJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mapValidationJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(statusTransitionLogJsonTopic, MqttQos.atLeastOnce);
     client.subscribe("map_overlay/bson", MqttQos.atMostOnce);
     client.subscribe("sensor_infos/bson", MqttQos.atLeastOnce);
     client.subscribe("robot_state/json", MqttQos.atMostOnce);
