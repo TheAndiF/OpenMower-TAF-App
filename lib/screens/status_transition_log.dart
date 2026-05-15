@@ -117,8 +117,9 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
+                  spacing: 6,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     _infoChip(
                       context,
@@ -145,10 +146,10 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
                         label: controller.isCurrent(current) ? 'Aktiv' : 'Letzter Status',
                         value: controller.stateText(current),
                       ),
+                    const SizedBox(width: 10),
+                    ..._buildRequestControlItems(context),
                   ],
                 ),
-                const SizedBox(height: 16),
-                _buildRequestControls(context),
                 if (controller.lastStatus.value.trim().isNotEmpty) ...[
                   const SizedBox(height: 14),
                   Container(
@@ -157,7 +158,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: statusColor.withOpacity(0.45)),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -205,56 +206,49 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
       final time = '${updated.hour.toString().padLeft(2, '0')}:${updated.minute.toString().padLeft(2, '0')}:${updated.second.toString().padLeft(2, '0')}';
       extras.add('Aktualisiert: $date $time');
     }
-    final suffix = extras.isEmpty ? '' : '\n${extras.join(' · ')}';
+    final suffix = extras.isEmpty ? '' : ' · ${extras.join(' · ')}';
     return '${controller.lastStatus.value}$suffix';
   }
 
-  Widget _buildRequestControls(BuildContext context) {
-    final isMobile = MediaQuery.of(context).size.width < 700;
-    final input = TextField(
-      controller: controller.limitController,
-      inputFormatters: [
-        FilteringTextInputFormatter.digitsOnly,
-        LengthLimitingTextInputFormatter(3),
-      ],
-      keyboardType: TextInputType.number,
-      decoration: const InputDecoration(
-        labelText: 'Anzahl Einträge',
-        helperText: '1 bis 300',
-        border: OutlineInputBorder(),
-        isDense: true,
+  List<Widget> _buildRequestControlItems(BuildContext context) {
+    final input = SizedBox(
+      width: 220,
+      child: TextField(
+        controller: controller.limitController,
+        inputFormatters: [
+          FilteringTextInputFormatter.digitsOnly,
+          LengthLimitingTextInputFormatter(3),
+        ],
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(
+          labelText: 'Anzahl Einträge',
+          border: OutlineInputBorder(),
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        ),
+        onSubmitted: (_) => controller.requestLog(),
       ),
-      onSubmitted: (_) => controller.requestLog(),
+    );
+
+    final hint = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Text(
+        '1 bis 300',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+      ),
     );
 
     final button = ElevatedButton.icon(
       onPressed: controller.waitingForResponse.value ? null : controller.requestLog,
-      icon: const Icon(Icons.refresh),
+      icon: const Icon(Icons.refresh, size: 20),
       label: const Text('Protokoll erneuern'),
       style: ElevatedButton.styleFrom(
-        minimumSize: const Size(220, 52),
+        minimumSize: const Size(210, 46),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
     );
 
-    if (isMobile) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          input,
-          const SizedBox(height: 12),
-          button,
-        ],
-      );
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(width: 220, child: input),
-        const SizedBox(width: 16),
-        button,
-      ],
-    );
+    return [input, hint, button];
   }
 
   Widget _infoChip(
@@ -265,18 +259,18 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
   }) {
     final color = Theme.of(context).primaryColor;
     return Container(
-      constraints: const BoxConstraints(minWidth: 128),
+      constraints: const BoxConstraints(minWidth: 112),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: color.withOpacity(0.30)),
         color: color.withOpacity(0.06),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(width: 10),
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 7),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
