@@ -251,7 +251,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
               context,
               icon: Icons.filter_alt_outlined,
               label: 'Limit',
-              value: '${controller.effectiveLimit}',
+              value: '${controller.requestedLimitValue.value}',
             ),
           ),
         ],

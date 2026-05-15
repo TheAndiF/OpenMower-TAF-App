@@ -14,16 +14,17 @@ class StatusTransitionLogController extends GetxController {
   final rawJsonController = TextEditingController(text: '{}');
 
   final limitController = TextEditingController(text: '20');
+  final requestedLimitValue = 20.obs;
 
   bool get hasData => entries.isNotEmpty || logPayload.isNotEmpty;
 
   int get totalEntries => _asInt(logPayload['total_entries']);
   int get returnedEntries => _asInt(logPayload['returned_entries'], fallback: entries.length);
-  int get effectiveLimit => _asInt(logPayload['limit'], fallback: requestedLimit);
+  int get effectiveLimit => _asInt(logPayload['limit'], fallback: requestedLimitValue.value);
 
   int get requestedLimit {
     final parsed = int.tryParse(limitController.text.trim());
-    if (parsed == null) return 20;
+    if (parsed == null) return requestedLimitValue.value;
     return parsed.clamp(1, 300).toInt();
   }
 
@@ -96,11 +97,6 @@ class StatusTransitionLogController extends GetxController {
       ..clear()
       ..addAll(_deepCopy(normalized));
 
-    final payloadLimit = _asInt(normalized['limit']);
-    if (payloadLimit > 0) {
-      limitController.text = payloadLimit.toString();
-    }
-
     syncRawJsonFromData();
     lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
@@ -116,6 +112,7 @@ class StatusTransitionLogController extends GetxController {
 
   void requestLog() {
     final limit = requestedLimit;
+    requestedLimitValue.value = limit;
     limitController.text = limit.toString();
     Get.find<MqttConnection>().requestStatusTransitionLog(limit: limit);
     lastStatus.value = 'Protokolldaten werden angefordert ...';
