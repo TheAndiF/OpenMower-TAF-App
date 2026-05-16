@@ -9,6 +9,7 @@ import 'package:open_mower_app/controllers/sensors_controller.dart';
 import 'package:open_mower_app/controllers/settings_controller.dart';
 import 'package:open_mower_app/controllers/timetable_controller.dart';
 import 'package:open_mower_app/controllers/mqtt_areas_controller.dart';
+import 'package:open_mower_app/controllers/map_editor_controller.dart';
 import 'package:open_mower_app/controllers/status_transition_log_controller.dart';
 import 'package:open_mower_app/io/mqtt_connection.dart';
 import 'package:open_mower_app/screens/main_screen.dart';
@@ -25,6 +26,7 @@ void main() async {
   Get.put(SensorsController());
   Get.put(TimetableController());
   Get.put(MqttAreasController());
+  Get.put(MapEditorController());
   Get.put(StatusTransitionLogController());
 
   initServices();

@@ -1,0 +1,218 @@
+import 'dart:math' as math;
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
+import 'package:open_mower_app/models/editable_map_model.dart';
+
+class MapEditorViewport {
+  MapEditorViewport({required this.size, required Rect bounds})
+      : drawingRect = Rect.fromLTRB(22.0, 22.0, math.max(22.0, size.width - 22.0), math.max(22.0, size.height - 22.0)),
+        worldBounds = _expandedBounds(bounds) {
+    final safeWidth = math.max(worldBounds.width, 15.0);
+    final safeHeight = math.max(worldBounds.height, 15.0);
+    scale = math.min(drawingRect.width / safeWidth, drawingRect.height / safeHeight);
+    if (!scale.isFinite || scale <= 0) scale = 1.0;
+    worldWidth = safeWidth;
+    worldHeight = safeHeight;
+    mapTopLeft = Offset(
+      drawingRect.left + (drawingRect.width - worldWidth * scale) / 2,
+      drawingRect.top + (drawingRect.height - worldHeight * scale) / 2,
+    );
+    worldLeft = worldBounds.center.dx - worldWidth / 2;
+    worldTop = worldBounds.center.dy - worldHeight / 2;
+  }
+
+  final Size size;
+  final Rect drawingRect;
+  final Rect worldBounds;
+  late final double scale;
+  late final double worldWidth;
+  late final double worldHeight;
+  late final Offset mapTopLeft;
+  late final double worldLeft;
+  late final double worldTop;
+
+  Offset worldToCanvas(Offset world) {
+    return Offset(
+      mapTopLeft.dx + (world.dx - worldLeft) * scale,
+      mapTopLeft.dy + (world.dy - worldTop) * scale,
+    );
+  }
+
+  Offset canvasToWorld(Offset canvas) {
+    return Offset(
+      worldLeft + (canvas.dx - mapTopLeft.dx) / scale,
+      worldTop + (canvas.dy - mapTopLeft.dy) / scale,
+    );
+  }
+
+  static Rect _expandedBounds(Rect bounds) {
+    if (!bounds.left.isFinite || !bounds.top.isFinite || !bounds.right.isFinite || !bounds.bottom.isFinite) {
+      return const Rect.fromLTRB(-7.5, -7.5, 7.5, 7.5);
+    }
+    final horizontalPadding = math.max(bounds.width * 0.08, 0.75);
+    final verticalPadding = math.max(bounds.height * 0.08, 0.75);
+    return Rect.fromLTRB(
+      bounds.left - horizontalPadding,
+      bounds.top - verticalPadding,
+      bounds.right + horizontalPadding,
+      bounds.bottom + verticalPadding,
+    );
+  }
+}
+
+class MapEditorPainter extends CustomPainter {
+  MapEditorPainter({
+    required this.areas,
+    required this.viewport,
+    required this.editMode,
+    required this.selectedAreaIndex,
+    required this.selectedPointIndex,
+  });
+
+  final List<EditableMapArea> areas;
+  final MapEditorViewport viewport;
+  final bool editMode;
+  final int? selectedAreaIndex;
+  final int? selectedPointIndex;
+
+  final Paint _backgroundPaint = Paint()
+    ..color = const Color.fromRGBO(0, 0, 0, 0.06)
+    ..style = PaintingStyle.fill;
+  final Paint _gridPaint = Paint()
+    ..color = const Color.fromRGBO(210, 210, 210, 1)
+    ..strokeWidth = 1
+    ..style = PaintingStyle.stroke;
+  final Paint _axisPaint = Paint()
+    ..color = const Color.fromRGBO(170, 170, 170, 1)
+    ..strokeWidth = 1.4
+    ..style = PaintingStyle.stroke;
+  final Paint _mowFillPaint = Paint()
+    ..color = Colors.lightGreen.withOpacity(0.70)
+    ..style = PaintingStyle.fill;
+  final Paint _navFillPaint = Paint()
+    ..color = Colors.white.withOpacity(0.92)
+    ..style = PaintingStyle.fill;
+  final Paint _obstacleFillPaint = Paint()
+    ..color = const Color.fromRGBO(55, 55, 55, 0.90)
+    ..style = PaintingStyle.fill;
+  final Paint _outlinePaint = Paint()
+    ..color = const Color.fromRGBO(55, 55, 55, 1)
+    ..strokeWidth = 2
+    ..strokeJoin = StrokeJoin.round
+    ..style = PaintingStyle.stroke;
+  final Paint _selectedOutlinePaint = Paint()
+    ..color = Colors.orange.shade800
+    ..strokeWidth = 3.2
+    ..strokeJoin = StrokeJoin.round
+    ..style = PaintingStyle.stroke;
+  final Paint _vertexPaint = Paint()
+    ..color = Colors.blue.shade700
+    ..style = PaintingStyle.fill;
+  final Paint _selectedVertexPaint = Paint()
+    ..color = Colors.orange.shade900
+    ..style = PaintingStyle.fill;
+  final Paint _vertexBorderPaint = Paint()
+    ..color = Colors.white
+    ..strokeWidth = 1.2
+    ..style = PaintingStyle.stroke;
+  final Paint _midpointPaint = Paint()
+    ..color = Colors.white
+    ..style = PaintingStyle.fill;
+  final Paint _midpointBorderPaint = Paint()
+    ..color = Colors.orange.shade700
+    ..strokeWidth = 1.6
+    ..style = PaintingStyle.stroke;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, _backgroundPaint);
+    _drawGrid(canvas);
+
+    for (var i = 0; i < areas.length; i++) {
+      final path = _pathFor(areas[i]);
+      canvas.drawPath(path, _fillPaintFor(areas[i].type));
+      canvas.drawPath(path, i == selectedAreaIndex ? _selectedOutlinePaint : _outlinePaint);
+    }
+
+    if (!editMode || selectedAreaIndex == null || selectedAreaIndex! < 0 || selectedAreaIndex! >= areas.length) {
+      return;
+    }
+
+    final selectedArea = areas[selectedAreaIndex!];
+    _drawMidpoints(canvas, selectedArea);
+    _drawVertices(canvas, selectedArea);
+  }
+
+  void _drawGrid(Canvas canvas) {
+    final bounds = viewport.worldBounds;
+    final startX = (bounds.left / 5).floor() * 5;
+    final endX = (bounds.right / 5).ceil() * 5;
+    final startY = (bounds.top / 5).floor() * 5;
+    final endY = (bounds.bottom / 5).ceil() * 5;
+
+    for (var x = startX; x <= endX; x += 5) {
+      final p1 = viewport.worldToCanvas(Offset(x.toDouble(), bounds.top));
+      final p2 = viewport.worldToCanvas(Offset(x.toDouble(), bounds.bottom));
+      canvas.drawLine(p1, p2, x == 0 ? _axisPaint : _gridPaint);
+    }
+    for (var y = startY; y <= endY; y += 5) {
+      final p1 = viewport.worldToCanvas(Offset(bounds.left, y.toDouble()));
+      final p2 = viewport.worldToCanvas(Offset(bounds.right, y.toDouble()));
+      canvas.drawLine(p1, p2, y == 0 ? _axisPaint : _gridPaint);
+    }
+
+    final origin = viewport.worldToCanvas(Offset.zero);
+    canvas.drawCircle(origin, 4, _axisPaint..style = PaintingStyle.fill);
+    _axisPaint.style = PaintingStyle.stroke;
+  }
+
+  Path _pathFor(EditableMapArea area) {
+    final path = Path();
+    if (area.outline.isEmpty) return path;
+    final first = viewport.worldToCanvas(area.outline.first.displayOffset);
+    path.moveTo(first.dx, first.dy);
+    for (var i = 1; i < area.outline.length; i++) {
+      final point = viewport.worldToCanvas(area.outline[i].displayOffset);
+      path.lineTo(point.dx, point.dy);
+    }
+    path.close();
+    return path;
+  }
+
+  Paint _fillPaintFor(String type) {
+    if (type == 'nav') return _navFillPaint;
+    if (type == 'obstacle') return _obstacleFillPaint;
+    return _mowFillPaint;
+  }
+
+  void _drawVertices(Canvas canvas, EditableMapArea area) {
+    for (var i = 0; i < area.outline.length; i++) {
+      final center = viewport.worldToCanvas(area.outline[i].displayOffset);
+      final selected = i == selectedPointIndex;
+      canvas.drawCircle(center, selected ? 7.2 : 6, selected ? _selectedVertexPaint : _vertexPaint);
+      canvas.drawCircle(center, selected ? 7.2 : 6, _vertexBorderPaint);
+    }
+  }
+
+  void _drawMidpoints(Canvas canvas, EditableMapArea area) {
+    for (var i = 0; i < area.outline.length; i++) {
+      final current = area.outline[i].displayOffset;
+      final next = area.outline[(i + 1) % area.outline.length].displayOffset;
+      final midpoint = viewport.worldToCanvas(Offset((current.dx + next.dx) / 2, (current.dy + next.dy) / 2));
+      canvas.drawCircle(midpoint, 5, _midpointPaint);
+      canvas.drawCircle(midpoint, 5, _midpointBorderPaint);
+      canvas.drawLine(midpoint.translate(-2.5, 0), midpoint.translate(2.5, 0), _midpointBorderPaint);
+      canvas.drawLine(midpoint.translate(0, -2.5), midpoint.translate(0, 2.5), _midpointBorderPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant MapEditorPainter oldDelegate) {
+    return oldDelegate.areas != areas ||
+        oldDelegate.viewport != viewport ||
+        oldDelegate.editMode != editMode ||
+        oldDelegate.selectedAreaIndex != selectedAreaIndex ||
+        oldDelegate.selectedPointIndex != selectedPointIndex;
+  }
+}
