@@ -116,39 +116,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    _infoChip(
-                      context,
-                      icon: Icons.list_alt,
-                      label: 'Geliefert',
-                      value: '${controller.returnedEntries}',
-                    ),
-                    _infoChip(
-                      context,
-                      icon: Icons.inventory_2_outlined,
-                      label: 'Gesamt',
-                      value: '${controller.totalEntries}',
-                    ),
-                    _infoChip(
-                      context,
-                      icon: Icons.filter_alt_outlined,
-                      label: 'Limit',
-                      value: '${controller.effectiveLimit}',
-                    ),
-                    if (current != null)
-                      _infoChip(
-                        context,
-                        icon: controller.isCurrent(current) ? Icons.play_circle_outline : Icons.flag_outlined,
-                        label: controller.isCurrent(current) ? 'Aktiv' : 'Letzter Status',
-                        value: controller.stateText(current),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _buildRequestControls(context),
+                _buildSummaryToolbar(context),
                 if (controller.lastStatus.value.trim().isNotEmpty) ...[
                   const SizedBox(height: 14),
                   Container(
@@ -209,9 +177,139 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
     return '${controller.lastStatus.value}$suffix';
   }
 
-  Widget _buildRequestControls(BuildContext context) {
-    final isMobile = MediaQuery.of(context).size.width < 900;
-    final input = TextField(
+  Widget _buildSummaryToolbar(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 1120;
+    final metrics = _summaryMetricsPanel(context);
+    final input = SizedBox(width: 220, child: _limitInputField());
+    final dayFilter = SizedBox(width: 300, child: _dayFilterField(context));
+    final button = _renewButton();
+
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          metrics,
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              input,
+              dayFilter,
+              button,
+            ],
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Flexible(flex: 4, child: metrics),
+        const SizedBox(width: 14),
+        input,
+        const SizedBox(width: 12),
+        dayFilter,
+        const SizedBox(width: 12),
+        button,
+      ],
+    );
+  }
+
+  Widget _summaryMetricsPanel(BuildContext context) {
+    final color = Theme.of(context).primaryColor;
+
+    return Container(
+      constraints: const BoxConstraints(minHeight: 54),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.30)),
+        color: color.withOpacity(0.06),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Expanded(
+            child: _summaryMetric(
+              context,
+              icon: Icons.list_alt,
+              label: 'Geliefert',
+              value: '${controller.returnedEntries}',
+            ),
+          ),
+          _metricDivider(context),
+          Expanded(
+            child: _summaryMetric(
+              context,
+              icon: Icons.inventory_2_outlined,
+              label: 'Gesamt',
+              value: '${controller.totalEntries}',
+            ),
+          ),
+          _metricDivider(context),
+          Expanded(
+            child: _summaryMetric(
+              context,
+              icon: Icons.filter_alt_outlined,
+              label: 'Limit',
+              value: '${controller.requestedLimitValue.value}',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryMetric(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    final color = Theme.of(context).primaryColor;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: color, size: 18),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _metricDivider(BuildContext context) {
+    final color = Theme.of(context).primaryColor;
+    return Container(
+      width: 1,
+      height: 34,
+      margin: const EdgeInsets.symmetric(horizontal: 10),
+      color: color.withOpacity(0.18),
+    );
+  }
+
+  Widget _limitInputField() {
+    return TextField(
       controller: controller.limitController,
       inputFormatters: [
         FilteringTextInputFormatter.digitsOnly,
@@ -226,10 +324,73 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
       ),
       onSubmitted: (_) => controller.requestLog(),
     );
+  }
 
-    final dayPicker = _buildDayFilterField(context);
+  Widget _dayFilterField(BuildContext context) {
+    return Obx(() {
+      final selected = controller.selectedDay.value;
+      final label = selected == null
+          ? 'Alle Tage'
+          : '${selected.day.toString().padLeft(2, '0')}.${selected.month.toString().padLeft(2, '0')}.${selected.year.toString().padLeft(4, '0')}';
 
-    final button = ElevatedButton.icon(
+      return InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: () => _pickFilterDay(context),
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: 'Tag',
+            helperText: selected == null ? 'Alle geladenen Tage' : 'Tagesfilter aktiv',
+            border: const OutlineInputBorder(),
+            isDense: true,
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.calendar_today_outlined, size: 18, color: Theme.of(context).primaryColor),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (selected != null)
+                IconButton(
+                  tooltip: 'Tagesfilter entfernen',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: controller.clearSelectedDay,
+                )
+              else
+                const Icon(Icons.arrow_drop_down),
+            ],
+          ),
+        ),
+      );
+    });
+  }
+
+  Future<void> _pickFilterDay(BuildContext context) async {
+    final now = DateTime.now();
+    final initial = controller.selectedDay.value ?? now;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(now.year + 5, 12, 31),
+      helpText: 'Protokolltag auswählen',
+      cancelText: 'Abbrechen',
+      confirmText: 'Übernehmen',
+    );
+
+    if (picked != null) {
+      controller.setSelectedDay(picked);
+    }
+  }
+
+  Widget _renewButton() {
+    return ElevatedButton.icon(
       onPressed: controller.waitingForResponse.value ? null : controller.requestLog,
       icon: const Icon(Icons.refresh),
       label: const Text('Protokoll erneuern'),
@@ -237,85 +398,6 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
         minimumSize: const Size(220, 52),
       ),
     );
-
-    if (isMobile) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          input,
-          const SizedBox(height: 12),
-          dayPicker,
-          const SizedBox(height: 12),
-          button,
-        ],
-      );
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(width: 220, child: input),
-        const SizedBox(width: 16),
-        SizedBox(width: 250, child: dayPicker),
-        const SizedBox(width: 16),
-        button,
-      ],
-    );
-  }
-
-  Widget _buildDayFilterField(BuildContext context) {
-    final selected = controller.selectedDay.value;
-    return InputDecorator(
-      decoration: InputDecoration(
-        labelText: 'Tag',
-        helperText: selected == null ? 'Alle geladenen Tage' : 'Filter aktiv',
-        border: const OutlineInputBorder(),
-        isDense: true,
-        suffixIcon: selected == null
-            ? IconButton(
-                tooltip: 'Tag auswählen',
-                onPressed: () => _selectFilterDay(context),
-                icon: const Icon(Icons.calendar_month_outlined),
-              )
-            : IconButton(
-                tooltip: 'Tagesfilter entfernen',
-                onPressed: () => controller.setSelectedDay(null),
-                icon: const Icon(Icons.close),
-              ),
-      ),
-      child: InkWell(
-        onTap: () => _selectFilterDay(context),
-        child: Row(
-          children: [
-            Icon(Icons.calendar_today_outlined, size: 18, color: Theme.of(context).primaryColor),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                controller.selectedDayText,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _selectFilterDay(BuildContext context) async {
-    final now = DateTime.now();
-    final initial = controller.selectedDay.value ?? now;
-    final selected = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(2020, 1, 1),
-      lastDate: DateTime(now.year + 5, 12, 31),
-      helpText: 'Protokolltag auswählen',
-      cancelText: 'Abbrechen',
-      confirmText: 'Übernehmen',
-    );
-    if (selected != null) {
-      controller.setSelectedDay(selected);
-    }
   }
 
   Widget _infoChip(
@@ -393,9 +475,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
         child: Text(
           controller.waitingForResponse.value
               ? 'Das Protokoll wird angefordert.'
-              : controller.selectedDay.value != null
-                  ? 'Für den ausgewählten Tag ${controller.selectedDayText} wurden in den aktuell geladenen Protokolldaten keine Einträge gefunden.'
-                  : 'Noch keine Statuswechsel-Protokolle empfangen.',
+              : 'Noch keine Statuswechsel-Protokolle empfangen.',
           style: Theme.of(context).textTheme.bodyLarge,
         ),
       );
@@ -418,7 +498,6 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
     final color = Theme.of(context).primaryColor;
     final current = controller.isCurrent(entry);
     final emergency = controller.isEmergency(entry);
-    final charging = controller.isCharging(entry);
     final borderColor = emergency
         ? Colors.red
         : current
@@ -460,7 +539,6 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
               ),
               if (current) _badge(context, 'Aktiv', Colors.green),
               if (emergency) _badge(context, 'Emergency', Colors.red),
-              if (charging) _badge(context, 'Lädt', Colors.blue),
             ],
           ),
           subtitle: Padding(
@@ -545,6 +623,16 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
                 _detailRow('Emergency', controller.boolText(entry['emergency'], yes: 'aktiv', no: 'inaktiv')),
               ],
             ),
+            if (controller.hasAutomowContext(entry))
+              _detailBlock(
+                context,
+                title: 'Automow',
+                rows: [
+                  _detailRow('Automow', controller.automowText(entry)),
+                  _detailRow('Automow-ID', controller.automowIdText(entry)),
+                  _detailRow('Aktuelle Fläche', controller.currentAreaIdText(entry)),
+                ],
+              ),
             if (position.isNotEmpty)
               _detailBlock(
                 context,
@@ -554,6 +642,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
                   _detailRow('Y', controller.compactNumber(position['y'])),
                   _detailRow('Heading', controller.compactNumber(position['heading'], decimals: 3)),
                   _detailRow('Positionsgenauigkeit', controller.compactNumber(position['pos_accuracy'])),
+                  _detailRow('Heading-Genauigkeit', controller.compactNumber(position['heading_accuracy'], decimals: 3)),
                   _detailRow('Heading gültig', controller.boolText(position['heading_valid'], yes: 'ja', no: 'nein')),
                 ],
               ),
