@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/map_editor_controller.dart';
@@ -45,8 +46,11 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
               borderRadius: BorderRadius.circular(6),
             ),
             clipBehavior: Clip.antiAlias,
-            child: Stack(
-              children: [
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerSignal: _handleEditorPointerSignal,
+              child: Stack(
+                children: [
                 InteractiveViewer(
                   transformationController: _transformationController,
                   minScale: _minViewerScale,
@@ -54,27 +58,32 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
                   boundaryMargin: const EdgeInsets.all(56),
                   panEnabled: !controller.isDraggingPoint.value,
                   scaleEnabled: true,
+                  trackpadScrollCausesScale: true,
                   onInteractionUpdate: (_) => _syncViewerScale(),
                   onInteractionEnd: (_) => _syncViewerScale(),
-                  child: SizedBox(
-                    width: width,
-                    height: height,
-                    child: GestureDetector(
+                  child: Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerSignal: _handlePointerSignal,
+                    child: SizedBox(
+                      width: width,
+                      height: height,
+                      child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTapUp: controller.editMode.value ? (details) => _handleTap(details.localPosition, viewport) : null,
                       onPanStart: controller.editMode.value ? (details) => _handlePanStart(details.localPosition, viewport) : null,
                       onPanUpdate: controller.editMode.value ? (details) => _handlePanUpdate(details.localPosition, viewport) : null,
                       onPanEnd: controller.editMode.value ? (_) => controller.finishPointDrag() : null,
                       onPanCancel: controller.editMode.value ? controller.finishPointDrag : null,
-                      child: CustomPaint(
-                        painter: MapEditorPainter(
-                          areas: areas,
-                          viewport: viewport,
-                          editMode: controller.editMode.value,
-                          selectedAreaIndex: controller.selectedAreaIndex.value,
-                          selectedPointIndex: controller.selectedPointIndex.value,
-                          viewerScale: _viewerScale,
-                          showGrid: controller.showGrid.value,
+                        child: CustomPaint(
+                          painter: MapEditorPainter(
+                            areas: areas,
+                            viewport: viewport,
+                            editMode: controller.editMode.value,
+                            selectedAreaIndex: controller.selectedAreaIndex.value,
+                            selectedPointIndex: controller.selectedPointIndex.value,
+                            viewerScale: _viewerScale,
+                            showGrid: controller.showGrid.value,
+                          ),
                         ),
                       ),
                     ),
@@ -85,7 +94,8 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
                   right: 12,
                   child: _buildZoomControls(context),
                 ),
-              ],
+                ],
+              ),
             ),
           );
         },
@@ -189,6 +199,32 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
         icon: Icon(icon),
       ),
     );
+  }
+
+  void _handleEditorPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+
+    GestureBinding.instance.pointerSignalResolver.register(event, (resolvedEvent) {
+      if (resolvedEvent is! PointerScrollEvent) return;
+      final dy = resolvedEvent.scrollDelta.dy;
+      if (dy == 0) return;
+
+      resolvedEvent.respond(allowPlatformDefault: false);
+      _zoomBy(dy > 0 ? 0.90 : 1.10);
+    });
+  }
+
+  void _handlePointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+
+    GestureBinding.instance.pointerSignalResolver.register(event, (resolvedEvent) {
+      if (resolvedEvent is! PointerScrollEvent) return;
+      final dy = resolvedEvent.scrollDelta.dy;
+      if (dy == 0) return;
+
+      resolvedEvent.respond(allowPlatformDefault: false);
+      _zoomBy(dy > 0 ? 0.90 : 1.10);
+    });
   }
 
   void _handleTap(Offset canvasPoint, MapEditorViewport viewport) {
