@@ -14,49 +14,53 @@ class StatusTransitionLogController extends GetxController {
   final rawJsonController = TextEditingController(text: '{}');
 
   final limitController = TextEditingController(text: '20');
-  final requestedLimitValue = 20.obs;
+  final selectedDay = Rxn<DateTime>();
 
   bool get hasData => entries.isNotEmpty || logPayload.isNotEmpty;
 
   int get totalEntries => _asInt(logPayload['total_entries']);
   int get returnedEntries => _asInt(logPayload['returned_entries'], fallback: entries.length);
-  int get effectiveLimit => _asInt(logPayload['limit'], fallback: requestedLimitValue.value);
+  int get effectiveLimit => _asInt(logPayload['limit'], fallback: requestedLimit);
 
   int get requestedLimit {
     final parsed = int.tryParse(limitController.text.trim());
-    if (parsed == null) return requestedLimitValue.value;
+    if (parsed == null) return 20;
     return parsed.clamp(1, 300).toInt();
   }
 
   List<Map<String, dynamic>> get entries {
     final value = logPayload['entries'];
-    if (value is! List) {
-      return const <Map<String, dynamic>>[];
+    if (value is List) {
+      return value
+          .whereType<Map>()
+          .map((entry) => Map<String, dynamic>.from(_jsonSafe(entry) as Map))
+          .toList(growable: false);
     }
+    return const <Map<String, dynamic>>[];
+  }
 
-    final normalized = value
-        .whereType<Map>()
-        .map((entry) => Map<String, dynamic>.from(_jsonSafe(entry) as Map))
-        .toList(growable: true);
+  List<Map<String, dynamic>> get filteredEntries {
+    final filterDay = selectedDay.value;
+    if (filterDay == null) {
+      return entries;
+    }
+    return entries.where((entry) => _isSameLocalDay(_entryLocalDay(entry), filterDay)).toList(growable: false);
+  }
 
-    normalized.sort((left, right) {
-      final leftCurrent = isCurrent(left);
-      final rightCurrent = isCurrent(right);
-      if (leftCurrent != rightCurrent) {
-        return rightCurrent ? 1 : -1;
-      }
+  String get selectedDayText {
+    final value = selectedDay.value;
+    if (value == null) {
+      return 'Alle Tage';
+    }
+    return '${value.day.toString().padLeft(2, '0')}.${value.month.toString().padLeft(2, '0')}.${value.year.toString().padLeft(4, '0')}';
+  }
 
-      final leftTimestamp = DateTime.tryParse(left['timestamp']?.toString() ?? '');
-      final rightTimestamp = DateTime.tryParse(right['timestamp']?.toString() ?? '');
-      if (leftTimestamp != null && rightTimestamp != null) {
-        return rightTimestamp.compareTo(leftTimestamp);
-      }
-      if (leftTimestamp != null) return -1;
-      if (rightTimestamp != null) return 1;
-      return 0;
-    });
-
-    return normalized.toList(growable: false);
+  void setSelectedDay(DateTime? day) {
+    if (day == null) {
+      selectedDay.value = null;
+      return;
+    }
+    selectedDay.value = DateTime(day.year, day.month, day.day);
   }
 
   Map<String, dynamic>? get currentEntry {
@@ -97,6 +101,11 @@ class StatusTransitionLogController extends GetxController {
       ..clear()
       ..addAll(_deepCopy(normalized));
 
+    final payloadLimit = _asInt(normalized['limit']);
+    if (payloadLimit > 0) {
+      limitController.text = payloadLimit.toString();
+    }
+
     syncRawJsonFromData();
     lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
@@ -112,7 +121,6 @@ class StatusTransitionLogController extends GetxController {
 
   void requestLog() {
     final limit = requestedLimit;
-    requestedLimitValue.value = limit;
     limitController.text = limit.toString();
     Get.find<MqttConnection>().requestStatusTransitionLog(limit: limit);
     lastStatus.value = 'Protokolldaten werden angefordert ...';
@@ -131,8 +139,7 @@ class StatusTransitionLogController extends GetxController {
   }
 
   String stateText(Map<String, dynamic> entry) {
-    final state = _text(entry['state'], fallback: '-');
-    return isCharging(entry) && state != '-' ? '$state (CHARGING)' : state;
+    return _text(entry['state'], fallback: '-');
   }
 
   String subStateText(Map<String, dynamic> entry) {
@@ -193,30 +200,9 @@ class StatusTransitionLogController extends GetxController {
     return _asBool(value) ? yes : no;
   }
 
-  bool isCurrent(Map<String, dynamic> entry) => _asBool(entry['duration_is_current']);
+  bool isCurrent(Map<String, dynamic> entry) => entry['duration_is_current'] == true;
   bool isCharging(Map<String, dynamic> entry) => _asBool(entry['is_charging']);
   bool isEmergency(Map<String, dynamic> entry) => _asBool(entry['emergency']);
-  bool hasAutomow(Map<String, dynamic> entry) => entry.containsKey('automow');
-  bool isAutomow(Map<String, dynamic> entry) => _asBool(entry['automow']);
-
-  String automowText(Map<String, dynamic> entry) {
-    if (!hasAutomow(entry)) return '-';
-    return isAutomow(entry) ? 'aktiv' : 'inaktiv';
-  }
-
-  String automowIdText(Map<String, dynamic> entry) {
-    return _text(entry['automow_id'], fallback: '-');
-  }
-
-  String currentAreaIdText(Map<String, dynamic> entry) {
-    return _text(entry['current_area_id'], fallback: '-');
-  }
-
-  bool hasAutomowContext(Map<String, dynamic> entry) {
-    return hasAutomow(entry) ||
-        automowIdText(entry) != '-' ||
-        currentAreaIdText(entry) != '-';
-  }
 
   Map<String, dynamic> positionFor(Map<String, dynamic> entry) {
     final value = entry['position'];
@@ -238,6 +224,23 @@ class StatusTransitionLogController extends GetxController {
     final number = _asDouble(value);
     if (number == null) return '-';
     return number.toStringAsFixed(decimals);
+  }
+
+  DateTime? _entryLocalDay(Map<String, dynamic> entry) {
+    final raw = entry['timestamp']?.toString().trim() ?? '';
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) {
+      return null;
+    }
+    final local = parsed.toLocal();
+    return DateTime(local.year, local.month, local.day);
+  }
+
+  bool _isSameLocalDay(DateTime? left, DateTime right) {
+    if (left == null) {
+      return false;
+    }
+    return left.year == right.year && left.month == right.month && left.day == right.day;
   }
 
   int _asInt(dynamic value, {int fallback = 0}) {
