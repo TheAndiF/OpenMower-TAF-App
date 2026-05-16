@@ -68,6 +68,7 @@ class MapEditorPainter extends CustomPainter {
     required this.editMode,
     required this.selectedAreaIndex,
     required this.selectedPointIndex,
+    required this.viewerScale,
   });
 
   final List<EditableMapArea> areas;
@@ -75,6 +76,7 @@ class MapEditorPainter extends CustomPainter {
   final bool editMode;
   final int? selectedAreaIndex;
   final int? selectedPointIndex;
+  final double viewerScale;
 
   final Paint _backgroundPaint = Paint()
     ..color = const Color.fromRGBO(0, 0, 0, 0.06)
@@ -187,25 +189,35 @@ class MapEditorPainter extends CustomPainter {
   }
 
   void _drawVertices(Canvas canvas, EditableMapArea area) {
+    final scale = _safeViewerScale;
+    final borderWidth = 1.2 / scale;
+    _vertexBorderPaint.strokeWidth = borderWidth;
     for (var i = 0; i < area.outline.length; i++) {
       final center = viewport.worldToCanvas(area.outline[i].displayOffset);
       final selected = i == selectedPointIndex;
-      canvas.drawCircle(center, selected ? 7.2 : 6, selected ? _selectedVertexPaint : _vertexPaint);
-      canvas.drawCircle(center, selected ? 7.2 : 6, _vertexBorderPaint);
+      final radius = (selected ? 7.2 : 6.0) / scale;
+      canvas.drawCircle(center, radius, selected ? _selectedVertexPaint : _vertexPaint);
+      canvas.drawCircle(center, radius, _vertexBorderPaint);
     }
   }
 
   void _drawMidpoints(Canvas canvas, EditableMapArea area) {
+    final scale = _safeViewerScale;
+    final radius = 5.0 / scale;
+    final plusHalfLength = 2.5 / scale;
+    _midpointBorderPaint.strokeWidth = 1.6 / scale;
     for (var i = 0; i < area.outline.length; i++) {
       final current = area.outline[i].displayOffset;
       final next = area.outline[(i + 1) % area.outline.length].displayOffset;
       final midpoint = viewport.worldToCanvas(Offset((current.dx + next.dx) / 2, (current.dy + next.dy) / 2));
-      canvas.drawCircle(midpoint, 5, _midpointPaint);
-      canvas.drawCircle(midpoint, 5, _midpointBorderPaint);
-      canvas.drawLine(midpoint.translate(-2.5, 0), midpoint.translate(2.5, 0), _midpointBorderPaint);
-      canvas.drawLine(midpoint.translate(0, -2.5), midpoint.translate(0, 2.5), _midpointBorderPaint);
+      canvas.drawCircle(midpoint, radius, _midpointPaint);
+      canvas.drawCircle(midpoint, radius, _midpointBorderPaint);
+      canvas.drawLine(midpoint.translate(-plusHalfLength, 0), midpoint.translate(plusHalfLength, 0), _midpointBorderPaint);
+      canvas.drawLine(midpoint.translate(0, -plusHalfLength), midpoint.translate(0, plusHalfLength), _midpointBorderPaint);
     }
   }
+
+  double get _safeViewerScale => math.max(viewerScale, 1.0);
 
   @override
   bool shouldRepaint(covariant MapEditorPainter oldDelegate) {
@@ -213,6 +225,7 @@ class MapEditorPainter extends CustomPainter {
         oldDelegate.viewport != viewport ||
         oldDelegate.editMode != editMode ||
         oldDelegate.selectedAreaIndex != selectedAreaIndex ||
-        oldDelegate.selectedPointIndex != selectedPointIndex;
+        oldDelegate.selectedPointIndex != selectedPointIndex ||
+        oldDelegate.viewerScale != viewerScale;
   }
 }

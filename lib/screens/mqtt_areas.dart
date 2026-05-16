@@ -446,6 +446,8 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
       final selectedPointText = selectedPoint == null
           ? '-'
           : 'x ${selectedPoint.x.toStringAsFixed(3)} / y ${selectedPoint.y.toStringAsFixed(3)}';
+      final editableAreas = mapEditorController.editableAreas.toList(growable: false);
+      final selectedAreaIndex = mapEditorController.selectedAreaIndex.value;
 
       return Padding(
         padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
@@ -484,6 +486,31 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
               ],
             ),
             const SizedBox(height: 12),
+            DropdownButtonFormField<int?>(
+              value: selectedAreaIndex,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Fläche zur Bearbeitung',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.layers_outlined),
+              ),
+              items: <DropdownMenuItem<int?>>[
+                const DropdownMenuItem<int?>(
+                  value: null,
+                  child: Text('Keine Fläche ausgewählt'),
+                ),
+                for (var i = 0; i < editableAreas.length; i++)
+                  DropdownMenuItem<int?>(
+                    value: i,
+                    child: Text(
+                      '${editableAreas[i].displayName} · ${editableAreas[i].type} · ${editableAreas[i].outline.length} Punkte',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: editableAreas.isEmpty ? null : mapEditorController.selectAreaByIndex,
+            ),
+            const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -512,7 +539,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
             const SizedBox(height: 10),
             Text(
               editMode
-                  ? 'Tippen: Fläche auswählen. Punkte ziehen: Grenze verschieben. Plus-Marker antippen: Punkt einfügen.'
+                  ? 'Fläche bevorzugt über das Dropdown wählen. Alternativ weiter direkt in der Karte antippen. Punkte ziehen: Grenze verschieben. Plus-Marker antippen: Punkt einfügen.'
                   : 'Der Editor ist getrennt von Dashboard- und Steuerkarten. Bearbeiten aktiviert ausschließlich diesen Bereich.',
               style: Theme.of(context).textTheme.bodySmall,
             ),

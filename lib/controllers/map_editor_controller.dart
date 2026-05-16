@@ -112,14 +112,27 @@ class MapEditorController extends GetxController {
   bool selectAreaAt(Offset worldPoint) {
     final hit = _findAreaHit(worldPoint);
     if (hit == null) {
-      selectedAreaIndex.value = null;
-      selectedPointIndex.value = null;
+      clearAreaSelection();
       return false;
     }
-    selectedAreaIndex.value = hit;
-    selectedPointIndex.value = null;
-    editorStatus.value = '${editableAreas[hit].displayName} ausgewählt.';
+    selectAreaByIndex(hit);
     return true;
+  }
+
+  void selectAreaByIndex(int? index) {
+    if (index == null || index < 0 || index >= editableAreas.length) {
+      clearAreaSelection();
+      return;
+    }
+    selectedAreaIndex.value = index;
+    selectedPointIndex.value = null;
+    editorStatus.value = '${editableAreas[index].displayName} ausgewählt.';
+  }
+
+  void clearAreaSelection() {
+    selectedAreaIndex.value = null;
+    selectedPointIndex.value = null;
+    editorStatus.value = 'Keine Fläche ausgewählt.';
   }
 
   int? selectPointNear(Offset worldPoint, double toleranceWorld) {
