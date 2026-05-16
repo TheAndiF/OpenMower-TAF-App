@@ -16,6 +16,7 @@ class MapEditorController extends GetxController {
   final selectedPointIndex = RxnInt();
   final hasUnsavedChanges = false.obs;
   final isDraggingPoint = false.obs;
+  final showGrid = true.obs;
   final editorStatus = ''.obs;
 
   final List<List<EditableMapArea>> _undoStack = <List<EditableMapArea>>[];
@@ -242,6 +243,13 @@ class MapEditorController extends GetxController {
     loadFromAreaPayload();
     editMode.value = false;
     editorStatus.value = 'Lokale Kartenänderungen verworfen.';
+  }
+
+  void toggleGridVisibility() {
+    showGrid.toggle();
+    editorStatus.value = showGrid.value
+        ? 'Raster im Karteneditor eingeblendet.'
+        : 'Raster im Karteneditor ausgeblendet.';
   }
 
   void writeBackAndSend() {

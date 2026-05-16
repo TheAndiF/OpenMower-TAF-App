@@ -69,6 +69,7 @@ class MapEditorPainter extends CustomPainter {
     required this.selectedAreaIndex,
     required this.selectedPointIndex,
     required this.viewerScale,
+    required this.showGrid,
   });
 
   final List<EditableMapArea> areas;
@@ -77,6 +78,7 @@ class MapEditorPainter extends CustomPainter {
   final int? selectedAreaIndex;
   final int? selectedPointIndex;
   final double viewerScale;
+  final bool showGrid;
 
   final Paint _backgroundPaint = Paint()
     ..color = const Color.fromRGBO(0, 0, 0, 0.06)
@@ -132,9 +134,11 @@ class MapEditorPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(Offset.zero & size, _backgroundPaint);
-    _drawGrid(canvas);
 
     _applyScreenConstantStrokeWidths();
+    if (showGrid) {
+      _drawGrid(canvas);
+    }
 
     for (var i = 0; i < areas.length; i++) {
       final path = _pathFor(areas[i]);
@@ -242,6 +246,7 @@ class MapEditorPainter extends CustomPainter {
         oldDelegate.editMode != editMode ||
         oldDelegate.selectedAreaIndex != selectedAreaIndex ||
         oldDelegate.selectedPointIndex != selectedPointIndex ||
-        oldDelegate.viewerScale != viewerScale;
+        oldDelegate.viewerScale != viewerScale ||
+        oldDelegate.showGrid != showGrid;
   }
 }

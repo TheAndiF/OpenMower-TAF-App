@@ -527,6 +527,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
                   _editorMetaText(context, 'Typ', selectedType),
                   _editorMetaText(context, 'Punkte', '${selectedArea?.outline.length ?? 0}'),
                   _editorMetaText(context, 'Punkt', selectedPointText),
+                  _editorMetaText(context, 'Raster', mapEditorController.showGrid.value ? 'An' : 'Aus'),
                 ],
               ),
             ),
@@ -539,7 +540,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
             const SizedBox(height: 10),
             Text(
               editMode
-                  ? 'Fläche bevorzugt über das Dropdown wählen. Alternativ weiter direkt in der Karte antippen. Punkte ziehen: Grenze verschieben. Plus-Marker antippen: Punkt einfügen.'
+                  ? 'Fläche bevorzugt über das Dropdown wählen. Alternativ weiter direkt in der Karte antippen. Punkte ziehen: Grenze verschieben. Plus-Marker antippen: Punkt einfügen. Unten links in der 3×3-Matrix lässt sich das Raster ein- oder ausblenden.'
                   : 'Der Editor ist getrennt von Dashboard- und Steuerkarten. Bearbeiten aktiviert ausschließlich diesen Bereich.',
               style: Theme.of(context).textTheme.bodySmall,
             ),

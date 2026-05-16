@@ -74,6 +74,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
                           selectedAreaIndex: controller.selectedAreaIndex.value,
                           selectedPointIndex: controller.selectedPointIndex.value,
                           viewerScale: _viewerScale,
+                          showGrid: controller.showGrid.value,
                         ),
                       ),
                     ),
@@ -145,7 +146,12 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const SizedBox(width: 40, height: 40),
+                _controlButton(
+                  tooltip: controller.showGrid.value ? 'Raster ausblenden' : 'Raster anzeigen',
+                  onPressed: controller.toggleGridVisibility,
+                  icon: controller.showGrid.value ? Icons.grid_on : Icons.grid_off,
+                  highlighted: controller.showGrid.value,
+                ),
                 _controlButton(
                   tooltip: 'Karte nach unten verschieben',
                   onPressed: () => _panBy(const Offset(0, 1)),
@@ -164,7 +170,9 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
     required String tooltip,
     required VoidCallback? onPressed,
     required IconData icon,
+    bool highlighted = false,
   }) {
+    final theme = Theme.of(context);
     return SizedBox(
       width: 40,
       height: 40,
@@ -173,6 +181,11 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
         visualDensity: VisualDensity.compact,
         padding: EdgeInsets.zero,
         onPressed: onPressed,
+        style: IconButton.styleFrom(
+          backgroundColor: highlighted ? theme.primaryColor.withOpacity(0.14) : null,
+          foregroundColor: highlighted ? theme.primaryColor : null,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        ),
         icon: Icon(icon),
       ),
     );
