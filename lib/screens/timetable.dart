@@ -17,7 +17,7 @@ class TimetableScreen extends StatefulWidget {
 class _TimetableScreenState extends State<TimetableScreen> {
   final TimetableController controller = Get.find<TimetableController>();
   bool _renewSent = false;
-  bool _jsonExpanded = true;
+  bool _jsonExpanded = false;
 
   static const days = <String>[
     'Monday',
@@ -66,6 +66,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                   icon: Icons.schedule,
                   title: 'Time Settings',
                   subtitle: 'Systemzeit anzeigen und aktualisieren',
+                  initiallyExpanded: false,
                   child: _buildTimeSettingsCard(context),
                 ),
                 const SizedBox(height: 16),
@@ -97,6 +98,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
     required IconData icon,
     required String title,
     required String subtitle,
+    bool initiallyExpanded = true,
     required Widget child,
   }) {
     final color = Theme.of(context).primaryColor;
@@ -105,7 +107,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          initiallyExpanded: true,
+          initiallyExpanded: initiallyExpanded,
           backgroundColor: color.withOpacity(0.08),
           collapsedBackgroundColor: color.withOpacity(0.08),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

@@ -65,6 +65,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
                   icon: Icons.edit_location_alt_outlined,
                   title: 'Karteneditor',
                   subtitle: 'Polygone separat bearbeiten – ohne die bisherigen Kartenansichten zu verändern',
+                  initiallyExpanded: false,
                   child: _buildMapEditorSection(context),
                 ),
                 const SizedBox(height: 16),
@@ -282,6 +283,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     required IconData icon,
     required String title,
     required String subtitle,
+    bool initiallyExpanded = true,
     required Widget child,
   }) {
     final color = Theme.of(context).primaryColor;
@@ -290,7 +292,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          initiallyExpanded: true,
+          initiallyExpanded: initiallyExpanded,
           backgroundColor: color.withOpacity(0.08),
           collapsedBackgroundColor: color.withOpacity(0.08),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
