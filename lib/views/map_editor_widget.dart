@@ -19,6 +19,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
   static const double _minViewerScale = 1.0;
   static const double _maxViewerScale = 8.0;
   double _viewerScale = 1.0;
+  Size _lastViewportSize = Size.zero;
 
   @override
   void dispose() {
@@ -34,7 +35,8 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
         builder: (context, constraints) {
           final width = constraints.maxWidth.isFinite ? constraints.maxWidth : 900.0;
           final height = width < 700 ? 360.0 : 520.0;
-          final viewport = MapEditorViewport(size: Size(width, height), bounds: controller.displayBounds());
+          _lastViewportSize = Size(width, height);
+          final viewport = MapEditorViewport(size: _lastViewportSize, bounds: controller.displayBounds());
           return Container(
             width: double.infinity,
             height: height,
@@ -163,9 +165,17 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
   void _zoomBy(double factor) {
     final currentScale = _safeViewerScale;
     final targetScale = (currentScale * factor).clamp(_minViewerScale, _maxViewerScale).toDouble();
-    final actualFactor = targetScale / currentScale;
-    if ((actualFactor - 1.0).abs() < 0.001) return;
-    final next = _transformationController.value.clone()..scale(actualFactor);
+    if ((targetScale - currentScale).abs() < 0.001) return;
+
+    final focalPoint = _lastViewportSize == Size.zero
+        ? Offset.zero
+        : Offset(_lastViewportSize.width / 2, _lastViewportSize.height / 2);
+    final scenePoint = _transformationController.toScene(focalPoint);
+    final next = Matrix4.identity()
+      ..translate(focalPoint.dx, focalPoint.dy)
+      ..scale(targetScale)
+      ..translate(-scenePoint.dx, -scenePoint.dy);
+
     _transformationController.value = next;
     if (!mounted) return;
     setState(() => _viewerScale = targetScale);

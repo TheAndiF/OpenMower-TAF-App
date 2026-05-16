@@ -98,6 +98,9 @@ class MapEditorPainter extends CustomPainter {
   final Paint _obstacleFillPaint = Paint()
     ..color = const Color.fromRGBO(55, 55, 55, 0.90)
     ..style = PaintingStyle.fill;
+  final Paint _selectedAreaFillPaint = Paint()
+    ..color = Colors.orange.withOpacity(0.26)
+    ..style = PaintingStyle.fill;
   final Paint _outlinePaint = Paint()
     ..color = const Color.fromRGBO(55, 55, 55, 1)
     ..strokeWidth = 2
@@ -131,9 +134,14 @@ class MapEditorPainter extends CustomPainter {
     canvas.drawRect(Offset.zero & size, _backgroundPaint);
     _drawGrid(canvas);
 
+    _applyScreenConstantStrokeWidths();
+
     for (var i = 0; i < areas.length; i++) {
       final path = _pathFor(areas[i]);
       canvas.drawPath(path, _fillPaintFor(areas[i].type));
+      if (i == selectedAreaIndex) {
+        canvas.drawPath(path, _selectedAreaFillPaint);
+      }
       canvas.drawPath(path, i == selectedAreaIndex ? _selectedOutlinePaint : _outlinePaint);
     }
 
@@ -144,6 +152,14 @@ class MapEditorPainter extends CustomPainter {
     final selectedArea = areas[selectedAreaIndex!];
     _drawMidpoints(canvas, selectedArea);
     _drawVertices(canvas, selectedArea);
+  }
+
+  void _applyScreenConstantStrokeWidths() {
+    final scale = _safeViewerScale;
+    _gridPaint.strokeWidth = 1.0 / scale;
+    _axisPaint.strokeWidth = 1.4 / scale;
+    _outlinePaint.strokeWidth = 2.0 / scale;
+    _selectedOutlinePaint.strokeWidth = 3.2 / scale;
   }
 
   void _drawGrid(Canvas canvas) {
