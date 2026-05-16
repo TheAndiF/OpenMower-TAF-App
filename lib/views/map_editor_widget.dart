@@ -17,7 +17,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
   final TransformationController _transformationController = TransformationController();
 
   static const double _minViewerScale = 1.0;
-  static const double _maxViewerScale = 8.0;
+  static const double _maxViewerScale = 20.0;
   double _viewerScale = 1.0;
   Size _lastViewportSize = Size.zero;
 
@@ -102,26 +102,78 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              tooltip: 'Hineinzoomen',
-              visualDensity: VisualDensity.compact,
-              onPressed: _viewerScale >= _maxViewerScale - 0.01 ? null : () => _zoomBy(1.25),
-              icon: const Icon(Icons.add),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _controlButton(
+                  tooltip: 'Herauszoomen',
+                  onPressed: _viewerScale <= _minViewerScale + 0.01 ? null : () => _zoomBy(0.78),
+                  icon: Icons.remove,
+                ),
+                _controlButton(
+                  tooltip: 'Karte nach oben verschieben',
+                  onPressed: () => _panBy(const Offset(0, -1)),
+                  icon: Icons.keyboard_arrow_up,
+                ),
+                _controlButton(
+                  tooltip: 'Hineinzoomen',
+                  onPressed: _viewerScale >= _maxViewerScale - 0.01 ? null : () => _zoomBy(1.32),
+                  icon: Icons.add,
+                ),
+              ],
             ),
-            IconButton(
-              tooltip: 'Herauszoomen',
-              visualDensity: VisualDensity.compact,
-              onPressed: _viewerScale <= _minViewerScale + 0.01 ? null : () => _zoomBy(0.8),
-              icon: const Icon(Icons.remove),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _controlButton(
+                  tooltip: 'Karte nach links verschieben',
+                  onPressed: () => _panBy(const Offset(-1, 0)),
+                  icon: Icons.keyboard_arrow_left,
+                ),
+                _controlButton(
+                  tooltip: 'Ansicht zurücksetzen',
+                  onPressed: _resetZoom,
+                  icon: Icons.fit_screen_outlined,
+                ),
+                _controlButton(
+                  tooltip: 'Karte nach rechts verschieben',
+                  onPressed: () => _panBy(const Offset(1, 0)),
+                  icon: Icons.keyboard_arrow_right,
+                ),
+              ],
             ),
-            IconButton(
-              tooltip: 'Ansicht zurücksetzen',
-              visualDensity: VisualDensity.compact,
-              onPressed: _resetZoom,
-              icon: const Icon(Icons.fit_screen_outlined),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(width: 40, height: 40),
+                _controlButton(
+                  tooltip: 'Karte nach unten verschieben',
+                  onPressed: () => _panBy(const Offset(0, 1)),
+                  icon: Icons.keyboard_arrow_down,
+                ),
+                const SizedBox(width: 40, height: 40),
+              ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _controlButton({
+    required String tooltip,
+    required VoidCallback? onPressed,
+    required IconData icon,
+  }) {
+    return SizedBox(
+      width: 40,
+      height: 40,
+      child: IconButton(
+        tooltip: tooltip,
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        onPressed: onPressed,
+        icon: Icon(icon),
       ),
     );
   }
@@ -160,6 +212,16 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
     _transformationController.value = Matrix4.identity();
     if (!mounted) return;
     setState(() => _viewerScale = _minViewerScale);
+  }
+
+
+  void _panBy(Offset direction) {
+    if (_lastViewportSize == Size.zero) return;
+    final step = math.max(36.0, math.min(_lastViewportSize.shortestSide * 0.12, 96.0));
+    final matrix = _transformationController.value.clone();
+    matrix.storage[12] += direction.dx * step;
+    matrix.storage[13] += direction.dy * step;
+    _transformationController.value = matrix;
   }
 
   void _zoomBy(double factor) {

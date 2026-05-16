@@ -99,7 +99,7 @@ class MapEditorPainter extends CustomPainter {
     ..color = const Color.fromRGBO(55, 55, 55, 0.90)
     ..style = PaintingStyle.fill;
   final Paint _selectedAreaFillPaint = Paint()
-    ..color = Colors.orange.withOpacity(0.26)
+    ..color = Colors.cyanAccent.withOpacity(0.34)
     ..style = PaintingStyle.fill;
   final Paint _outlinePaint = Paint()
     ..color = const Color.fromRGBO(55, 55, 55, 1)
