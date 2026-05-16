@@ -120,6 +120,8 @@ class MapEditorController extends GetxController {
     return true;
   }
 
+  int? areaIndexAt(Offset worldPoint) => _findAreaHit(worldPoint);
+
   void selectAreaByIndex(int? index) {
     if (index == null || index < 0 || index >= editableAreas.length) {
       clearAreaSelection();

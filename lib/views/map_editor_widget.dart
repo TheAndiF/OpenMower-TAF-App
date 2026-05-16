@@ -230,16 +230,46 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
   void _handleTap(Offset canvasPoint, MapEditorViewport viewport) {
     final worldPoint = viewport.canvasToWorld(canvasPoint);
     final toleranceWorld = 14 / (viewport.scale * _safeViewerScale);
+    final hitAreaIndex = controller.areaIndexAt(worldPoint);
+    final currentAreaIndex = controller.selectedAreaIndex.value;
+
+    // Eine andere Fläche hat Vorrang vor Punktaktionen der bisher markierten Fläche.
+    // Dadurch wechselt die Auswahl eindeutig: neue Fläche markieren, alte entmarkieren.
+    if (hitAreaIndex != null && hitAreaIndex != currentAreaIndex) {
+      controller.selectAreaByIndex(hitAreaIndex);
+      return;
+    }
+
+    // Punktbearbeitung ist nur innerhalb der aktuell aktiven Fläche relevant.
     if (controller.insertPointNearMidpoint(worldPoint, toleranceWorld)) return;
     if (controller.selectPointNear(worldPoint, toleranceWorld) != null) return;
-    controller.selectAreaAt(worldPoint);
+
+    if (hitAreaIndex != null) {
+      controller.selectAreaByIndex(hitAreaIndex);
+    } else {
+      controller.clearAreaSelection();
+    }
   }
 
   void _handlePanStart(Offset canvasPoint, MapEditorViewport viewport) {
     final worldPoint = viewport.canvasToWorld(canvasPoint);
     final toleranceWorld = 16 / (viewport.scale * _safeViewerScale);
+    final hitAreaIndex = controller.areaIndexAt(worldPoint);
+    final currentAreaIndex = controller.selectedAreaIndex.value;
+
+    // Beginnt die Geste auf einer anderen Fläche, wird zuerst nur die Fläche gewechselt.
+    // Der Nutzer kann anschließend deren Punkte gezielt bewegen.
+    if (hitAreaIndex != null && hitAreaIndex != currentAreaIndex) {
+      controller.selectAreaByIndex(hitAreaIndex);
+      return;
+    }
+
     if (!controller.startPointDrag(worldPoint, toleranceWorld)) {
-      controller.selectAreaAt(worldPoint);
+      if (hitAreaIndex != null) {
+        controller.selectAreaByIndex(hitAreaIndex);
+      } else {
+        controller.clearAreaSelection();
+      }
     }
   }
 
