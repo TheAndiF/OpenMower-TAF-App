@@ -20,6 +20,12 @@ final List<String> widgetSortList = [
   'om_right_esc_temp'
 ];
 
+// Sensors that are intentionally kept available internally,
+// but are not useful as a standalone tile in the sensor overview.
+final Set<String> hiddenSensorWidgetIds = {
+  'mow_motor_direction',
+};
+
 class SensorValues extends GetView<SensorsController> {
   const SensorValues({super.key});
 
@@ -35,6 +41,9 @@ class SensorValues extends GetView<SensorsController> {
             ..p = 16
             ..children = Map.fromEntries(
               controller.sensorStates.entries
+              .where((entry) =>
+                  !hiddenSensorWidgetIds.contains(entry.key) &&
+                  entry.value.name != 'Mow Motor Direction')
               .toList(growable: false)
               ..sort((a, b) {
                 int ai = widgetSortList.indexWhere((key) => key == a.key);
