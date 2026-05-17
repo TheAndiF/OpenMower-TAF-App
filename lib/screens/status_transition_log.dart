@@ -621,6 +621,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
                 _detailRow('GPS', controller.percentageText(entry['gps_percentage'])),
                 _detailRow('Ladezustand', controller.boolText(entry['is_charging'], yes: 'lädt', no: 'lädt nicht')),
                 _detailRow('Emergency', controller.boolText(entry['emergency'], yes: 'aktiv', no: 'inaktiv')),
+                _detailRow('Drehrichtung', controller.mowMotorDirectionText(entry)),
               ],
             ),
             if (controller.hasAutomowContext(entry))

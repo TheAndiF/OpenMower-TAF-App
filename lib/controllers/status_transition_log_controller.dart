@@ -238,6 +238,10 @@ class StatusTransitionLogController extends GetxController {
     return _text(entry['current_area_id'], fallback: '-');
   }
 
+  String mowMotorDirectionText(Map<String, dynamic> entry) {
+    return _text(entry['mow_motor_direction'], fallback: '-');
+  }
+
   bool hasAutomowContext(Map<String, dynamic> entry) {
     return hasAutomow(entry) ||
         automowIdText(entry) != '-' ||
