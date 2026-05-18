@@ -444,13 +444,25 @@ class MowerLogicSettingsController extends GetxController {
 
   int? _int(dynamic value) {
     if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value?.toString().trim() ?? '');
+    if (value is num) {
+      final numeric = value.toDouble();
+      if (!numeric.isFinite || numeric != numeric.truncateToDouble()) {
+        return null;
+      }
+      return numeric.toInt();
+    }
+    final parsed = int.tryParse(value?.toString().trim() ?? '');
+    return parsed;
   }
 
   double? _double(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString().trim().replaceAll(',', '.') ?? '');
+    final parsed = value is num
+        ? value.toDouble()
+        : double.tryParse(value?.toString().trim().replaceAll(',', '.') ?? '');
+    if (parsed == null || !parsed.isFinite) {
+      return null;
+    }
+    return parsed;
   }
 
   List<String> _stringList(dynamic value) {

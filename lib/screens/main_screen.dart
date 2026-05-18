@@ -18,7 +18,14 @@ class MainScreen extends GetView<RobotStateController> {
   MainScreen({super.key});
 
   final widgetList = <Widget>[
-    Dashboard(), AdvancedOptions(), const SensorValues(), const TimetableScreen(), const MqttAreasScreen(), const MowerLogicSettingsScreen(), const StatusTransitionLogScreen(), const Settings()
+    Dashboard(),
+    AdvancedOptions(),
+    const SensorValues(),
+    const TimetableScreen(),
+    const MqttAreasScreen(),
+    const StatusTransitionLogScreen(),
+    const MowerLogicSettingsScreen(),
+    const Settings(),
   ];
 
   final _index = 0.obs;
@@ -100,16 +107,16 @@ class MainScreen extends GetView<RobotStateController> {
         },
       ),
       ListTile(
-        leading: n.Icon(Icons.tune),
-        title: const Text('Mäher-Einstellungen'),
+        leading: n.Icon(Icons.receipt_long),
+        title: const Text('Protokoll'),
         onTap: () {
           Get.back();
           _index.value= 5;
         },
       ),
       ListTile(
-        leading: n.Icon(Icons.receipt_long),
-        title: const Text('Protokoll'),
+        leading: n.Icon(Icons.tune),
+        title: const Text('Mäher-Einstellungen'),
         onTap: () {
           Get.back();
           _index.value= 6;
