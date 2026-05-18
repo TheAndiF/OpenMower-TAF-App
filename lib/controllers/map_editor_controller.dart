@@ -7,6 +7,7 @@ import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/mqtt_areas_controller.dart';
 import 'package:open_mower_app/models/editable_map_model.dart';
 
+
 class MapEditorController extends GetxController {
   final MqttAreasController _areasController = Get.find<MqttAreasController>();
 
