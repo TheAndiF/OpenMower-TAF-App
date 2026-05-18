@@ -108,7 +108,42 @@ class MowerLogicSettingsController extends GetxController {
   String labelFor(String key, Map<String, dynamic> setting) => _text(setting['label'], fallback: key);
   String descriptionFor(Map<String, dynamic> setting) => _text(setting['description']);
   String unitFor(Map<String, dynamic> setting) => _text(setting['unit']);
-  String typeFor(Map<String, dynamic> setting) => _text(setting['type'], fallback: 'string').toLowerCase();
+  String typeFor(Map<String, dynamic> setting) {
+    final declared = _text(setting['type']).toLowerCase();
+    switch (declared) {
+      case 'bool':
+      case 'boolean':
+        return 'bool';
+      case 'int':
+      case 'integer':
+        return 'int';
+      case 'double':
+      case 'float':
+      case 'number':
+        return 'double';
+      case 'string':
+        return 'string';
+    }
+
+    // Defensive fallback: The backend is expected to provide `type`, but
+    // session writes must still never accidentally turn numeric values into
+    // JSON strings if an older/incomplete status payload is received.
+    final active = setting['active'];
+    final persistent = setting['persistent'];
+    if (active is bool || persistent is bool) {
+      return 'bool';
+    }
+    if (active is double || persistent is double) {
+      return 'double';
+    }
+    if (active is int || persistent is int) {
+      return 'double';
+    }
+    if (setting['min'] is num || setting['max'] is num) {
+      return 'double';
+    }
+    return 'string';
+  }
 
   bool isBool(Map<String, dynamic> setting) => typeFor(setting) == 'bool';
   bool isInt(Map<String, dynamic> setting) => typeFor(setting) == 'int';
