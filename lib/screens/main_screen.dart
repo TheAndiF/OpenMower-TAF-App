@@ -9,6 +9,7 @@ import 'package:open_mower_app/screens/sensor_values.dart';
 import 'package:open_mower_app/screens/timetable.dart';
 import 'package:open_mower_app/screens/mqtt_areas.dart';
 import 'package:open_mower_app/screens/status_transition_log.dart';
+import 'package:open_mower_app/screens/mower_logic_settings.dart';
 import 'package:open_mower_app/screens/settings.dart';
 import 'package:open_mower_app/views/logo_widget.dart';
 import 'package:open_mower_app/views/logo_widget_drawer.dart';
@@ -17,7 +18,7 @@ class MainScreen extends GetView<RobotStateController> {
   MainScreen({super.key});
 
   final widgetList = <Widget>[
-    Dashboard(), AdvancedOptions(), const SensorValues(), const TimetableScreen(), const MqttAreasScreen(), const StatusTransitionLogScreen(), const Settings()
+    Dashboard(), AdvancedOptions(), const SensorValues(), const TimetableScreen(), const MqttAreasScreen(), const MowerLogicSettingsScreen(), const StatusTransitionLogScreen(), const Settings()
   ];
 
   final _index = 0.obs;
@@ -99,11 +100,19 @@ class MainScreen extends GetView<RobotStateController> {
         },
       ),
       ListTile(
+        leading: n.Icon(Icons.tune),
+        title: const Text('Mäher-Einstellungen'),
+        onTap: () {
+          Get.back();
+          _index.value= 5;
+        },
+      ),
+      ListTile(
         leading: n.Icon(Icons.receipt_long),
         title: const Text('Protokoll'),
         onTap: () {
           Get.back();
-          _index.value= 5;
+          _index.value= 6;
         },
       ),
     ];
@@ -115,7 +124,7 @@ class MainScreen extends GetView<RobotStateController> {
         title: const Text('Settings'),
         onTap: () {
           Get.back();
-          _index.value= 6;
+          _index.value= 7;
         },
       ));
     }

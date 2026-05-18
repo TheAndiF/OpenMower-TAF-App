@@ -7,6 +7,7 @@ import 'package:open_mower_app/controllers/sensors_controller.dart';
 import 'package:open_mower_app/controllers/timetable_controller.dart';
 import 'package:open_mower_app/controllers/mqtt_areas_controller.dart';
 import 'package:open_mower_app/controllers/status_transition_log_controller.dart';
+import 'package:open_mower_app/controllers/mower_logic_settings_controller.dart';
 import 'package:open_mower_app/models/map_model.dart';
 import 'package:open_mower_app/models/robot_state.dart';
 import 'package:open_mower_app/models/sensor_state.dart';
@@ -44,6 +45,7 @@ class MqttConnection  {
   final TimetableController timetableController = Get.find();
   final MqttAreasController mqttAreasController = Get.find();
   final StatusTransitionLogController statusTransitionLogController = Get.find();
+  final MowerLogicSettingsController mowerLogicSettingsController = Get.find();
 
   final RegExp exp = RegExp(r'sensors/(.*)/bson');
 
@@ -87,6 +89,12 @@ class MqttConnection  {
 
   static const String statusTransitionLogJsonTopic = "statustransition_log/json";
   static const String statusTransitionLogRenewJsonTopic = "statustransition_log/set/renew/json";
+
+  static const String mowerLogicSettingsJsonTopic = "settings/mower_logic/json";
+  static const String mowerLogicSettingsValidationJsonTopic = "settings/mower_logic/validation/json";
+  static const String mowerLogicSettingsRenewJsonTopic = "settings/mower_logic/set/renew/json";
+  static const String mowerLogicSettingsSetSessionJsonTopic = "settings/mower_logic/set/session/json";
+  static const String mowerLogicSettingsSetPersistentJsonTopic = "settings/mower_logic/set/persistent/json";
 
   List<int>? _payloadBytes(MqttPublishMessage payload) {
     return payload.payload.message?.toList(growable: false);
@@ -273,6 +281,32 @@ class MqttConnection  {
     }
   }
 
+  void parseMowerLogicSettings(MqttPublishMessage payload) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) {
+        mowerLogicSettingsController.setError("Leere oder ungültige Settings-Nachricht empfangen.", topic: mowerLogicSettingsJsonTopic);
+        return;
+      }
+      mowerLogicSettingsController.setStatusPayload(map, topic: mowerLogicSettingsJsonTopic);
+    } catch (e) {
+      mowerLogicSettingsController.setError("Settings-Status konnte nicht gelesen werden: $e", topic: mowerLogicSettingsJsonTopic);
+    }
+  }
+
+  void parseMowerLogicSettingsValidation(MqttPublishMessage payload) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) {
+        mowerLogicSettingsController.setError("Leere oder ungültige Settings-Validierung empfangen.", topic: mowerLogicSettingsValidationJsonTopic);
+        return;
+      }
+      mowerLogicSettingsController.setValidation(map, topic: mowerLogicSettingsValidationJsonTopic);
+    } catch (e) {
+      mowerLogicSettingsController.setError("Settings-Validierung konnte nicht gelesen werden: $e", topic: mowerLogicSettingsValidationJsonTopic);
+    }
+  }
+
   String _requestId(String prefix) => "$prefix-${DateTime.now().millisecondsSinceEpoch}-$clientId";
 
   void _publishJson(String topic, Map<String, dynamic> map, {MqttQos qos = MqttQos.atLeastOnce}) {
@@ -387,6 +421,33 @@ class MqttConnection  {
     } catch(e) {
       debugPrint("error requesting status transition log via mqtt");
       statusTransitionLogController.setError("Protokoll-Anfrage konnte nicht gesendet werden.");
+    }
+  }
+
+  void requestMowerLogicSettings() {
+    try {
+      _publishJson(mowerLogicSettingsRenewJsonTopic, {"request": "renew", "source": "app", "request_id": _requestId("mower_logic_settings_renew")});
+    } catch(e) {
+      debugPrint("error requesting mower logic settings via mqtt");
+      mowerLogicSettingsController.setError("Settings-Anfrage konnte nicht gesendet werden.", topic: mowerLogicSettingsRenewJsonTopic);
+    }
+  }
+
+  void publishMowerLogicSessionSettings(Map<String, dynamic> settings) {
+    try {
+      _publishJson(mowerLogicSettingsSetSessionJsonTopic, settings, qos: MqttQos.exactlyOnce);
+    } catch(e) {
+      debugPrint("error publishing mower logic session settings via mqtt");
+      mowerLogicSettingsController.setError("Session-Settings konnten nicht gesendet werden.", topic: mowerLogicSettingsSetSessionJsonTopic);
+    }
+  }
+
+  void publishMowerLogicPersistentSettings(Map<String, dynamic> settings) {
+    try {
+      _publishJson(mowerLogicSettingsSetPersistentJsonTopic, settings, qos: MqttQos.exactlyOnce);
+    } catch(e) {
+      debugPrint("error publishing mower logic persistent settings via mqtt");
+      mowerLogicSettingsController.setError("Dauerhafte Settings konnten nicht gesendet werden.", topic: mowerLogicSettingsSetPersistentJsonTopic);
     }
   }
 
@@ -876,6 +937,14 @@ class MqttConnection  {
               parseStatusTransitionLog(payload);
             }
             break;
+            case mowerLogicSettingsJsonTopic: {
+              parseMowerLogicSettings(payload);
+            }
+            break;
+            case mowerLogicSettingsValidationJsonTopic: {
+              parseMowerLogicSettingsValidation(payload);
+            }
+            break;
             case "map_overlay/bson": {
               final bytes = payload.payload.message?.toList(growable: false);
               if(bytes == null || bytes.isBlank == true) {
@@ -935,6 +1004,8 @@ class MqttConnection  {
     client.subscribe(mapJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mapValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(statusTransitionLogJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(mowerLogicSettingsJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(mowerLogicSettingsValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe("map_overlay/bson", MqttQos.atMostOnce);
     client.subscribe("sensor_infos/bson", MqttQos.atLeastOnce);
     client.subscribe("robot_state/json", MqttQos.atMostOnce);
