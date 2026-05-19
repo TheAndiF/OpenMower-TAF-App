@@ -31,27 +31,45 @@ class MainScreen extends GetView<RobotStateController> {
   final _index = 0.obs;
 
   final RobotStateController robotStateController = Get.find();
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
-          title: const LogoWidget(size: 200),
-          titleSpacing: 0,
-          elevation: 10,
-          shadowColor: Colors.black,
+      appBar: AppBar(
+        title: const LogoWidget(size: 200),
+        titleSpacing: 0,
+        elevation: 10,
+        shadowColor: Colors.black,
+      ),
+      drawer: Drawer(
+        child: Column(
+          children: <Widget>[
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: buildDrawerList(),
+              ),
+            ),
+            Obx(() => Text(robotStateController.softwareVersion.value).paddingAll(10)),
+          ],
         ),
-        drawer: Drawer(
-          // Add a ListView to the drawer. This ensures the user can scroll
-          // through the options in the drawer if there isn't enough vertical
-          // space to fit everything.
-          child: Column(children:<Widget>[
-            Expanded(child: ListView(
-              // Important: Remove any padding from the ListView.
-              padding: EdgeInsets.zero,
-              children: buildDrawerList(),
-            )), Obx(() => Text(robotStateController.softwareVersion.value).paddingAll(10))]),
-        ),
-        body: Obx(()=>widgetList[_index.value])
+      ),
+      body: Obx(() => widgetList[_index.value]),
+    );
+  }
+
+  ListTile _buildDrawerTile({
+    required Widget leading,
+    required String title,
+    required int index,
+  }) {
+    return ListTile(
+      leading: leading,
+      title: Text(title),
+      onTap: () {
+        Get.back();
+        _index.value = index;
+      },
     );
   }
 
@@ -62,80 +80,132 @@ class MainScreen extends GetView<RobotStateController> {
           color: Colors.blue,
         ),
         child: Padding(
-            padding: EdgeInsets.all(24),
-            child: FittedBox(
-                child: LogoWidgetDrawer(size: 0.2))), // AH20240627 size 0.1 had issues with rendering 'n' and 'r' in android browser 
+          padding: EdgeInsets.all(24),
+          child: FittedBox(
+            child: LogoWidgetDrawer(size: 0.2),
+          ),
+        ),
       ),
-      ListTile(
+      _buildDrawerTile(
         leading: n.Icon(Icons.speed),
-        title: const Text('Dashboard'),
-        onTap: () {
-          Get.back();
-          _index.value= 0;
-        },
+        title: 'Dashboard',
+        index: 0,
       ),
-      ListTile(
+      _buildDrawerTile(
         leading: n.Icon(Icons.settings_applications),
-        title: const Text('Advanced Options'),
-        onTap: () {
-          Get.back();
-          _index.value= 1;
-        },
+        title: 'Advanced Options',
+        index: 1,
       ),
-      ListTile(
+      _buildDrawerTile(
         leading: n.Icon(Icons.line_axis),
-        title: const Text('Sensor Values'),
-        onTap: () {
-          Get.back();
-          _index.value= 2;
-        },
+        title: 'Sensor Values',
+        index: 2,
       ),
-      ListTile(
+      _buildDrawerTile(
         leading: n.Icon(Icons.event_note),
-        title: const Text('Timetable'),
-        onTap: () {
-          Get.back();
-          _index.value= 3;
-        },
+        title: 'Timetable',
+        index: 3,
       ),
-      ListTile(
+      _buildDrawerTile(
         leading: n.Icon(Icons.grass),
-        title: const Text('Flächen'),
-        onTap: () {
-          Get.back();
-          _index.value= 4;
-        },
+        title: 'Flächen',
+        index: 4,
       ),
-      ListTile(
+      _buildDrawerTile(
         leading: n.Icon(Icons.receipt_long),
-        title: const Text('Protokoll'),
-        onTap: () {
-          Get.back();
-          _index.value= 5;
-        },
+        title: 'Protokoll',
+        index: 5,
       ),
-      ListTile(
-        leading: n.Icon(Icons.tune),
-        title: const Text('Mäher-Einstellungen'),
-        onTap: () {
-          Get.back();
-          _index.value= 6;
-        },
+      const Padding(
+        padding: EdgeInsets.fromLTRB(68, 2, 22, 2),
+        child: Divider(height: 1),
+      ),
+      _buildDrawerTile(
+        leading: const _MowerSettingsDrawerIcon(),
+        title: 'Mäher-Einstellungen',
+        index: 6,
       ),
     ];
 
-    if(!kReleaseMode || !kIsWeb) {
-      // show the settings screen on debug versions and on native versions
-      drawerList.add(ListTile(
-        leading: n.Icon(Icons.settings),
-        title: const Text('Settings'),
-        onTap: () {
-          Get.back();
-          _index.value= 7;
-        },
-      ));
+    if (!kReleaseMode || !kIsWeb) {
+      drawerList.add(
+        _buildDrawerTile(
+          leading: n.Icon(Icons.settings),
+          title: 'Settings',
+          index: 7,
+        ),
+      );
     }
 
     return drawerList;
   }
+}
+
+class _MowerSettingsDrawerIcon extends StatelessWidget {
+  const _MowerSettingsDrawerIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = IconTheme.of(context).color ?? Colors.grey;
+    return SizedBox(
+      width: 28,
+      height: 28,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            child: Icon(Icons.build, size: 25, color: color),
+          ),
+          Positioned(
+            right: -1,
+            bottom: -1,
+            child: CustomPaint(
+              size: const Size(14, 14),
+              painter: _HexNutPainter(color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HexNutPainter extends CustomPainter {
+  const _HexNutPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final outline = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeJoin = StrokeJoin.round;
+    final hole = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8;
+
+    final path = Path()
+      ..moveTo(size.width * 0.27, size.height * 0.06)
+      ..lineTo(size.width * 0.73, size.height * 0.06)
+      ..lineTo(size.width * 0.96, size.height * 0.50)
+      ..lineTo(size.width * 0.73, size.height * 0.94)
+      ..lineTo(size.width * 0.27, size.height * 0.94)
+      ..lineTo(size.width * 0.04, size.height * 0.50)
+      ..close();
+
+    canvas.drawPath(path, outline);
+    canvas.drawCircle(
+      Offset(size.width * 0.50, size.height * 0.50),
+      size.width * 0.18,
+      hole,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HexNutPainter oldDelegate) => oldDelegate.color != color;
 }

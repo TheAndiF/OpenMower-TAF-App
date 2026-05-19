@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ class MowerLogicSettingsController extends GetxController {
   final settings = <String, Map<String, dynamic>>{}.obs;
   final draftValues = <String, dynamic>{}.obs;
   final dirtyKeys = <String>{}.obs;
+  final editorRevision = 0.obs;
 
   final lastRemarks = <String>[].obs;
   final lastStatus = ''.obs;
@@ -16,6 +18,13 @@ class MowerLogicSettingsController extends GetxController {
   final lastStatusOk = RxnBool();
   final lastUpdated = Rxn<DateTime>();
   final waitingForResponse = false.obs;
+  final statusRefreshInProgress = false.obs;
+  final actionInProgress = false.obs;
+
+  Timer? _statusResponseTimeout;
+  Timer? _actionResponseTimeout;
+  int _statusResponseWaitGeneration = 0;
+  int _actionResponseWaitGeneration = 0;
 
   bool get hasData => settings.isNotEmpty;
   int get settingCount => settings.length;
@@ -122,7 +131,11 @@ class MowerLogicSettingsController extends GetxController {
       case 'number':
         return 'double';
       case 'string':
-        return 'string';
+        // Some backend payloads expose numeric mower-logic settings as
+        // `string`, although the validation endpoint expects JSON numbers.
+        // Prefer the surrounding value/range metadata in that case so e.g.
+        // motor_hot_temperature is sent as 80 instead of "80".
+        return _inferredScalarType(setting);
     }
 
     // Defensive fallback: The backend is expected to provide `type`, but
@@ -137,12 +150,79 @@ class MowerLogicSettingsController extends GetxController {
       return 'double';
     }
     if (active is int || persistent is int) {
+      return 'int';
+    }
+
+    // Older status payloads may carry numeric values as text and omit the
+    // explicit type. Prefer an integer fallback for integer-looking values
+    // and ranges so temperature values are sent as JSON numbers, not strings
+    // or decimals.
+    final activeInt = _int(active);
+    final persistentInt = _int(persistent);
+    final minInt = _int(setting['min']);
+    final maxInt = _int(setting['max']);
+    if ((active != null && activeInt != null) ||
+        (persistent != null && persistentInt != null) ||
+        ((setting['min'] != null || setting['max'] != null) && minInt != null && maxInt != null)) {
+      return 'int';
+    }
+
+    final activeDouble = _double(active);
+    final persistentDouble = _double(persistent);
+    if ((active != null && activeDouble != null) ||
+        (persistent != null && persistentDouble != null) ||
+        setting['min'] is num || setting['max'] is num) {
       return 'double';
     }
-    if (setting['min'] is num || setting['max'] is num) {
-      return 'double';
+    return _inferredScalarType(setting);
+  }
+
+  String _inferredScalarType(Map<String, dynamic> setting) {
+    final evidence = <dynamic>[
+      setting['active'],
+      setting['persistent'],
+      setting['min'],
+      setting['max'],
+    ].where((value) => value != null).toList();
+
+    if (evidence.any(_isExplicitBoolEvidence)) {
+      return 'bool';
     }
+
+    var hasNumericEvidence = false;
+    var needsDouble = false;
+    for (final value in evidence) {
+      final parsedDouble = _double(value);
+      if (parsedDouble == null) {
+        continue;
+      }
+      hasNumericEvidence = true;
+      if (_int(value) == null) {
+        needsDouble = true;
+      }
+    }
+
+    if (hasNumericEvidence) {
+      return needsDouble ? 'double' : 'int';
+    }
+
     return 'string';
+  }
+
+  bool _isExplicitBoolEvidence(dynamic value) {
+    if (value is bool) {
+      return true;
+    }
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      return normalized == 'true' ||
+          normalized == 'false' ||
+          normalized == 'yes' ||
+          normalized == 'no' ||
+          normalized == 'on' ||
+          normalized == 'off';
+    }
+    return false;
   }
 
   bool isBool(Map<String, dynamic> setting) => typeFor(setting) == 'bool';
@@ -172,12 +252,21 @@ class MowerLogicSettingsController extends GetxController {
     return 'Maximal ${_valueText(max)}';
   }
 
+  void _syncWaitingState() {
+    waitingForResponse.value = statusRefreshInProgress.value || actionInProgress.value;
+  }
+
   void requestSettings() {
-    waitingForResponse.value = true;
+    statusRefreshInProgress.value = true;
+    _syncWaitingState();
     lastStatusOk.value = null;
+    lastRemarks.clear();
     lastStatus.value = 'Settings-Status wird neu angefordert ...';
     lastTopic.value = 'settings/mower_logic/set/renew/json';
     lastUpdated.value = DateTime.now();
+    _armStatusResponseTimeout(
+      'Keine Settings-Antwort empfangen. Bitte MQTT-Topic settings/mower_logic/json und Backend-Rückmeldung prüfen.',
+    );
     Get.find<MqttConnection>().requestMowerLogicSettings();
   }
 
@@ -211,8 +300,13 @@ class MowerLogicSettingsController extends GetxController {
     }
     draftValues.removeWhere((key, value) => !settings.containsKey(key));
     dirtyKeys.removeWhere((key) => !settings.containsKey(key));
+    // TextFormFields receive a fresh initial value only after backend refreshes.
+    // The revision deliberately does not change while the user is typing.
+    editorRevision.value++;
 
-    waitingForResponse.value = false;
+    _clearStatusResponseTimeout();
+    statusRefreshInProgress.value = false;
+    _syncWaitingState();
     lastStatusOk.value ??= true;
     if (lastStatus.value.isEmpty || lastStatus.value.contains('angefordert')) {
       lastStatus.value = 'Settings-Status vom Backend empfangen.';
@@ -232,7 +326,9 @@ class MowerLogicSettingsController extends GetxController {
     lastStatusOk.value = valid;
     lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
-    waitingForResponse.value = false;
+    _clearActionResponseTimeout();
+    actionInProgress.value = false;
+    _syncWaitingState();
 
     if (valid == true) {
       if (applied is Map) {
@@ -255,7 +351,11 @@ class MowerLogicSettingsController extends GetxController {
   }
 
   void setError(String message, {String topic = 'local/error'}) {
-    waitingForResponse.value = false;
+    _clearStatusResponseTimeout();
+    _clearActionResponseTimeout();
+    statusRefreshInProgress.value = false;
+    actionInProgress.value = false;
+    _syncWaitingState();
     lastStatusOk.value = false;
     lastStatus.value = message;
     lastTopic.value = topic;
@@ -291,6 +391,7 @@ class MowerLogicSettingsController extends GetxController {
       draftValues[entry.key] = _seedValue(entry.value);
       dirtyKeys.remove(entry.key);
     }
+    editorRevision.value++;
     setInfo('Entwürfe in „${groupLabel(group)}“ wurden zurückgesetzt.', topic: 'local/reset');
   }
 
@@ -299,11 +400,15 @@ class MowerLogicSettingsController extends GetxController {
     if (payload == null) {
       return;
     }
-    waitingForResponse.value = true;
+    actionInProgress.value = true;
+    _syncWaitingState();
     lastStatusOk.value = null;
     lastStatus.value = 'Session-Änderungen werden gesendet ...';
     lastTopic.value = 'settings/mower_logic/set/session/json';
     lastUpdated.value = DateTime.now();
+    _armActionResponseTimeout(
+      'Keine Backend-Bestätigung für die Session-Änderung empfangen. Bitte Validation-Topic prüfen.',
+    );
     Get.find<MqttConnection>().publishMowerLogicSessionSettings(payload);
   }
 
@@ -312,11 +417,15 @@ class MowerLogicSettingsController extends GetxController {
     if (payload == null) {
       return;
     }
-    waitingForResponse.value = true;
+    actionInProgress.value = true;
+    _syncWaitingState();
     lastStatusOk.value = null;
     lastStatus.value = 'Dauerhafte Einstellungen werden gespeichert ...';
     lastTopic.value = 'settings/mower_logic/set/persistent/json';
     lastUpdated.value = DateTime.now();
+    _armActionResponseTimeout(
+      'Keine Backend-Bestätigung für das dauerhafte Speichern empfangen. Bitte Validation-Topic prüfen.',
+    );
     Get.find<MqttConnection>().publishMowerLogicPersistentSettings(payload);
   }
 
@@ -413,6 +522,55 @@ class MowerLogicSettingsController extends GetxController {
       default:
         return rawValue;
     }
+  }
+
+  void _armStatusResponseTimeout(String timeoutMessage) {
+    _statusResponseTimeout?.cancel();
+    final generation = ++_statusResponseWaitGeneration;
+    _statusResponseTimeout = Timer(const Duration(seconds: 8), () {
+      if (generation != _statusResponseWaitGeneration || !statusRefreshInProgress.value) {
+        return;
+      }
+      statusRefreshInProgress.value = false;
+      _syncWaitingState();
+      lastStatusOk.value = null;
+      lastStatus.value = timeoutMessage;
+      lastUpdated.value = DateTime.now();
+    });
+  }
+
+  void _armActionResponseTimeout(String timeoutMessage) {
+    _actionResponseTimeout?.cancel();
+    final generation = ++_actionResponseWaitGeneration;
+    _actionResponseTimeout = Timer(const Duration(seconds: 8), () {
+      if (generation != _actionResponseWaitGeneration || !actionInProgress.value) {
+        return;
+      }
+      actionInProgress.value = false;
+      _syncWaitingState();
+      lastStatusOk.value = null;
+      lastStatus.value = timeoutMessage;
+      lastUpdated.value = DateTime.now();
+    });
+  }
+
+  void _clearStatusResponseTimeout() {
+    _statusResponseWaitGeneration++;
+    _statusResponseTimeout?.cancel();
+    _statusResponseTimeout = null;
+  }
+
+  void _clearActionResponseTimeout() {
+    _actionResponseWaitGeneration++;
+    _actionResponseTimeout?.cancel();
+    _actionResponseTimeout = null;
+  }
+
+  @override
+  void onClose() {
+    _clearStatusResponseTimeout();
+    _clearActionResponseTimeout();
+    super.onClose();
   }
 
   static const Object _invalidValue = Object();
