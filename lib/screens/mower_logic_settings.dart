@@ -617,7 +617,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
             ],
           );
           final field = TextFormField(
-            key: ValueKey('ll_power_$key_${lowLevelPowerController.draftText(key)}'),
+            key: ValueKey('ll_power_${key}_${lowLevelPowerController.draftText(key)}'),
             initialValue: lowLevelPowerController.draftText(key),
             keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
             inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,\.\-]'))],
