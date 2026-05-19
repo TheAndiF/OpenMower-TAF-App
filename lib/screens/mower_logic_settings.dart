@@ -71,7 +71,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
 
   Widget _buildOverviewSection(BuildContext context) {
     final color = Theme.of(context).primaryColor;
-    final waiting = controller.waitingForResponse.value;
+    final waiting = controller.statusRefreshInProgress.value;
     return Card(
       margin: EdgeInsets.zero,
       child: Column(
@@ -347,7 +347,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     }
 
     return TextFormField(
-      key: ValueKey('mower-setting-$key-${controller.draftText(key, setting)}'),
+      key: ValueKey('mower-setting-$key-${controller.editorRevision.value}'),
       initialValue: controller.draftText(key, setting),
       keyboardType: controller.isNumeric(setting)
           ? const TextInputType.numberWithOptions(decimal: true, signed: true)
@@ -368,7 +368,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
   }
 
   Widget _buildGroupActions(BuildContext context, String group, {required int dirty, required int liveDirty}) {
-    final waiting = controller.waitingForResponse.value;
+    final waiting = controller.actionInProgress.value;
     final isMobile = MediaQuery.of(context).size.width < 720;
     final resetButton = OutlinedButton.icon(
       onPressed: dirty == 0 || waiting ? null : () => controller.resetGroupDrafts(group),
@@ -427,7 +427,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
           leading: Icon(Icons.battery_charging_full_outlined, color: color, size: 32),
           iconColor: color,
           collapsedIconColor: color,
-          title: Text('Low-Level Power', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
+          title: Text('Low-Level Board', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
           subtitle: Wrap(
             spacing: 10,
             runSpacing: 4,
@@ -617,7 +617,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
             ],
           );
           final field = TextFormField(
-            key: ValueKey('ll_power_${key}_${lowLevelPowerController.draftText(key)}'),
+            key: ValueKey('ll_power_${key}_${lowLevelPowerController.editorRevision.value}'),
             initialValue: lowLevelPowerController.draftText(key),
             keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
             inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,\.\-]'))],

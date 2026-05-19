@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:get/get.dart';
@@ -50,12 +51,16 @@ class LowLevelPowerSettingsController extends GetxController {
   final activeValues = <String, double>{}.obs;
   final draftTexts = <String, String>{}.obs;
   final dirtyKeys = <String>{}.obs;
+  final editorRevision = 0.obs;
 
   final lastStatus = ''.obs;
   final lastTopic = ''.obs;
   final lastStatusOk = RxnBool();
   final lastUpdated = Rxn<DateTime>();
   final waitingForResponse = false.obs;
+
+  Timer? _responseTimeout;
+  int _responseWaitGeneration = 0;
 
   bool get hasData => activeValues.isNotEmpty;
   int get dirtyCount => dirtyKeys.length;
@@ -73,6 +78,9 @@ class LowLevelPowerSettingsController extends GetxController {
     lastStatus.value = 'Low-Level-Power-Status wird neu angefordert ...';
     lastTopic.value = 'll_power/set/renew/json';
     lastUpdated.value = DateTime.now();
+    _armResponseTimeout(
+      'Keine Low-Level-Board-Antwort empfangen. Bitte MQTT-Topic ll_power/json prüfen.',
+    );
     Get.find<MqttConnection>().requestLowLevelPowerSettings();
   }
 
@@ -115,7 +123,11 @@ class LowLevelPowerSettingsController extends GetxController {
     }
     draftTexts.removeWhere((key, value) => !orderedKeys.contains(key));
     dirtyKeys.removeWhere((key) => !orderedKeys.contains(key));
+    // Refresh text field initial values after external status updates,
+    // without rebuilding the fields on every typed character.
+    editorRevision.value++;
 
+    _clearResponseTimeout();
     waitingForResponse.value = false;
     lastStatusOk.value ??= true;
     if (lastStatus.value.isEmpty || lastStatus.value.contains('angefordert')) {
@@ -126,6 +138,7 @@ class LowLevelPowerSettingsController extends GetxController {
   }
 
   void setError(String message, {String topic = 'local/error'}) {
+    _clearResponseTimeout();
     waitingForResponse.value = false;
     lastStatusOk.value = false;
     lastStatus.value = message;
@@ -165,6 +178,7 @@ class LowLevelPowerSettingsController extends GetxController {
       }
       dirtyKeys.remove(key);
     }
+    editorRevision.value++;
     setInfo('Low-Level-Power-Entwürfe wurden zurückgesetzt.', topic: 'local/reset');
   }
 
@@ -192,7 +206,36 @@ class LowLevelPowerSettingsController extends GetxController {
     lastStatus.value = 'Low-Level-Power-Werte werden für die aktuelle Session gesendet ...';
     lastTopic.value = 'll_power/set/json';
     lastUpdated.value = DateTime.now();
+    _armResponseTimeout(
+      'Keine Backend-Bestätigung für die Low-Level-Board-Änderung empfangen.',
+    );
     Get.find<MqttConnection>().publishLowLevelPowerSettings(payload);
+  }
+
+  void _armResponseTimeout(String timeoutMessage) {
+    _responseTimeout?.cancel();
+    final generation = ++_responseWaitGeneration;
+    _responseTimeout = Timer(const Duration(seconds: 8), () {
+      if (generation != _responseWaitGeneration || !waitingForResponse.value) {
+        return;
+      }
+      waitingForResponse.value = false;
+      lastStatusOk.value = null;
+      lastStatus.value = timeoutMessage;
+      lastUpdated.value = DateTime.now();
+    });
+  }
+
+  void _clearResponseTimeout() {
+    _responseWaitGeneration++;
+    _responseTimeout?.cancel();
+    _responseTimeout = null;
+  }
+
+  @override
+  void onClose() {
+    _clearResponseTimeout();
+    super.onClose();
   }
 
   double? _double(dynamic value) {

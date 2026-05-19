@@ -17,8 +17,6 @@ import 'package:open_mower_app/views/logo_widget_drawer.dart';
 class MainScreen extends GetView<RobotStateController> {
   MainScreen({super.key});
 
-  static const Color _drawerSectionBlue = Color(0xFFEAF3FF);
-
   final widgetList = <Widget>[
     Dashboard(),
     AdvancedOptions(),
@@ -33,37 +31,39 @@ class MainScreen extends GetView<RobotStateController> {
   final _index = 0.obs;
 
   final RobotStateController robotStateController = Get.find();
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
-          title: const LogoWidget(size: 200),
-          titleSpacing: 0,
-          elevation: 10,
-          shadowColor: Colors.black,
-        ),
-        drawer: Drawer(
-          child: Column(children: <Widget>[
+      appBar: AppBar(
+        title: const LogoWidget(size: 200),
+        titleSpacing: 0,
+        elevation: 10,
+        shadowColor: Colors.black,
+      ),
+      drawer: Drawer(
+        child: Column(
+          children: <Widget>[
             Expanded(
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: buildDrawerList(),
               ),
             ),
-            Obx(() => Text(robotStateController.softwareVersion.value).paddingAll(10))
-          ]),
+            Obx(() => Text(robotStateController.softwareVersion.value).paddingAll(10)),
+          ],
         ),
-        body: Obx(() => widgetList[_index.value]));
+      ),
+      body: Obx(() => widgetList[_index.value]),
+    );
   }
 
   ListTile _buildDrawerTile({
     required Widget leading,
     required String title,
     required int index,
-    Color? tileColor,
   }) {
     return ListTile(
-      tileColor: tileColor,
       leading: leading,
       title: Text(title),
       onTap: () {
@@ -73,43 +73,18 @@ class MainScreen extends GetView<RobotStateController> {
     );
   }
 
-  Widget _buildBottomSettingsSection({required bool showDebugSettings}) {
-    return Container(
-      color: _drawerSectionBlue,
-      padding: const EdgeInsets.only(top: 8, bottom: 8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildDrawerTile(
-            leading: n.Icon(Icons.hardware),
-            title: 'Mäher-Einstellungen',
-            index: 6,
-            tileColor: _drawerSectionBlue,
-          ),
-          if (showDebugSettings)
-            _buildDrawerTile(
-              leading: n.Icon(Icons.settings),
-              title: 'Settings',
-              index: 7,
-              tileColor: _drawerSectionBlue,
-            ),
-        ],
-      ),
-    );
-  }
-
   List<Widget> buildDrawerList() {
-    final showDebugSettings = !kReleaseMode || !kIsWeb;
-
-    return <Widget>[
+    final drawerList = <Widget>[
       const DrawerHeader(
         decoration: BoxDecoration(
           color: Colors.blue,
         ),
         child: Padding(
-            padding: EdgeInsets.all(24),
-            child: FittedBox(
-                child: LogoWidgetDrawer(size: 0.2))),
+          padding: EdgeInsets.all(24),
+          child: FittedBox(
+            child: LogoWidgetDrawer(size: 0.2),
+          ),
+        ),
       ),
       _buildDrawerTile(
         leading: n.Icon(Icons.speed),
@@ -141,11 +116,96 @@ class MainScreen extends GetView<RobotStateController> {
         title: 'Protokoll',
         index: 5,
       ),
-      Container(
-        height: 12,
-        color: _drawerSectionBlue,
+      const Padding(
+        padding: EdgeInsets.fromLTRB(68, 2, 22, 2),
+        child: Divider(height: 1),
       ),
-      _buildBottomSettingsSection(showDebugSettings: showDebugSettings),
+      _buildDrawerTile(
+        leading: const _MowerSettingsDrawerIcon(),
+        title: 'Mäher-Einstellungen',
+        index: 6,
+      ),
     ];
+
+    if (!kReleaseMode || !kIsWeb) {
+      drawerList.add(
+        _buildDrawerTile(
+          leading: n.Icon(Icons.settings),
+          title: 'Settings',
+          index: 7,
+        ),
+      );
+    }
+
+    return drawerList;
   }
+}
+
+class _MowerSettingsDrawerIcon extends StatelessWidget {
+  const _MowerSettingsDrawerIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = IconTheme.of(context).color ?? Colors.grey;
+    return SizedBox(
+      width: 28,
+      height: 28,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            child: Icon(Icons.build, size: 25, color: color),
+          ),
+          Positioned(
+            right: -1,
+            bottom: -1,
+            child: CustomPaint(
+              size: const Size(14, 14),
+              painter: _HexNutPainter(color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HexNutPainter extends CustomPainter {
+  const _HexNutPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final outline = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeJoin = StrokeJoin.round;
+    final hole = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8;
+
+    final path = Path()
+      ..moveTo(size.width * 0.27, size.height * 0.06)
+      ..lineTo(size.width * 0.73, size.height * 0.06)
+      ..lineTo(size.width * 0.96, size.height * 0.50)
+      ..lineTo(size.width * 0.73, size.height * 0.94)
+      ..lineTo(size.width * 0.27, size.height * 0.94)
+      ..lineTo(size.width * 0.04, size.height * 0.50)
+      ..close();
+
+    canvas.drawPath(path, outline);
+    canvas.drawCircle(
+      Offset(size.width * 0.50, size.height * 0.50),
+      size.width * 0.18,
+      hole,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HexNutPainter oldDelegate) => oldDelegate.color != color;
 }
