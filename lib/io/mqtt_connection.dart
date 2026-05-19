@@ -8,6 +8,7 @@ import 'package:open_mower_app/controllers/timetable_controller.dart';
 import 'package:open_mower_app/controllers/mqtt_areas_controller.dart';
 import 'package:open_mower_app/controllers/status_transition_log_controller.dart';
 import 'package:open_mower_app/controllers/mower_logic_settings_controller.dart';
+import 'package:open_mower_app/controllers/low_level_power_settings_controller.dart';
 import 'package:open_mower_app/models/map_model.dart';
 import 'package:open_mower_app/models/robot_state.dart';
 import 'package:open_mower_app/models/sensor_state.dart';
@@ -46,6 +47,7 @@ class MqttConnection  {
   final MqttAreasController mqttAreasController = Get.find();
   final StatusTransitionLogController statusTransitionLogController = Get.find();
   final MowerLogicSettingsController mowerLogicSettingsController = Get.find();
+  final LowLevelPowerSettingsController lowLevelPowerSettingsController = Get.find();
 
   final RegExp exp = RegExp(r'sensors/(.*)/bson');
 
@@ -95,6 +97,10 @@ class MqttConnection  {
   static const String mowerLogicSettingsRenewJsonTopic = "settings/mower_logic/set/renew/json";
   static const String mowerLogicSettingsSetSessionJsonTopic = "settings/mower_logic/set/session/json";
   static const String mowerLogicSettingsSetPersistentJsonTopic = "settings/mower_logic/set/persistent/json";
+
+  static const String lowLevelPowerJsonTopic = "ll_power/json";
+  static const String lowLevelPowerSetJsonTopic = "ll_power/set/json";
+  static const String lowLevelPowerRenewJsonTopic = "ll_power/set/renew/json";
 
   List<int>? _payloadBytes(MqttPublishMessage payload) {
     return payload.payload.message?.toList(growable: false);
@@ -307,6 +313,19 @@ class MqttConnection  {
     }
   }
 
+  void parseLowLevelPowerSettings(MqttPublishMessage payload) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) {
+        lowLevelPowerSettingsController.setError("Leere oder ungültige Low-Level-Power-Nachricht empfangen.", topic: lowLevelPowerJsonTopic);
+        return;
+      }
+      lowLevelPowerSettingsController.setStatusPayload(map, topic: lowLevelPowerJsonTopic);
+    } catch (e) {
+      lowLevelPowerSettingsController.setError("Low-Level-Power-Status konnte nicht gelesen werden: $e", topic: lowLevelPowerJsonTopic);
+    }
+  }
+
   String _requestId(String prefix) => "$prefix-${DateTime.now().millisecondsSinceEpoch}-$clientId";
 
   void _publishJson(String topic, Map<String, dynamic> map, {MqttQos qos = MqttQos.atLeastOnce}) {
@@ -448,6 +467,24 @@ class MqttConnection  {
     } catch(e) {
       debugPrint("error publishing mower logic persistent settings via mqtt");
       mowerLogicSettingsController.setError("Dauerhafte Settings konnten nicht gesendet werden.", topic: mowerLogicSettingsSetPersistentJsonTopic);
+    }
+  }
+
+  void requestLowLevelPowerSettings() {
+    try {
+      _publishJson(lowLevelPowerRenewJsonTopic, <String, dynamic>{});
+    } catch(e) {
+      debugPrint("error requesting low level power settings via mqtt");
+      lowLevelPowerSettingsController.setError("Low-Level-Power-Anfrage konnte nicht gesendet werden.", topic: lowLevelPowerRenewJsonTopic);
+    }
+  }
+
+  void publishLowLevelPowerSettings(Map<String, dynamic> settings) {
+    try {
+      _publishJson(lowLevelPowerSetJsonTopic, settings, qos: MqttQos.exactlyOnce);
+    } catch(e) {
+      debugPrint("error publishing low level power settings via mqtt");
+      lowLevelPowerSettingsController.setError("Low-Level-Power-Werte konnten nicht gesendet werden.", topic: lowLevelPowerSetJsonTopic);
     }
   }
 
@@ -945,6 +982,10 @@ class MqttConnection  {
               parseMowerLogicSettingsValidation(payload);
             }
             break;
+            case lowLevelPowerJsonTopic: {
+              parseLowLevelPowerSettings(payload);
+            }
+            break;
             case "map_overlay/bson": {
               final bytes = payload.payload.message?.toList(growable: false);
               if(bytes == null || bytes.isBlank == true) {
@@ -1006,6 +1047,7 @@ class MqttConnection  {
     client.subscribe(statusTransitionLogJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mowerLogicSettingsJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mowerLogicSettingsValidationJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(lowLevelPowerJsonTopic, MqttQos.atLeastOnce);
     client.subscribe("map_overlay/bson", MqttQos.atMostOnce);
     client.subscribe("sensor_infos/bson", MqttQos.atLeastOnce);
     client.subscribe("robot_state/json", MqttQos.atMostOnce);

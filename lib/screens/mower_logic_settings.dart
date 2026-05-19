@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/mower_logic_settings_controller.dart';
+import 'package:open_mower_app/controllers/low_level_power_settings_controller.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 
 class MowerLogicSettingsScreen extends StatefulWidget {
@@ -16,6 +17,7 @@ class MowerLogicSettingsScreen extends StatefulWidget {
 
 class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
   final MowerLogicSettingsController controller = Get.find<MowerLogicSettingsController>();
+  final LowLevelPowerSettingsController lowLevelPowerController = Get.find<LowLevelPowerSettingsController>();
   bool _renewSent = false;
   bool _jsonExpanded = false;
 
@@ -26,6 +28,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
       if (!_renewSent) {
         _renewSent = true;
         controller.requestSettings();
+        lowLevelPowerController.requestStatus();
       }
     });
   }
@@ -49,6 +52,8 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                     yield _buildGroupSection(context, group);
                     yield const SizedBox(height: 16);
                   }),
+                _buildLowLevelPowerSection(context),
+                const SizedBox(height: 16),
                 _buildJsonSection(context),
               ],
             ),
@@ -402,6 +407,234 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
         const SizedBox(width: 8),
         persistentButton,
       ],
+    );
+  }
+
+  Widget _buildLowLevelPowerSection(BuildContext context) {
+    final color = Theme.of(context).primaryColor;
+    final waiting = lowLevelPowerController.waitingForResponse.value;
+    final hasData = lowLevelPowerController.hasData;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: false,
+          backgroundColor: color.withOpacity(0.08),
+          collapsedBackgroundColor: color.withOpacity(0.08),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          leading: Icon(Icons.battery_charging_full_outlined, color: color, size: 32),
+          iconColor: color,
+          collapsedIconColor: color,
+          title: Text('Low-Level Power', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
+          subtitle: Wrap(
+            spacing: 10,
+            runSpacing: 4,
+            children: [
+              const Text('Laufzeitwerte für /ll/services/power'),
+              if (lowLevelPowerController.dirtyCount > 0)
+                Text('${lowLevelPowerController.dirtyCount} lokale Änderung(en)'),
+            ],
+          ),
+          children: [
+            Container(
+              width: double.infinity,
+              color: Theme.of(context).cardColor,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.05),
+                      border: Border.all(color: color.withOpacity(0.18)),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'Diese Werte werden über ll_power/set/json sofort in der aktuellen Session gesetzt. Dauerhafte Startwerte bleiben separat über .env / OM_… und Container-Neuerstellung organisiert.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildLowLevelPowerStatusCard(context),
+                  const SizedBox(height: 12),
+                  if (!hasData)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        'Noch keine ll_power/json-Daten empfangen.',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                  else
+                    for (var i = 0; i < LowLevelPowerSettingsController.orderedKeys.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 12),
+                      _buildLowLevelPowerValueCard(context, LowLevelPowerSettingsController.orderedKeys[i]),
+                    ],
+                  const SizedBox(height: 14),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isMobile = constraints.maxWidth < 720;
+                      final actions = [
+                        OutlinedButton.icon(
+                          onPressed: waiting ? null : lowLevelPowerController.requestStatus,
+                          icon: waiting
+                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.refresh),
+                          label: const Text('LL-Power neu laden'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: lowLevelPowerController.dirtyCount == 0 || waiting
+                              ? null
+                              : lowLevelPowerController.resetDrafts,
+                          icon: const Icon(Icons.undo),
+                          label: const Text('Änderungen verwerfen'),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: lowLevelPowerController.dirtyCount == 0 || waiting
+                              ? null
+                              : lowLevelPowerController.applySessionChanges,
+                          icon: const Icon(Icons.play_arrow),
+                          label: const Text('Jetzt anwenden'),
+                        ),
+                      ];
+                      if (isMobile) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: actions
+                              .expand((button) => <Widget>[button, const SizedBox(height: 10)])
+                              .toList()
+                            ..removeLast(),
+                        );
+                      }
+                      return Wrap(spacing: 10, runSpacing: 10, alignment: WrapAlignment.end, children: actions);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: EdgeInsets.zero,
+                    title: const Text('LL-Power JSON-Status'),
+                    subtitle: const Text('Rohdaten aus ll_power/json'),
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Theme.of(context).dividerColor),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: SelectableText(
+                          lowLevelPowerController.rawStatusJson,
+                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLowLevelPowerStatusCard(BuildContext context) {
+    final statusOk = lowLevelPowerController.lastStatusOk.value;
+    final color = statusOk == false ? Colors.red : statusOk == true ? Colors.green : Theme.of(context).primaryColor;
+    final status = lowLevelPowerController.lastStatus.value.isEmpty
+        ? 'Noch keine Low-Level-Power-Rückmeldung.'
+        : lowLevelPowerController.lastStatus.value;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.07),
+        border: Border.all(color: color.withOpacity(0.28)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(statusOk == false ? Icons.error_outline : statusOk == true ? Icons.check_circle_outline : Icons.info_outline, color: color),
+              const SizedBox(width: 8),
+              Expanded(child: Text(status, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
+            ],
+          ),
+          if (lowLevelPowerController.lastTopic.value.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text('Topic: ${lowLevelPowerController.lastTopic.value}', style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLowLevelPowerValueCard(BuildContext context, String key) {
+    final color = Theme.of(context).primaryColor;
+    final dirty = lowLevelPowerController.dirtyKeys.contains(key);
+    final unit = lowLevelPowerController.unitFor(key);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: dirty ? color.withOpacity(0.05) : Theme.of(context).cardColor,
+        border: Border.all(color: dirty ? color.withOpacity(0.45) : Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isMobile = constraints.maxWidth < 780;
+          final meta = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      lowLevelPowerController.labelFor(key),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  if (dirty) _smallBadge(context, 'Geändert', Icons.edit_outlined, color),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(key, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor)),
+              const SizedBox(height: 8),
+              Text(lowLevelPowerController.descriptionFor(key), style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 10),
+              _valueChip(
+                context,
+                label: 'Aktiv',
+                value: _withUnit(lowLevelPowerController.activeText(key), unit),
+                emphasis: dirty,
+              ),
+            ],
+          );
+          final field = TextFormField(
+            key: ValueKey('ll_power_$key_${lowLevelPowerController.draftText(key)}'),
+            initialValue: lowLevelPowerController.draftText(key),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,\.\-]'))],
+            onChanged: (value) => lowLevelPowerController.updateDraftText(key, value),
+            decoration: InputDecoration(
+              labelText: 'Neuer Session-Wert',
+              suffixText: unit.isEmpty ? null : unit,
+              border: const OutlineInputBorder(),
+              helperText: 'Wird als JSON-number gesendet.',
+            ),
+          );
+          if (isMobile) {
+            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [meta, const SizedBox(height: 12), field]);
+          }
+          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 3, child: meta), const SizedBox(width: 16), Expanded(flex: 2, child: field)]);
+        },
+      ),
     );
   }
 
