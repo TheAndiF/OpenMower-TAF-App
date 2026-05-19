@@ -151,6 +151,7 @@ class MowerLogicSettingsController extends GetxController {
     }
     if (active is int || persistent is int) {
       return 'int';
+<<<<<<< HEAD
     }
 
     // Older status payloads may carry numeric values as text and omit the
@@ -187,6 +188,30 @@ class MowerLogicSettingsController extends GetxController {
 
     if (evidence.any(_isExplicitBoolEvidence)) {
       return 'bool';
+=======
+    }
+
+    // Older status payloads may carry numeric values as text and omit the
+    // explicit type. Prefer an integer fallback for integer-looking values
+    // and ranges so temperature values are sent as JSON numbers, not strings
+    // or decimals.
+    final activeInt = _int(active);
+    final persistentInt = _int(persistent);
+    final minInt = _int(setting['min']);
+    final maxInt = _int(setting['max']);
+    if ((active != null && activeInt != null) ||
+        (persistent != null && persistentInt != null) ||
+        ((setting['min'] != null || setting['max'] != null) && minInt != null && maxInt != null)) {
+      return 'int';
+    }
+
+    final activeDouble = _double(active);
+    final persistentDouble = _double(persistent);
+    if ((active != null && activeDouble != null) ||
+        (persistent != null && persistentDouble != null) ||
+        setting['min'] is num || setting['max'] is num) {
+      return 'double';
+>>>>>>> 0f4e9d6dfad5a950718d8126a65e7605bec9602e
     }
 
     var hasNumericEvidence = false;
