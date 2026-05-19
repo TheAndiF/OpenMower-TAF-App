@@ -189,7 +189,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Sobald das Backend auf settings/mower_logic/json publiziert, werden die Gruppen und Einstellfelder hier automatisch aufgebaut.',
+              'Sobald das Backend auf settings/mow_load_factor/json publiziert, werden die Gruppen und Einstellfelder hier automatisch aufgebaut.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
@@ -453,7 +453,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      'Diese Werte werden über ll_power/set/json sofort in der aktuellen Session gesetzt. Dauerhafte Startwerte bleiben separat über .env / OM_… und Container-Neuerstellung organisiert.',
+                      'Diese Werte werden über settings/ll_board/set/session/json live getestet oder über settings/ll_board/set/persistent/json dauerhaft gespeichert.',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
@@ -464,7 +464,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Text(
-                        'Noch keine ll_power/json-Daten empfangen.',
+                        'Noch keine settings/ll_board/json-Daten empfangen.',
                         style: Theme.of(context).textTheme.bodyMedium,
                         textAlign: TextAlign.center,
                       ),
@@ -484,7 +484,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                           icon: waiting
                               ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                               : const Icon(Icons.refresh),
-                          label: const Text('LL-Power neu laden'),
+                          label: const Text('LL-Board neu laden'),
                         ),
                         OutlinedButton.icon(
                           onPressed: lowLevelPowerController.dirtyCount == 0 || waiting
@@ -499,6 +499,13 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                               : lowLevelPowerController.applySessionChanges,
                           icon: const Icon(Icons.play_arrow),
                           label: const Text('Jetzt anwenden'),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: lowLevelPowerController.dirtyCount == 0 || waiting
+                              ? null
+                              : lowLevelPowerController.savePersistentChanges,
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Dauerhaft speichern'),
                         ),
                       ];
                       if (isMobile) {
@@ -517,8 +524,8 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                   ExpansionTile(
                     tilePadding: EdgeInsets.zero,
                     childrenPadding: EdgeInsets.zero,
-                    title: const Text('LL-Power JSON-Status'),
-                    subtitle: const Text('Rohdaten aus ll_power/json'),
+                    title: const Text('LL-Board JSON-Status'),
+                    subtitle: const Text('Rohdaten aus settings/ll_board/json'),
                     children: [
                       Container(
                         width: double.infinity,
@@ -547,7 +554,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     final statusOk = lowLevelPowerController.lastStatusOk.value;
     final color = statusOk == false ? Colors.red : statusOk == true ? Colors.green : Theme.of(context).primaryColor;
     final status = lowLevelPowerController.lastStatus.value.isEmpty
-        ? 'Noch keine Low-Level-Power-Rückmeldung.'
+        ? 'Noch keine Low-Level-Board-Rückmeldung.'
         : lowLevelPowerController.lastStatus.value;
     return Container(
       padding: const EdgeInsets.all(12),
@@ -569,6 +576,11 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
           if (lowLevelPowerController.lastTopic.value.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text('Topic: ${lowLevelPowerController.lastTopic.value}', style: Theme.of(context).textTheme.bodySmall),
+          ],
+          if (lowLevelPowerController.lastRemarks.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            for (final remark in lowLevelPowerController.lastRemarks)
+              Text('• $remark', style: Theme.of(context).textTheme.bodySmall),
           ],
         ],
       ),
@@ -607,6 +619,10 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
               Text(key, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor)),
               const SizedBox(height: 8),
               Text(lowLevelPowerController.descriptionFor(key), style: Theme.of(context).textTheme.bodySmall),
+              if (lowLevelPowerController.rangeText(key).isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(lowLevelPowerController.rangeText(key), style: Theme.of(context).textTheme.bodySmall),
+              ],
               const SizedBox(height: 10),
               _valueChip(
                 context,
@@ -617,13 +633,13 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
             ],
           );
           final field = TextFormField(
-            key: ValueKey('ll_power_${key}_${lowLevelPowerController.editorRevision.value}'),
+            key: ValueKey('ll_board_${key}_${lowLevelPowerController.editorRevision.value}'),
             initialValue: lowLevelPowerController.draftText(key),
             keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
             inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,\.\-]'))],
             onChanged: (value) => lowLevelPowerController.updateDraftText(key, value),
             decoration: InputDecoration(
-              labelText: 'Neuer Session-Wert',
+              labelText: 'Neuer Wert',
               suffixText: unit.isEmpty ? null : unit,
               border: const OutlineInputBorder(),
               helperText: 'Wird als JSON-number gesendet.',
@@ -666,7 +682,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                               children: [
                                 Text('JSON-Ansicht', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
                                 const SizedBox(height: 2),
-                                Text('Rohstatus aus settings/mower_logic/json anzeigen und exportieren', style: Theme.of(context).textTheme.bodyMedium),
+                                Text('Rohstatus aus settings/mow_load_factor/json anzeigen und exportieren', style: Theme.of(context).textTheme.bodyMedium),
                               ],
                             ),
                           ),
@@ -704,7 +720,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                           maxLines: 24,
                           decoration: const InputDecoration(
                             border: OutlineInputBorder(),
-                            labelText: 'settings/mower_logic/json',
+                            labelText: 'settings/mow_load_factor/json',
                             alignLabelWithHint: true,
                           ),
                           style: const TextStyle(fontFamily: 'monospace'),

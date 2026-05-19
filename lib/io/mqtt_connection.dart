@@ -92,15 +92,23 @@ class MqttConnection  {
   static const String statusTransitionLogJsonTopic = "statustransition_log/json";
   static const String statusTransitionLogRenewJsonTopic = "statustransition_log/set/renew/json";
 
-  static const String mowerLogicSettingsJsonTopic = "settings/mower_logic/json";
-  static const String mowerLogicSettingsValidationJsonTopic = "settings/mower_logic/validation/json";
-  static const String mowerLogicSettingsRenewJsonTopic = "settings/mower_logic/set/renew/json";
-  static const String mowerLogicSettingsSetSessionJsonTopic = "settings/mower_logic/set/session/json";
-  static const String mowerLogicSettingsSetPersistentJsonTopic = "settings/mower_logic/set/persistent/json";
+  // Settings namespace according to the JSON-first MQTT API.
+  static const String mowerLogicSettingsJsonTopic = "settings/mow_load_factor/json";
+  static const String mowerLogicSettingsValidationJsonTopic = "settings/mow_load_factor/validation/json";
+  static const String mowerLogicSettingsRenewJsonTopic = "settings/mow_load_factor/set/renew/json";
+  static const String mowerLogicSettingsSetSessionJsonTopic = "settings/mow_load_factor/set/session/json";
+  static const String mowerLogicSettingsSetPersistentJsonTopic = "settings/mow_load_factor/set/persistent/json";
 
-  static const String lowLevelPowerJsonTopic = "ll_power/json";
-  static const String lowLevelPowerSetJsonTopic = "ll_power/set/json";
-  static const String lowLevelPowerRenewJsonTopic = "ll_power/set/renew/json";
+  static const String lowLevelPowerJsonTopic = "settings/ll_board/json";
+  static const String lowLevelPowerValidationJsonTopic = "settings/ll_board/validation/json";
+  static const String lowLevelPowerSetSessionJsonTopic = "settings/ll_board/set/session/json";
+  static const String lowLevelPowerSetPersistentJsonTopic = "settings/ll_board/set/persistent/json";
+  static const String lowLevelPowerRenewJsonTopic = "settings/ll_board/set/renew/json";
+
+  static const String mapOverlayJsonTopic = "map/overlay/json";
+  static const String mapOverlayBsonTopic = "map/overlay/bson";
+  static const String mapOverlayLegacyJsonTopic = "map_overlay/json";
+  static const String mapOverlayLegacyBsonTopic = "map_overlay/bson";
 
   List<int>? _payloadBytes(MqttPublishMessage payload) {
     return payload.payload.message?.toList(growable: false);
@@ -317,12 +325,25 @@ class MqttConnection  {
     try {
       final map = _decodeMap(payload);
       if (map == null) {
-        lowLevelPowerSettingsController.setError("Leere oder ungültige Low-Level-Power-Nachricht empfangen.", topic: lowLevelPowerJsonTopic);
+        lowLevelPowerSettingsController.setError("Leere oder ungültige Low-Level-Board-Nachricht empfangen.", topic: lowLevelPowerJsonTopic);
         return;
       }
       lowLevelPowerSettingsController.setStatusPayload(map, topic: lowLevelPowerJsonTopic);
     } catch (e) {
-      lowLevelPowerSettingsController.setError("Low-Level-Power-Status konnte nicht gelesen werden: $e", topic: lowLevelPowerJsonTopic);
+      lowLevelPowerSettingsController.setError("Low-Level-Board-Status konnte nicht gelesen werden: $e", topic: lowLevelPowerJsonTopic);
+    }
+  }
+
+  void parseLowLevelPowerSettingsValidation(MqttPublishMessage payload) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) {
+        lowLevelPowerSettingsController.setError("Leere oder ungültige Low-Level-Board-Validierung empfangen.", topic: lowLevelPowerValidationJsonTopic);
+        return;
+      }
+      lowLevelPowerSettingsController.setValidation(map, topic: lowLevelPowerValidationJsonTopic);
+    } catch (e) {
+      lowLevelPowerSettingsController.setError("Low-Level-Board-Validierung konnte nicht gelesen werden: $e", topic: lowLevelPowerValidationJsonTopic);
     }
   }
 
@@ -336,7 +357,7 @@ class MqttConnection  {
 
   void requestTimetable() {
     try {
-      _publishJson(timetableRenewJsonTopic, {"request": "renew", "source": "app", "request_id": _requestId("timetable_renew")});
+      _publishJson(timetableRenewJsonTopic, <String, dynamic>{});
     } catch(e) {
       debugPrint("error requesting timetable via mqtt");
       timetableController.setError("Timetable-Anfrage konnte nicht gesendet werden.");
@@ -426,7 +447,7 @@ class MqttConnection  {
 
   void requestMap() {
     try {
-      _publishJson(mapRenewJsonTopic, {"request": "renew", "source": "app", "request_id": _requestId("map_renew")});
+      _publishJson(mapRenewJsonTopic, <String, dynamic>{});
     } catch(e) {
       debugPrint("error requesting map via mqtt");
       mqttAreasController.setError("Flächen-Anfrage konnte nicht gesendet werden.");
@@ -445,7 +466,7 @@ class MqttConnection  {
 
   void requestMowerLogicSettings() {
     try {
-      _publishJson(mowerLogicSettingsRenewJsonTopic, {"request": "renew", "source": "app", "request_id": _requestId("mower_logic_settings_renew")});
+      _publishJson(mowerLogicSettingsRenewJsonTopic, <String, dynamic>{});
     } catch(e) {
       debugPrint("error requesting mower logic settings via mqtt");
       mowerLogicSettingsController.setError("Settings-Anfrage konnte nicht gesendet werden.", topic: mowerLogicSettingsRenewJsonTopic);
@@ -475,16 +496,25 @@ class MqttConnection  {
       _publishJson(lowLevelPowerRenewJsonTopic, <String, dynamic>{});
     } catch(e) {
       debugPrint("error requesting low level power settings via mqtt");
-      lowLevelPowerSettingsController.setError("Low-Level-Power-Anfrage konnte nicht gesendet werden.", topic: lowLevelPowerRenewJsonTopic);
+      lowLevelPowerSettingsController.setError("Low-Level-Board-Anfrage konnte nicht gesendet werden.", topic: lowLevelPowerRenewJsonTopic);
     }
   }
 
-  void publishLowLevelPowerSettings(Map<String, dynamic> settings) {
+  void publishLowLevelPowerSessionSettings(Map<String, dynamic> settings) {
     try {
-      _publishJson(lowLevelPowerSetJsonTopic, settings, qos: MqttQos.exactlyOnce);
+      _publishJson(lowLevelPowerSetSessionJsonTopic, settings, qos: MqttQos.exactlyOnce);
     } catch(e) {
-      debugPrint("error publishing low level power settings via mqtt");
-      lowLevelPowerSettingsController.setError("Low-Level-Power-Werte konnten nicht gesendet werden.", topic: lowLevelPowerSetJsonTopic);
+      debugPrint("error publishing low level session settings via mqtt");
+      lowLevelPowerSettingsController.setError("Low-Level-Board-Sessionwerte konnten nicht gesendet werden.", topic: lowLevelPowerSetSessionJsonTopic);
+    }
+  }
+
+  void publishLowLevelPowerPersistentSettings(Map<String, dynamic> settings) {
+    try {
+      _publishJson(lowLevelPowerSetPersistentJsonTopic, settings, qos: MqttQos.exactlyOnce);
+    } catch(e) {
+      debugPrint("error publishing low level persistent settings via mqtt");
+      lowLevelPowerSettingsController.setError("Low-Level-Board-Werte konnten nicht dauerhaft gespeichert werden.", topic: lowLevelPowerSetPersistentJsonTopic);
     }
   }
 
@@ -775,6 +805,20 @@ class MqttConnection  {
     robotStateController.map.refresh();
   }
 
+  void parseMapOverlayMessage(MqttPublishMessage payload, {bool bson = false, required String topic}) {
+    try {
+      final map = _decodeMap(payload, bson: bson);
+      if (map == null) {
+        debugPrint("Leere oder ungültige Map-Overlay-Nachricht auf $topic empfangen.");
+        return;
+      }
+      final root = map["d"] is Map ? map : <String, dynamic>{"d": map};
+      parseMapOverlay(root);
+    } catch (e) {
+      debugPrint("Map-Overlay konnte nicht gelesen werden ($topic): $e");
+    }
+  }
+
   void parseMapOverlay(obj) {
     final overlayModel = MapOverlayModel();
     final polys = obj["d"]["polygons"];
@@ -966,8 +1010,16 @@ class MqttConnection  {
               parseMapMessage(payload);
             }
             break;
+            case mapBsonTopic: {
+              parseMapMessage(payload, bson: true);
+            }
+            break;
             case mapValidationJsonTopic: {
               parseMapValidation(payload);
+            }
+            break;
+            case mapValidationBsonTopic: {
+              parseMapValidation(payload, bson: true);
             }
             break;
             case statusTransitionLogJsonTopic: {
@@ -986,13 +1038,18 @@ class MqttConnection  {
               parseLowLevelPowerSettings(payload);
             }
             break;
-            case "map_overlay/bson": {
-              final bytes = payload.payload.message?.toList(growable: false);
-              if(bytes == null || bytes.isBlank == true) {
-                continue;
-              }
-              final object = BsonCodec.deserialize(BsonBinary.from(bytes));
-              parseMapOverlay(object);
+            case lowLevelPowerValidationJsonTopic: {
+              parseLowLevelPowerSettingsValidation(payload);
+            }
+            break;
+            case mapOverlayJsonTopic:
+            case mapOverlayLegacyJsonTopic: {
+              parseMapOverlayMessage(payload, topic: msg.topic!);
+            }
+            break;
+            case mapOverlayBsonTopic:
+            case mapOverlayLegacyBsonTopic: {
+              parseMapOverlayMessage(payload, bson: true, topic: msg.topic!);
             }
             break;
             case "robot_state/json": {
@@ -1043,12 +1100,18 @@ class MqttConnection  {
 
     client.subscribe("actions/bson", MqttQos.exactlyOnce);
     client.subscribe(mapJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(mapBsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mapValidationJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(mapValidationBsonTopic, MqttQos.atLeastOnce);
     client.subscribe(statusTransitionLogJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mowerLogicSettingsJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mowerLogicSettingsValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(lowLevelPowerJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe("map_overlay/bson", MqttQos.atMostOnce);
+    client.subscribe(lowLevelPowerValidationJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(mapOverlayJsonTopic, MqttQos.atMostOnce);
+    client.subscribe(mapOverlayBsonTopic, MqttQos.atMostOnce);
+    client.subscribe(mapOverlayLegacyJsonTopic, MqttQos.atMostOnce);
+    client.subscribe(mapOverlayLegacyBsonTopic, MqttQos.atMostOnce);
     client.subscribe("sensor_infos/bson", MqttQos.atLeastOnce);
     client.subscribe("robot_state/json", MqttQos.atMostOnce);
     client.subscribe("robot_state/bson", MqttQos.atMostOnce);

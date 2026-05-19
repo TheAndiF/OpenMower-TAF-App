@@ -263,15 +263,15 @@ class MowerLogicSettingsController extends GetxController {
     lastStatusOk.value = null;
     lastRemarks.clear();
     lastStatus.value = 'Settings-Status wird neu angefordert ...';
-    lastTopic.value = 'settings/mower_logic/set/renew/json';
+    lastTopic.value = 'settings/mow_load_factor/set/renew/json';
     lastUpdated.value = DateTime.now();
     _armStatusResponseTimeout(
-      'Keine Settings-Antwort empfangen. Bitte MQTT-Topic settings/mower_logic/json und Backend-Rückmeldung prüfen.',
+      'Keine Settings-Antwort empfangen. Bitte MQTT-Topic settings/mow_load_factor/json und Backend-Rückmeldung prüfen.',
     );
     Get.find<MqttConnection>().requestMowerLogicSettings();
   }
 
-  void setStatusPayload(Map<String, dynamic> payload, {String topic = 'settings/mower_logic/json'}) {
+  void setStatusPayload(Map<String, dynamic> payload, {String topic = 'settings/mow_load_factor/json'}) {
     final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
     final rawSettings = root['settings'];
     if (rawSettings is! Map) {
@@ -316,12 +316,15 @@ class MowerLogicSettingsController extends GetxController {
     lastUpdated.value = DateTime.now();
   }
 
-  void setValidation(Map<String, dynamic> payload, {String topic = 'settings/mower_logic/validation/json'}) {
+  void setValidation(Map<String, dynamic> payload, {String topic = 'settings/mow_load_factor/validation/json'}) {
     final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
     final valid = _boolOrNull(root['valid']);
-    final scope = _text(root['scope']);
-    final remarks = _stringList(root['remarks']);
-    final applied = root['applied'];
+    final mode = _text(root['mode'] ?? root['scope']);
+    final remarks = <String>[
+      ..._stringList(root['remarks']),
+      ..._rejectedRemarks(root['rejected']),
+    ];
+    final accepted = _acceptedKeys(root['accepted'] ?? root['applied']);
 
     lastRemarks.assignAll(remarks);
     lastStatusOk.value = valid;
@@ -331,24 +334,50 @@ class MowerLogicSettingsController extends GetxController {
     actionInProgress.value = false;
     _syncWaitingState();
 
+    for (final key in accepted) {
+      dirtyKeys.remove(key);
+    }
+
     if (valid == true) {
-      if (applied is Map) {
-        for (final key in applied.keys) {
-          dirtyKeys.remove(key.toString());
-        }
-      }
-      if (scope == 'persistent') {
-        lastStatus.value = 'Dauerhafte Settings wurden gespeichert.';
-      } else if (scope == 'session') {
-        lastStatus.value = 'Settings wurden für die aktuelle Session angewendet.';
+      if (mode == 'persistent') {
+        lastStatus.value = 'Dauerhafte Mäh-Lastfaktor-Settings wurden gespeichert.';
+      } else if (mode == 'session') {
+        lastStatus.value = 'Mäh-Lastfaktor-Settings wurden für die aktuelle Session angewendet.';
       } else {
-        lastStatus.value = 'Settings wurden vom Backend bestätigt.';
+        lastStatus.value = 'Mäh-Lastfaktor-Settings wurden vom Backend bestätigt.';
       }
     } else if (valid == false) {
-      lastStatus.value = 'Settings wurden abgelehnt. Bitte Hinweise prüfen.';
+      lastStatus.value = 'Settings wurden teilweise oder vollständig abgelehnt. Bitte Hinweise prüfen.';
     } else {
       lastStatus.value = 'Validierungsantwort empfangen.';
     }
+  }
+
+  List<String> _acceptedKeys(dynamic raw) {
+    if (raw is Map) {
+      return raw.keys.map((key) => key.toString()).toList();
+    }
+    if (raw is List) {
+      return raw.map((key) => key.toString()).toList();
+    }
+    return const <String>[];
+  }
+
+  List<String> _rejectedRemarks(dynamic raw) {
+    if (raw is! List) {
+      return const <String>[];
+    }
+    final remarks = <String>[];
+    for (final item in raw) {
+      if (item is Map) {
+        final key = item['key']?.toString() ?? 'unbekannt';
+        final reason = item['reason']?.toString() ?? 'abgelehnt';
+        remarks.add('$key: $reason');
+      } else {
+        remarks.add(item.toString());
+      }
+    }
+    return remarks;
   }
 
   void setError(String message, {String topic = 'local/error'}) {
@@ -405,7 +434,7 @@ class MowerLogicSettingsController extends GetxController {
     _syncWaitingState();
     lastStatusOk.value = null;
     lastStatus.value = 'Session-Änderungen werden gesendet ...';
-    lastTopic.value = 'settings/mower_logic/set/session/json';
+    lastTopic.value = 'settings/mow_load_factor/set/session/json';
     lastUpdated.value = DateTime.now();
     _armActionResponseTimeout(
       'Keine Backend-Bestätigung für die Session-Änderung empfangen. Bitte Validation-Topic prüfen.',
@@ -422,7 +451,7 @@ class MowerLogicSettingsController extends GetxController {
     _syncWaitingState();
     lastStatusOk.value = null;
     lastStatus.value = 'Dauerhafte Einstellungen werden gespeichert ...';
-    lastTopic.value = 'settings/mower_logic/set/persistent/json';
+    lastTopic.value = 'settings/mow_load_factor/set/persistent/json';
     lastUpdated.value = DateTime.now();
     _armActionResponseTimeout(
       'Keine Backend-Bestätigung für das dauerhafte Speichern empfangen. Bitte Validation-Topic prüfen.',
