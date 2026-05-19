@@ -17,6 +17,8 @@ import 'package:open_mower_app/views/logo_widget_drawer.dart';
 class MainScreen extends GetView<RobotStateController> {
   MainScreen({super.key});
 
+  static const Color _drawerSectionBlue = Color(0xFFEAF3FF);
+
   final widgetList = <Widget>[
     Dashboard(),
     AdvancedOptions(),
@@ -41,22 +43,65 @@ class MainScreen extends GetView<RobotStateController> {
           shadowColor: Colors.black,
         ),
         drawer: Drawer(
-          // Add a ListView to the drawer. This ensures the user can scroll
-          // through the options in the drawer if there isn't enough vertical
-          // space to fit everything.
-          child: Column(children:<Widget>[
-            Expanded(child: ListView(
-              // Important: Remove any padding from the ListView.
-              padding: EdgeInsets.zero,
-              children: buildDrawerList(),
-            )), Obx(() => Text(robotStateController.softwareVersion.value).paddingAll(10))]),
+          child: Column(children: <Widget>[
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: buildDrawerList(),
+              ),
+            ),
+            Obx(() => Text(robotStateController.softwareVersion.value).paddingAll(10))
+          ]),
         ),
-        body: Obx(()=>widgetList[_index.value])
+        body: Obx(() => widgetList[_index.value]));
+  }
+
+  ListTile _buildDrawerTile({
+    required Widget leading,
+    required String title,
+    required int index,
+    Color? tileColor,
+  }) {
+    return ListTile(
+      tileColor: tileColor,
+      leading: leading,
+      title: Text(title),
+      onTap: () {
+        Get.back();
+        _index.value = index;
+      },
+    );
+  }
+
+  Widget _buildBottomSettingsSection({required bool showDebugSettings}) {
+    return Container(
+      color: _drawerSectionBlue,
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildDrawerTile(
+            leading: n.Icon(Icons.hardware),
+            title: 'Mäher-Einstellungen',
+            index: 6,
+            tileColor: _drawerSectionBlue,
+          ),
+          if (showDebugSettings)
+            _buildDrawerTile(
+              leading: n.Icon(Icons.settings),
+              title: 'Settings',
+              index: 7,
+              tileColor: _drawerSectionBlue,
+            ),
+        ],
+      ),
     );
   }
 
   List<Widget> buildDrawerList() {
-    final drawerList = <Widget>[
+    final showDebugSettings = !kReleaseMode || !kIsWeb;
+
+    return <Widget>[
       const DrawerHeader(
         decoration: BoxDecoration(
           color: Colors.blue,
@@ -64,78 +109,43 @@ class MainScreen extends GetView<RobotStateController> {
         child: Padding(
             padding: EdgeInsets.all(24),
             child: FittedBox(
-                child: LogoWidgetDrawer(size: 0.2))), // AH20240627 size 0.1 had issues with rendering 'n' and 'r' in android browser 
+                child: LogoWidgetDrawer(size: 0.2))),
       ),
-      ListTile(
+      _buildDrawerTile(
         leading: n.Icon(Icons.speed),
-        title: const Text('Dashboard'),
-        onTap: () {
-          Get.back();
-          _index.value= 0;
-        },
+        title: 'Dashboard',
+        index: 0,
       ),
-      ListTile(
+      _buildDrawerTile(
         leading: n.Icon(Icons.settings_applications),
-        title: const Text('Advanced Options'),
-        onTap: () {
-          Get.back();
-          _index.value= 1;
-        },
+        title: 'Advanced Options',
+        index: 1,
       ),
-      ListTile(
+      _buildDrawerTile(
         leading: n.Icon(Icons.line_axis),
-        title: const Text('Sensor Values'),
-        onTap: () {
-          Get.back();
-          _index.value= 2;
-        },
+        title: 'Sensor Values',
+        index: 2,
       ),
-      ListTile(
+      _buildDrawerTile(
         leading: n.Icon(Icons.event_note),
-        title: const Text('Timetable'),
-        onTap: () {
-          Get.back();
-          _index.value= 3;
-        },
+        title: 'Timetable',
+        index: 3,
       ),
-      ListTile(
+      _buildDrawerTile(
         leading: n.Icon(Icons.grass),
-        title: const Text('Flächen'),
-        onTap: () {
-          Get.back();
-          _index.value= 4;
-        },
+        title: 'Flächen',
+        index: 4,
       ),
-      ListTile(
+      _buildDrawerTile(
         leading: n.Icon(Icons.receipt_long),
-        title: const Text('Protokoll'),
-        onTap: () {
-          Get.back();
-          _index.value= 5;
-        },
+        title: 'Protokoll',
+        index: 5,
       ),
-      ListTile(
-        leading: n.Icon(Icons.tune),
-        title: const Text('Mäher-Einstellungen'),
-        onTap: () {
-          Get.back();
-          _index.value= 6;
-        },
+      Container(
+        height: 12,
+        color: _drawerSectionBlue,
       ),
+      _buildBottomSettingsSection(showDebugSettings: showDebugSettings),
     ];
-
-    if(!kReleaseMode || !kIsWeb) {
-      // show the settings screen on debug versions and on native versions
-      drawerList.add(ListTile(
-        leading: n.Icon(Icons.settings),
-        title: const Text('Settings'),
-        onTap: () {
-          Get.back();
-          _index.value= 7;
-        },
-      ));
-    }
-
-    return drawerList;
   }
 }
