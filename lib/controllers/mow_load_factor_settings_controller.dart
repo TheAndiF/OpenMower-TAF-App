@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/io/mqtt_connection.dart';
 
-class MowerLogicSettingsController extends GetxController {
+class MowLoadFactorSettingsController extends GetxController {
   final statusPayload = <String, dynamic>{}.obs;
   final settings = <String, Map<String, dynamic>>{}.obs;
   final draftValues = <String, dynamic>{}.obs;
@@ -77,6 +77,7 @@ class MowerLogicSettingsController extends GetxController {
       case 'temperature_protection':
         return 'Temperaturschutz';
       case 'mowing_load_control':
+      case 'mow_load_factor':
         return 'Mäh-Lastregelung';
       case 'gps':
         return 'GPS';
@@ -102,6 +103,7 @@ class MowerLogicSettingsController extends GetxController {
       case 'temperature_protection':
         return Icons.device_thermostat;
       case 'mowing_load_control':
+      case 'mow_load_factor':
         return Icons.speed;
       case 'gps':
         return Icons.gps_fixed;
@@ -262,16 +264,16 @@ class MowerLogicSettingsController extends GetxController {
     _syncWaitingState();
     lastStatusOk.value = null;
     lastRemarks.clear();
-    lastStatus.value = 'Mäher-Logik-Status wird neu angefordert ...';
-    lastTopic.value = 'settings/mower_logic/set/renew/json';
+    lastStatus.value = 'Mäh-Lastregelungs-Status wird neu angefordert ...';
+    lastTopic.value = 'settings/mow_load_factor/set/renew/json';
     lastUpdated.value = DateTime.now();
     _armStatusResponseTimeout(
-      'Keine Mäher-Logik-Antwort empfangen. Bitte MQTT-Topic settings/mower_logic/json und Backend-Rückmeldung prüfen.',
+      'Keine Mäh-Lastregelungs-Antwort empfangen. Bitte MQTT-Topic settings/mow_load_factor/json und Backend-Rückmeldung prüfen.',
     );
-    Get.find<MqttConnection>().requestMowerLogicSettings();
+    Get.find<MqttConnection>().requestMowLoadFactorSettings();
   }
 
-  void setStatusPayload(Map<String, dynamic> payload, {String topic = 'settings/mower_logic/json'}) {
+  void setStatusPayload(Map<String, dynamic> payload, {String topic = 'settings/mow_load_factor/json'}) {
     final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
     final rawSettings = root['settings'];
     if (rawSettings is! Map) {
@@ -310,13 +312,13 @@ class MowerLogicSettingsController extends GetxController {
     _syncWaitingState();
     lastStatusOk.value ??= true;
     if (lastStatus.value.isEmpty || lastStatus.value.contains('angefordert')) {
-      lastStatus.value = 'Mäher-Logik-Status vom Backend empfangen.';
+      lastStatus.value = 'Mäh-Lastregelungs-Status vom Backend empfangen.';
     }
     lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
   }
 
-  void setValidation(Map<String, dynamic> payload, {String topic = 'settings/mower_logic/validation/json'}) {
+  void setValidation(Map<String, dynamic> payload, {String topic = 'settings/mow_load_factor/validation/json'}) {
     final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
     final valid = _boolOrNull(root['valid']);
     final mode = _text(root['mode'] ?? root['scope']);
@@ -340,14 +342,14 @@ class MowerLogicSettingsController extends GetxController {
 
     if (valid == true) {
       if (mode == 'persistent') {
-        lastStatus.value = 'Dauerhafte Mäher-Logik-Settings wurden gespeichert.';
+        lastStatus.value = 'Dauerhafte Mäh-Lastfaktor-Settings wurden gespeichert.';
       } else if (mode == 'session') {
-        lastStatus.value = 'Mäher-Logik-Settings wurden für die aktuelle Session angewendet.';
+        lastStatus.value = 'Mäh-Lastfaktor-Settings wurden für die aktuelle Session angewendet.';
       } else {
-        lastStatus.value = 'Mäher-Logik-Settings wurden vom Backend bestätigt.';
+        lastStatus.value = 'Mäh-Lastfaktor-Settings wurden vom Backend bestätigt.';
       }
     } else if (valid == false) {
-      lastStatus.value = 'Settings wurden teilweise oder vollständig abgelehnt. Bitte Hinweise prüfen.';
+      lastStatus.value = 'Mäh-Lastregelungs-Settings wurden teilweise oder vollständig abgelehnt. Bitte Hinweise prüfen.';
     } else {
       lastStatus.value = 'Validierungsantwort empfangen.';
     }
@@ -437,12 +439,12 @@ class MowerLogicSettingsController extends GetxController {
     _syncWaitingState();
     lastStatusOk.value = null;
     lastStatus.value = 'Session-Änderungen werden gesendet ...';
-    lastTopic.value = 'settings/mower_logic/set/session/json';
+    lastTopic.value = 'settings/mow_load_factor/set/session/json';
     lastUpdated.value = DateTime.now();
     _armActionResponseTimeout(
       'Keine Backend-Bestätigung für die Session-Änderung empfangen. Bitte Validation-Topic prüfen.',
     );
-    Get.find<MqttConnection>().publishMowerLogicSessionSettings(payload);
+    Get.find<MqttConnection>().publishMowLoadFactorSessionSettings(payload);
   }
 
   void savePersistentForGroup(String group) {
@@ -454,12 +456,12 @@ class MowerLogicSettingsController extends GetxController {
     _syncWaitingState();
     lastStatusOk.value = null;
     lastStatus.value = 'Dauerhafte Einstellungen werden gespeichert ...';
-    lastTopic.value = 'settings/mower_logic/set/persistent/json';
+    lastTopic.value = 'settings/mow_load_factor/set/persistent/json';
     lastUpdated.value = DateTime.now();
     _armActionResponseTimeout(
       'Keine Backend-Bestätigung für das dauerhafte Speichern empfangen. Bitte Validation-Topic prüfen.',
     );
-    Get.find<MqttConnection>().publishMowerLogicPersistentSettings(payload);
+    Get.find<MqttConnection>().publishMowLoadFactorPersistentSettings(payload);
   }
 
   Map<String, dynamic>? _payloadForGroup(String group, {required bool sessionOnly}) {

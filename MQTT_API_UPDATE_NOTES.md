@@ -1,30 +1,86 @@
-# MQTT API Update - 2026-05-19
+# MQTT API Update - 2026-05-20
 
-Dieses Projekt wurde an die aktualisierte OpenMower-MQTT-Spezifikation angepasst.
+Dieses Paket passt die OpenMower-App an die Kommunikationsstruktur vom 20.05.2026 an und trennt die Einstellungsnavigation in hardware- und softwarenahe Bereiche.
 
-## Umgestellt
+## Menü und Seitenstruktur
 
-- Mäh-Lastfaktor-Settings von `settings/mower_logic/...` auf `settings/mow_load_factor/...`
-- Low-Level-Board-Settings von `ll_power/...` auf `settings/ll_board/...`
-- LL-Board Statusverarbeitung für das neue `settings_v1`-Schema mit `default`, `persistent`, `active`, `different`
-- LL-Board Schreiboperationen getrennt in:
-  - `settings/ll_board/set/session/json`
-  - `settings/ll_board/set/persistent/json`
-- Verarbeitung der Settings-Validierungsantworten mit `mode`, `accepted`, `rejected`
-- Map-Overlay Unterstützung für:
-  - `map/overlay/json`
-  - `map/overlay/bson`
-  - Legacy-Aliase `map_overlay/json` und `map_overlay/bson`
-- Empfang von `map/bson` und `map/validation/bson`
-- Renew-Aufrufe für Timetable, Map und Settings senden nun leere JSON-Objekte `{}`
+Unter dem Trennstrich im linken Menü liegen nun:
 
-## UI-Anpassungen
+- **Hardwarenahe Einstellungen** mit Schraubenschlüssel-/Mutter-Piktogramm
+- **Softwarenahe Einstellungen** mit Schieberegler-Piktogramm
 
-- Texte und JSON-Hinweise auf die neuen Settings-Topics aktualisiert
-- Low-Level-Board kann live getestet oder dauerhaft gespeichert werden
-- Validierungsrückmeldungen werden im LL-Board-Status sichtbar gemacht
-- Min-/Max-Hinweise aus den Settings-Metadaten werden in der LL-Board-Oberfläche angezeigt
+### Hardwarenahe Einstellungen
+
+Enthält ausschließlich:
+
+- `settings/ll_board`
+
+### Softwarenahe Einstellungen
+
+Enthält:
+
+- `settings/mow_load_factor`
+- `settings/mower_logic`
+
+Die Softwareseite gliedert die Inhalte in:
+
+- **Mäh-Lastregelung**
+- **Mäher-Logik**
+
+## MQTT-Anpassungen
+
+### Mäher-Logik
+
+Die dynamischen Mäher-Logik-Settings werden jetzt über die vorgesehenen Topics verarbeitet:
+
+- `settings/mower_logic/json`
+- `settings/mower_logic/set/session/json`
+- `settings/mower_logic/set/persistent/json`
+- `settings/mower_logic/set/renew/json`
+- `settings/mower_logic/validation/json`
+
+### Mäh-Lastregelung
+
+Der Mäh-Lastfaktor bleibt als eigener Settings-Bereich erhalten:
+
+- `settings/mow_load_factor/json`
+- `settings/mow_load_factor/set/session/json`
+- `settings/mow_load_factor/set/persistent/json`
+- `settings/mow_load_factor/set/renew/json`
+
+## Robot State
+
+Die App verarbeitet zusätzlich die laufenden Lastfaktor-Zustandswerte aus `robot_state/json`:
+
+- `load_factor_computed`
+- `load_factor_effective`
+
+Diese Werte werden auf der Seite **Softwarenahe Einstellungen** im Bereich **Mäh-Lastregelung** angezeigt.
+
+## Neue Einstellung
+
+`mow_motor_direction_mode` wird als Auswahlfeld angeboten:
+
+- `-1` feste Richtung reverse/left
+- `0` bei echtem Motorstart wechseln
+- `1` feste Richtung forward/right
+
+## Validierungsantworten
+
+Die Verarbeitung von Rückmeldungen wurde robuster gemacht. `rejected` wird nun sowohl als Liste als auch als Map unterstützt, beispielsweise:
+
+```json
+{
+  "rejected": {
+    "motor_hot_temperature": "80"
+  }
+}
+```
+
+## UI-Texte
+
+Veraltete Hinweise auf YAML-Persistenz wurden ersetzt. Die Oberfläche spricht nun von dauerhaftem Speichern in der persistenten Settings-Struktur.
 
 ## Hinweis zur Prüfung
 
-Die Änderungen wurden statisch gegen die MQTT-Spezifikation eingepflegt. Ein Flutter/Dart-Build konnte in der Bearbeitungsumgebung nicht ausgeführt werden, da die Flutter-/Dart-CLI dort nicht verfügbar war.
+Die Änderungen wurden statisch in den Projektstand eingearbeitet. Ein Flutter-/Dart-Build konnte in dieser Bearbeitungsumgebung nicht ausgeführt werden, weil die `flutter`- und `dart`-CLI nicht verfügbar waren.

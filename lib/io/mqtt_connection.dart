@@ -8,6 +8,7 @@ import 'package:open_mower_app/controllers/timetable_controller.dart';
 import 'package:open_mower_app/controllers/mqtt_areas_controller.dart';
 import 'package:open_mower_app/controllers/status_transition_log_controller.dart';
 import 'package:open_mower_app/controllers/mower_logic_settings_controller.dart';
+import 'package:open_mower_app/controllers/mow_load_factor_settings_controller.dart';
 import 'package:open_mower_app/controllers/low_level_power_settings_controller.dart';
 import 'package:open_mower_app/models/map_model.dart';
 import 'package:open_mower_app/models/robot_state.dart';
@@ -47,6 +48,7 @@ class MqttConnection  {
   final MqttAreasController mqttAreasController = Get.find();
   final StatusTransitionLogController statusTransitionLogController = Get.find();
   final MowerLogicSettingsController mowerLogicSettingsController = Get.find();
+  final MowLoadFactorSettingsController mowLoadFactorSettingsController = Get.find();
   final LowLevelPowerSettingsController lowLevelPowerSettingsController = Get.find();
 
   final RegExp exp = RegExp(r'sensors/(.*)/bson');
@@ -93,11 +95,17 @@ class MqttConnection  {
   static const String statusTransitionLogRenewJsonTopic = "statustransition_log/set/renew/json";
 
   // Settings namespace according to the JSON-first MQTT API.
-  static const String mowerLogicSettingsJsonTopic = "settings/mow_load_factor/json";
-  static const String mowerLogicSettingsValidationJsonTopic = "settings/mow_load_factor/validation/json";
-  static const String mowerLogicSettingsRenewJsonTopic = "settings/mow_load_factor/set/renew/json";
-  static const String mowerLogicSettingsSetSessionJsonTopic = "settings/mow_load_factor/set/session/json";
-  static const String mowerLogicSettingsSetPersistentJsonTopic = "settings/mow_load_factor/set/persistent/json";
+  static const String mowerLogicSettingsJsonTopic = "settings/mower_logic/json";
+  static const String mowerLogicSettingsValidationJsonTopic = "settings/mower_logic/validation/json";
+  static const String mowerLogicSettingsRenewJsonTopic = "settings/mower_logic/set/renew/json";
+  static const String mowerLogicSettingsSetSessionJsonTopic = "settings/mower_logic/set/session/json";
+  static const String mowerLogicSettingsSetPersistentJsonTopic = "settings/mower_logic/set/persistent/json";
+
+  static const String mowLoadFactorSettingsJsonTopic = "settings/mow_load_factor/json";
+  static const String mowLoadFactorSettingsValidationJsonTopic = "settings/mow_load_factor/validation/json";
+  static const String mowLoadFactorSettingsRenewJsonTopic = "settings/mow_load_factor/set/renew/json";
+  static const String mowLoadFactorSettingsSetSessionJsonTopic = "settings/mow_load_factor/set/session/json";
+  static const String mowLoadFactorSettingsSetPersistentJsonTopic = "settings/mow_load_factor/set/persistent/json";
 
   static const String lowLevelPowerJsonTopic = "settings/ll_board/json";
   static const String lowLevelPowerValidationJsonTopic = "settings/ll_board/validation/json";
@@ -240,6 +248,22 @@ class MqttConnection  {
     if (raw.containsKey("current_sub_state")) {
       state.currentSubState = raw["current_sub_state"]?.toString() ?? state.currentSubState;
     }
+    if (raw.containsKey("load_factor_computed")) {
+      final value = raw["load_factor_computed"];
+      if (value is num) {
+        state.loadFactorComputed = value.toDouble();
+      } else {
+        state.loadFactorComputed = double.tryParse(value?.toString() ?? "") ?? state.loadFactorComputed;
+      }
+    }
+    if (raw.containsKey("load_factor_effective")) {
+      final value = raw["load_factor_effective"];
+      if (value is num) {
+        state.loadFactorEffective = value.toDouble();
+      } else {
+        state.loadFactorEffective = double.tryParse(value?.toString() ?? "") ?? state.loadFactorEffective;
+      }
+    }
     robotStateController.robotState.refresh();
   }
 
@@ -312,12 +336,38 @@ class MqttConnection  {
     try {
       final map = _decodeMap(payload);
       if (map == null) {
-        mowerLogicSettingsController.setError("Leere oder ungültige Settings-Validierung empfangen.", topic: mowerLogicSettingsValidationJsonTopic);
+        mowerLogicSettingsController.setError("Leere oder ungültige Mäher-Logik-Validierung empfangen.", topic: mowerLogicSettingsValidationJsonTopic);
         return;
       }
       mowerLogicSettingsController.setValidation(map, topic: mowerLogicSettingsValidationJsonTopic);
     } catch (e) {
-      mowerLogicSettingsController.setError("Settings-Validierung konnte nicht gelesen werden: $e", topic: mowerLogicSettingsValidationJsonTopic);
+      mowerLogicSettingsController.setError("Mäher-Logik-Validierung konnte nicht gelesen werden: $e", topic: mowerLogicSettingsValidationJsonTopic);
+    }
+  }
+
+  void parseMowLoadFactorSettings(MqttPublishMessage payload) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) {
+        mowLoadFactorSettingsController.setError("Leere oder ungültige Mäh-Lastregelungs-Nachricht empfangen.", topic: mowLoadFactorSettingsJsonTopic);
+        return;
+      }
+      mowLoadFactorSettingsController.setStatusPayload(map, topic: mowLoadFactorSettingsJsonTopic);
+    } catch (e) {
+      mowLoadFactorSettingsController.setError("Mäh-Lastregelungs-Status konnte nicht gelesen werden: $e", topic: mowLoadFactorSettingsJsonTopic);
+    }
+  }
+
+  void parseMowLoadFactorSettingsValidation(MqttPublishMessage payload) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) {
+        mowLoadFactorSettingsController.setError("Leere oder ungültige Mäh-Lastregelungs-Validierung empfangen.", topic: mowLoadFactorSettingsValidationJsonTopic);
+        return;
+      }
+      mowLoadFactorSettingsController.setValidation(map, topic: mowLoadFactorSettingsValidationJsonTopic);
+    } catch (e) {
+      mowLoadFactorSettingsController.setError("Mäh-Lastregelungs-Validierung konnte nicht gelesen werden: $e", topic: mowLoadFactorSettingsValidationJsonTopic);
     }
   }
 
@@ -469,7 +519,7 @@ class MqttConnection  {
       _publishJson(mowerLogicSettingsRenewJsonTopic, <String, dynamic>{});
     } catch(e) {
       debugPrint("error requesting mower logic settings via mqtt");
-      mowerLogicSettingsController.setError("Settings-Anfrage konnte nicht gesendet werden.", topic: mowerLogicSettingsRenewJsonTopic);
+      mowerLogicSettingsController.setError("Mäher-Logik-Anfrage konnte nicht gesendet werden.", topic: mowerLogicSettingsRenewJsonTopic);
     }
   }
 
@@ -478,7 +528,7 @@ class MqttConnection  {
       _publishJson(mowerLogicSettingsSetSessionJsonTopic, settings, qos: MqttQos.exactlyOnce);
     } catch(e) {
       debugPrint("error publishing mower logic session settings via mqtt");
-      mowerLogicSettingsController.setError("Session-Settings konnten nicht gesendet werden.", topic: mowerLogicSettingsSetSessionJsonTopic);
+      mowerLogicSettingsController.setError("Mäher-Logik-Sessionwerte konnten nicht gesendet werden.", topic: mowerLogicSettingsSetSessionJsonTopic);
     }
   }
 
@@ -487,7 +537,34 @@ class MqttConnection  {
       _publishJson(mowerLogicSettingsSetPersistentJsonTopic, settings, qos: MqttQos.exactlyOnce);
     } catch(e) {
       debugPrint("error publishing mower logic persistent settings via mqtt");
-      mowerLogicSettingsController.setError("Dauerhafte Settings konnten nicht gesendet werden.", topic: mowerLogicSettingsSetPersistentJsonTopic);
+      mowerLogicSettingsController.setError("Dauerhafte Mäher-Logik-Settings konnten nicht gesendet werden.", topic: mowerLogicSettingsSetPersistentJsonTopic);
+    }
+  }
+
+  void requestMowLoadFactorSettings() {
+    try {
+      _publishJson(mowLoadFactorSettingsRenewJsonTopic, <String, dynamic>{});
+    } catch(e) {
+      debugPrint("error requesting mow load factor settings via mqtt");
+      mowLoadFactorSettingsController.setError("Mäh-Lastregelungs-Anfrage konnte nicht gesendet werden.", topic: mowLoadFactorSettingsRenewJsonTopic);
+    }
+  }
+
+  void publishMowLoadFactorSessionSettings(Map<String, dynamic> settings) {
+    try {
+      _publishJson(mowLoadFactorSettingsSetSessionJsonTopic, settings, qos: MqttQos.exactlyOnce);
+    } catch(e) {
+      debugPrint("error publishing mow load factor session settings via mqtt");
+      mowLoadFactorSettingsController.setError("Mäh-Lastregelungs-Sessionwerte konnten nicht gesendet werden.", topic: mowLoadFactorSettingsSetSessionJsonTopic);
+    }
+  }
+
+  void publishMowLoadFactorPersistentSettings(Map<String, dynamic> settings) {
+    try {
+      _publishJson(mowLoadFactorSettingsSetPersistentJsonTopic, settings, qos: MqttQos.exactlyOnce);
+    } catch(e) {
+      debugPrint("error publishing mow load factor persistent settings via mqtt");
+      mowLoadFactorSettingsController.setError("Dauerhafte Mäh-Lastregelungs-Settings konnten nicht gesendet werden.", topic: mowLoadFactorSettingsSetPersistentJsonTopic);
     }
   }
 
@@ -869,6 +946,14 @@ class MqttConnection  {
     state.currentState      = obj["d"]["current_state"];
     state.gpsPercent        = obj["d"]["gps_percentage"];
     state.batteryPercent    = obj["d"]["battery_percentage"];
+    final loadFactorComputed = obj["d"]["load_factor_computed"];
+    if (loadFactorComputed is num) {
+      state.loadFactorComputed = loadFactorComputed.toDouble();
+    }
+    final loadFactorEffective = obj["d"]["load_factor_effective"];
+    if (loadFactorEffective is num) {
+      state.loadFactorEffective = loadFactorEffective.toDouble();
+    }
     state.currentArea       = obj["d"]["current_area"];
     state.currentAreaId     = obj["d"]["current_area_id"]?.toString() ?? "";
     state.currentPath       = obj["d"]["current_path"];
@@ -1034,6 +1119,14 @@ class MqttConnection  {
               parseMowerLogicSettingsValidation(payload);
             }
             break;
+            case mowLoadFactorSettingsJsonTopic: {
+              parseMowLoadFactorSettings(payload);
+            }
+            break;
+            case mowLoadFactorSettingsValidationJsonTopic: {
+              parseMowLoadFactorSettingsValidation(payload);
+            }
+            break;
             case lowLevelPowerJsonTopic: {
               parseLowLevelPowerSettings(payload);
             }
@@ -1106,6 +1199,8 @@ class MqttConnection  {
     client.subscribe(statusTransitionLogJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mowerLogicSettingsJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mowerLogicSettingsValidationJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(mowLoadFactorSettingsJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(mowLoadFactorSettingsValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(lowLevelPowerJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(lowLevelPowerValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mapOverlayJsonTopic, MqttQos.atMostOnce);

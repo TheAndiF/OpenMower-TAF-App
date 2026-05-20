@@ -4,6 +4,8 @@ class RobotState {
   double wifiPercent = 0.0;
   double gpsPercent = 0.0;
   double batteryPercent = 0.0;
+  double loadFactorComputed = 1.0;
+  double loadFactorEffective = 1.0;
 
   String currentState = "Unknown";
   String currentSubState = "Unknown";

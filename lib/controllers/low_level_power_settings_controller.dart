@@ -380,6 +380,9 @@ class LowLevelPowerSettingsController extends GetxController {
   }
 
   List<String> _rejectedRemarks(dynamic raw) {
+    if (raw is Map) {
+      return raw.entries.map((entry) => '${entry.key}: ${entry.value}').toList();
+    }
     if (raw is! List) {
       return const <String>[];
     }

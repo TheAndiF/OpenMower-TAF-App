@@ -10,6 +10,7 @@ import 'package:open_mower_app/screens/timetable.dart';
 import 'package:open_mower_app/screens/mqtt_areas.dart';
 import 'package:open_mower_app/screens/status_transition_log.dart';
 import 'package:open_mower_app/screens/mower_logic_settings.dart';
+import 'package:open_mower_app/screens/hardware_settings.dart';
 import 'package:open_mower_app/screens/settings.dart';
 import 'package:open_mower_app/views/logo_widget.dart';
 import 'package:open_mower_app/views/logo_widget_drawer.dart';
@@ -24,6 +25,7 @@ class MainScreen extends GetView<RobotStateController> {
     const TimetableScreen(),
     const MqttAreasScreen(),
     const StatusTransitionLogScreen(),
+    const HardwareSettingsScreen(),
     const MowerLogicSettingsScreen(),
     const Settings(),
   ];
@@ -121,9 +123,14 @@ class MainScreen extends GetView<RobotStateController> {
         child: Divider(height: 1),
       ),
       _buildDrawerTile(
-        leading: const _MowerSettingsDrawerIcon(),
-        title: 'Mäher-Einstellungen',
+        leading: const _HardwareSettingsDrawerIcon(),
+        title: 'Hardwarenahe Einstellungen',
         index: 6,
+      ),
+      _buildDrawerTile(
+        leading: const _SoftwareSettingsDrawerIcon(),
+        title: 'Softwarenahe Einstellungen',
+        index: 7,
       ),
     ];
 
@@ -132,7 +139,7 @@ class MainScreen extends GetView<RobotStateController> {
         _buildDrawerTile(
           leading: n.Icon(Icons.settings),
           title: 'Settings',
-          index: 7,
+          index: 8,
         ),
       );
     }
@@ -141,8 +148,8 @@ class MainScreen extends GetView<RobotStateController> {
   }
 }
 
-class _MowerSettingsDrawerIcon extends StatelessWidget {
-  const _MowerSettingsDrawerIcon();
+class _HardwareSettingsDrawerIcon extends StatelessWidget {
+  const _HardwareSettingsDrawerIcon();
 
   @override
   Widget build(BuildContext context) {
@@ -170,6 +177,52 @@ class _MowerSettingsDrawerIcon extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SoftwareSettingsDrawerIcon extends StatelessWidget {
+  const _SoftwareSettingsDrawerIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = IconTheme.of(context).color ?? Colors.grey;
+    return SizedBox(
+      width: 28,
+      height: 28,
+      child: CustomPaint(
+        size: const Size(28, 28),
+        painter: _SliderIconPainter(color),
+      ),
+    );
+  }
+}
+
+class _SliderIconPainter extends CustomPainter {
+  const _SliderIconPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final line = Paint()
+      ..color = color
+      ..strokeWidth = 2.3
+      ..strokeCap = StrokeCap.round;
+    final knob = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final y1 = size.height * 0.25;
+    final y2 = size.height * 0.50;
+    final y3 = size.height * 0.75;
+    canvas.drawLine(Offset(size.width * 0.10, y1), Offset(size.width * 0.90, y1), line);
+    canvas.drawLine(Offset(size.width * 0.10, y2), Offset(size.width * 0.90, y2), line);
+    canvas.drawLine(Offset(size.width * 0.10, y3), Offset(size.width * 0.90, y3), line);
+    canvas.drawCircle(Offset(size.width * 0.65, y1), 3.4, knob);
+    canvas.drawCircle(Offset(size.width * 0.35, y2), 3.4, knob);
+    canvas.drawCircle(Offset(size.width * 0.55, y3), 3.4, knob);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SliderIconPainter oldDelegate) => oldDelegate.color != color;
 }
 
 class _HexNutPainter extends CustomPainter {

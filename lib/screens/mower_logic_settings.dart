@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/mower_logic_settings_controller.dart';
+import 'package:open_mower_app/controllers/mow_load_factor_settings_controller.dart';
+import 'package:open_mower_app/controllers/robot_state_controller.dart';
 import 'package:open_mower_app/controllers/low_level_power_settings_controller.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 
@@ -17,6 +19,8 @@ class MowerLogicSettingsScreen extends StatefulWidget {
 
 class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
   final MowerLogicSettingsController controller = Get.find<MowerLogicSettingsController>();
+  final MowLoadFactorSettingsController mowLoadFactorController = Get.find<MowLoadFactorSettingsController>();
+  final RobotStateController robotStateController = Get.find<RobotStateController>();
   final LowLevelPowerSettingsController lowLevelPowerController = Get.find<LowLevelPowerSettingsController>();
   bool _renewSent = false;
   bool _jsonExpanded = false;
@@ -28,7 +32,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
       if (!_renewSent) {
         _renewSent = true;
         controller.requestSettings();
-        lowLevelPowerController.requestStatus();
+        mowLoadFactorController.requestSettings();
       }
     });
   }
@@ -45,6 +49,8 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
               children: [
                 _buildOverviewSection(context),
                 const SizedBox(height: 16),
+                _buildMowLoadFactorSection(context),
+                const SizedBox(height: 16),
                 if (!controller.hasData)
                   _buildEmptySettingsCard(context)
                 else
@@ -52,8 +58,6 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                     yield _buildGroupSection(context, group);
                     yield const SizedBox(height: 16);
                   }),
-                _buildLowLevelPowerSection(context),
-                const SizedBox(height: 16),
                 _buildJsonSection(context),
               ],
             ),
@@ -92,12 +96,12 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Mäher-Einstellungen',
+                            'Softwarenahe Einstellungen',
                             style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Session-Werte sofort anwenden oder Werte dauerhaft in der YAML-Konfiguration speichern',
+                            'Softwareparameter live testen oder dauerhaft in settings_persistent.json speichern',
                             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor),
                           ),
                         ],
@@ -160,7 +164,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    '„Jetzt anwenden“ verändert die laufende Session. „Dauerhaft speichern“ schreibt die YAML-Vorgabe; die aktive Session bleibt dabei unverändert, bis der Wert separat angewendet oder das System neu gestartet wird.',
+                    '„Jetzt anwenden“ verändert die laufende Session. „Dauerhaft speichern“ setzt persistent und active und schreibt die persistente Settings-Datei.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -189,7 +193,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Sobald das Backend auf settings/mow_load_factor/json publiziert, werden die Gruppen und Einstellfelder hier automatisch aufgebaut.',
+              'Sobald das Backend auf settings/mower_logic/json publiziert, werden die Gruppen und Einstellfelder hier automatisch aufgebaut.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
@@ -335,6 +339,28 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
   }
 
   Widget _buildEditor(BuildContext context, String key, Map<String, dynamic> setting, {required String unit}) {
+    if (key == 'mow_motor_direction_mode') {
+      final draft = int.tryParse(controller.draftText(key, setting));
+      return DropdownButtonFormField<int>(
+        key: ValueKey('mower-direction-$key-${controller.editorRevision.value}'),
+        value: draft == -1 || draft == 0 || draft == 1 ? draft : null,
+        decoration: const InputDecoration(
+          border: OutlineInputBorder(),
+          labelText: 'Richtungsmodus',
+        ),
+        items: const [
+          DropdownMenuItem<int>(value: -1, child: Text('-1 – feste Richtung reverse/left')),
+          DropdownMenuItem<int>(value: 0, child: Text('0 – bei echtem Motorstart wechseln')),
+          DropdownMenuItem<int>(value: 1, child: Text('1 – feste Richtung forward/right')),
+        ],
+        onChanged: (value) {
+          if (value != null) {
+            controller.updateDraftText(key, setting, value.toString());
+          }
+        },
+      );
+    }
+
     if (controller.isBool(setting)) {
       return SwitchListTile(
         dense: true,
@@ -654,6 +680,312 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     );
   }
 
+  Widget _buildMowLoadFactorSection(BuildContext context) {
+    final color = Theme.of(context).primaryColor;
+    final waiting = mowLoadFactorController.statusRefreshInProgress.value || mowLoadFactorController.actionInProgress.value;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: true,
+          backgroundColor: color.withOpacity(0.08),
+          collapsedBackgroundColor: color.withOpacity(0.08),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          leading: Icon(Icons.speed_outlined, color: color, size: 32),
+          iconColor: color,
+          collapsedIconColor: color,
+          title: Text('Mäh-Lastregelung', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
+          subtitle: Wrap(
+            spacing: 10,
+            runSpacing: 4,
+            children: [
+              Text('${mowLoadFactorController.settingCount} Einstellungen', style: Theme.of(context).textTheme.bodyMedium),
+              if (mowLoadFactorController.dirtyCount > 0)
+                Text('${mowLoadFactorController.dirtyCount} lokale Änderung(en)', style: Theme.of(context).textTheme.bodyMedium),
+              Obx(() {
+                final state = robotStateController.robotState.value;
+                return Text(
+                  'Lastfaktor: berechnet ${_formatFactor(state.loadFactorComputed)}, effektiv ${_formatFactor(state.loadFactorEffective)}',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                );
+              }),
+            ],
+          ),
+          children: [
+            Container(
+              width: double.infinity,
+              color: Theme.of(context).cardColor,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.05),
+                      border: Border.all(color: color.withOpacity(0.18)),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'Diese Einstellwerte kommen aus settings/mow_load_factor/json. Die laufenden Lastfaktor-Zustandswerte werden über robot_state/json angezeigt.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildMowLoadFactorStatusCard(context),
+                  const SizedBox(height: 12),
+                  if (!mowLoadFactorController.hasData)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        'Noch keine settings/mow_load_factor/json-Daten empfangen.',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                  else
+                    ...mowLoadFactorController.groups.expand((group) sync* {
+                      yield _buildMowLoadFactorGroup(context, group);
+                      yield const SizedBox(height: 12);
+                    }),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isMobile = constraints.maxWidth < 720;
+                      final refresh = OutlinedButton.icon(
+                        onPressed: waiting ? null : mowLoadFactorController.requestSettings,
+                        icon: waiting
+                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.refresh),
+                        label: const Text('Lastregelung neu laden'),
+                      );
+                      if (isMobile) {
+                        return SizedBox(width: double.infinity, child: refresh);
+                      }
+                      return Align(alignment: Alignment.centerRight, child: refresh);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: EdgeInsets.zero,
+                    title: const Text('Mäh-Lastregelung JSON-Status'),
+                    subtitle: const Text('Rohdaten aus settings/mow_load_factor/json'),
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Theme.of(context).dividerColor),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: SelectableText(
+                          mowLoadFactorController.rawStatusJson,
+                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMowLoadFactorGroup(BuildContext context, String group) {
+    final color = Theme.of(context).primaryColor;
+    final entries = mowLoadFactorController.settingsForGroup(group);
+    final dirty = mowLoadFactorController.dirtyCountForGroup(group);
+    final liveDirty = mowLoadFactorController.sessionSupportedDirtyCountForGroup(group);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            mowLoadFactorController.groupLabel(group),
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(color: color, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 10),
+          for (var i = 0; i < entries.length; i++) ...[
+            if (i > 0) const SizedBox(height: 12),
+            _buildMowLoadFactorSettingCard(context, entries[i].key, entries[i].value),
+          ],
+          const SizedBox(height: 12),
+          _buildMowLoadFactorActions(context, group, dirty: dirty, liveDirty: liveDirty),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMowLoadFactorSettingCard(BuildContext context, String key, Map<String, dynamic> setting) {
+    final color = Theme.of(context).primaryColor;
+    final dirty = mowLoadFactorController.dirtyKeys.contains(key);
+    final different = _bool(setting['different']);
+    final unit = mowLoadFactorController.unitFor(setting);
+    final description = mowLoadFactorController.descriptionFor(setting);
+    final range = mowLoadFactorController.rangeText(setting);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: dirty ? color.withOpacity(0.05) : Theme.of(context).cardColor,
+        border: Border.all(color: dirty ? color.withOpacity(0.45) : Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isMobile = constraints.maxWidth < 780;
+          final meta = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      mowLoadFactorController.labelFor(key, setting),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  if (dirty) _smallBadge(context, 'Geändert', Icons.edit_outlined, color),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(key, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor)),
+              if (description.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(description, style: Theme.of(context).textTheme.bodySmall),
+              ],
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _valueChip(context, label: 'Aktiv', value: _withUnit(mowLoadFactorController.activeText(setting), unit), emphasis: different),
+                  _valueChip(context, label: 'Gespeichert', value: _withUnit(mowLoadFactorController.persistentText(setting), unit), emphasis: different),
+                ],
+              ),
+              if (range.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(range, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor)),
+              ],
+            ],
+          );
+          final editor = _buildMowLoadFactorEditor(context, key, setting, unit: unit);
+          if (isMobile) {
+            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [meta, const SizedBox(height: 12), editor]);
+          }
+          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 3, child: meta), const SizedBox(width: 20), Expanded(flex: 2, child: editor)]);
+        },
+      ),
+    );
+  }
+
+  Widget _buildMowLoadFactorEditor(BuildContext context, String key, Map<String, dynamic> setting, {required String unit}) {
+    if (mowLoadFactorController.isBool(setting)) {
+      return SwitchListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Entwurf'),
+        subtitle: const Text('An oder Aus'),
+        value: mowLoadFactorController.draftBool(key, setting),
+        onChanged: (value) => mowLoadFactorController.updateDraftBool(key, setting, value),
+      );
+    }
+    return TextFormField(
+      key: ValueKey('mow-load-factor-$key-${mowLoadFactorController.editorRevision.value}'),
+      initialValue: mowLoadFactorController.draftText(key, setting),
+      keyboardType: mowLoadFactorController.isNumeric(setting)
+          ? const TextInputType.numberWithOptions(decimal: true, signed: true)
+          : TextInputType.text,
+      inputFormatters: mowLoadFactorController.isInt(setting)
+          ? <TextInputFormatter>[FilteringTextInputFormatter.allow(RegExp(r'^-?\d*$'))]
+          : mowLoadFactorController.isDouble(setting)
+              ? <TextInputFormatter>[FilteringTextInputFormatter.allow(RegExp(r'^-?\d*[\.,]?\d*$'))]
+              : null,
+      decoration: InputDecoration(
+        border: const OutlineInputBorder(),
+        labelText: 'Entwurf',
+        suffixText: unit.isEmpty ? null : unit,
+      ),
+      onChanged: (value) => mowLoadFactorController.updateDraftText(key, setting, value),
+    );
+  }
+
+  Widget _buildMowLoadFactorActions(BuildContext context, String group, {required int dirty, required int liveDirty}) {
+    final waiting = mowLoadFactorController.actionInProgress.value;
+    final isMobile = MediaQuery.of(context).size.width < 720;
+    final reset = OutlinedButton.icon(
+      onPressed: dirty == 0 || waiting ? null : () => mowLoadFactorController.resetGroupDrafts(group),
+      icon: const Icon(Icons.undo),
+      label: const Text('Entwürfe zurücksetzen'),
+    );
+    final live = ElevatedButton.icon(
+      onPressed: liveDirty == 0 || waiting ? null : () => mowLoadFactorController.applySessionForGroup(group),
+      icon: const Icon(Icons.flash_on_outlined),
+      label: Text(liveDirty > 0 ? 'Jetzt anwenden ($liveDirty)' : 'Jetzt anwenden'),
+    );
+    final persist = ElevatedButton.icon(
+      onPressed: dirty == 0 || waiting ? null : () => mowLoadFactorController.savePersistentForGroup(group),
+      icon: const Icon(Icons.save_outlined),
+      label: Text(dirty > 0 ? 'Dauerhaft speichern ($dirty)' : 'Dauerhaft speichern'),
+    );
+    if (isMobile) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [reset, const SizedBox(height: 8), live, const SizedBox(height: 8), persist]);
+    }
+    return Row(mainAxisAlignment: MainAxisAlignment.end, children: [reset, const SizedBox(width: 8), live, const SizedBox(width: 8), persist]);
+  }
+
+  Widget _buildMowLoadFactorStatusCard(BuildContext context) {
+    final statusOk = mowLoadFactorController.lastStatusOk.value;
+    final color = statusOk == false ? Colors.red : statusOk == true ? Colors.green : Theme.of(context).primaryColor;
+    final status = mowLoadFactorController.lastStatus.value.isEmpty
+        ? 'Noch keine Mäh-Lastregelungs-Rückmeldung.'
+        : mowLoadFactorController.lastStatus.value;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.07),
+        border: Border.all(color: color.withOpacity(0.28)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(statusOk == false ? Icons.error_outline : statusOk == true ? Icons.check_circle_outline : Icons.info_outline, color: color),
+              const SizedBox(width: 8),
+              Expanded(child: Text(status, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
+            ],
+          ),
+          if (mowLoadFactorController.lastTopic.value.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text('Topic: ${mowLoadFactorController.lastTopic.value}', style: Theme.of(context).textTheme.bodySmall),
+          ],
+          if (mowLoadFactorController.lastRemarks.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            for (final remark in mowLoadFactorController.lastRemarks)
+              Text('• $remark', style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _formatFactor(double value) {
+    final text = value.toStringAsFixed(3).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+    return text.isEmpty ? '0' : text;
+  }
+
   Widget _buildJsonSection(BuildContext context) {
     final color = Theme.of(context).primaryColor;
     return LayoutBuilder(
@@ -682,7 +1014,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                               children: [
                                 Text('JSON-Ansicht', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
                                 const SizedBox(height: 2),
-                                Text('Rohstatus aus settings/mow_load_factor/json anzeigen und exportieren', style: Theme.of(context).textTheme.bodyMedium),
+                                Text('Rohstatus aus settings/mower_logic/json anzeigen und exportieren', style: Theme.of(context).textTheme.bodyMedium),
                               ],
                             ),
                           ),
@@ -720,7 +1052,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                           maxLines: 24,
                           decoration: const InputDecoration(
                             border: OutlineInputBorder(),
-                            labelText: 'settings/mow_load_factor/json',
+                            labelText: 'settings/mower_logic/json',
                             alignLabelWithHint: true,
                           ),
                           style: const TextStyle(fontFamily: 'monospace'),
