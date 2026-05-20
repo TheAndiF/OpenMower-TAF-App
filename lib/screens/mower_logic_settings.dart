@@ -96,7 +96,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Softwarenahe Einstellungen',
+                            'Einstellungen Software',
                             style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 2),

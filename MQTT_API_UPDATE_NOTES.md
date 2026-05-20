@@ -6,16 +6,16 @@ Dieses Paket passt die OpenMower-App an die Kommunikationsstruktur vom 20.05.202
 
 Unter dem Trennstrich im linken Menü liegen nun:
 
-- **Hardwarenahe Einstellungen** mit Schraubenschlüssel-/Mutter-Piktogramm
-- **Softwarenahe Einstellungen** mit Schieberegler-Piktogramm
+- **Einstellungen Hardware** mit Schraubenschlüssel-Piktogramm
+- **Einstellungen Software** mit Schieberegler-Piktogramm
 
-### Hardwarenahe Einstellungen
+### Einstellungen Hardware
 
 Enthält ausschließlich:
 
 - `settings/ll_board`
 
-### Softwarenahe Einstellungen
+### Einstellungen Software
 
 Enthält:
 
@@ -55,7 +55,7 @@ Die App verarbeitet zusätzlich die laufenden Lastfaktor-Zustandswerte aus `robo
 - `load_factor_computed`
 - `load_factor_effective`
 
-Diese Werte werden auf der Seite **Softwarenahe Einstellungen** im Bereich **Mäh-Lastregelung** angezeigt.
+Diese Werte werden auf der Seite **Einstellungen Software** im Bereich **Mäh-Lastregelung** angezeigt.
 
 ## Neue Einstellung
 

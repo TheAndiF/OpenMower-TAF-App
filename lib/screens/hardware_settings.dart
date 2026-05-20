@@ -76,7 +76,7 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Hardwarenahe Einstellungen',
+                            'Einstellungen Hardware',
                             style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 2),

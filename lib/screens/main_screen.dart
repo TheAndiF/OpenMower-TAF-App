@@ -124,12 +124,12 @@ class MainScreen extends GetView<RobotStateController> {
       ),
       _buildDrawerTile(
         leading: const _HardwareSettingsDrawerIcon(),
-        title: 'Hardwarenahe Einstellungen',
+        title: 'Einstellungen Hardware',
         index: 6,
       ),
       _buildDrawerTile(
         leading: const _SoftwareSettingsDrawerIcon(),
-        title: 'Softwarenahe Einstellungen',
+        title: 'Einstellungen Software',
         index: 7,
       ),
     ];
@@ -157,23 +157,8 @@ class _HardwareSettingsDrawerIcon extends StatelessWidget {
     return SizedBox(
       width: 28,
       height: 28,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned(
-            left: 0,
-            top: 0,
-            child: Icon(Icons.build, size: 25, color: color),
-          ),
-          Positioned(
-            right: -1,
-            bottom: -1,
-            child: CustomPaint(
-              size: const Size(14, 14),
-              painter: _HexNutPainter(color),
-            ),
-          ),
-        ],
+      child: Center(
+        child: Icon(Icons.build, size: 25, color: color),
       ),
     );
   }
@@ -223,42 +208,4 @@ class _SliderIconPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SliderIconPainter oldDelegate) => oldDelegate.color != color;
-}
-
-class _HexNutPainter extends CustomPainter {
-  const _HexNutPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final outline = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..strokeJoin = StrokeJoin.round;
-    final hole = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8;
-
-    final path = Path()
-      ..moveTo(size.width * 0.27, size.height * 0.06)
-      ..lineTo(size.width * 0.73, size.height * 0.06)
-      ..lineTo(size.width * 0.96, size.height * 0.50)
-      ..lineTo(size.width * 0.73, size.height * 0.94)
-      ..lineTo(size.width * 0.27, size.height * 0.94)
-      ..lineTo(size.width * 0.04, size.height * 0.50)
-      ..close();
-
-    canvas.drawPath(path, outline);
-    canvas.drawCircle(
-      Offset(size.width * 0.50, size.height * 0.50),
-      size.width * 0.18,
-      hole,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _HexNutPainter oldDelegate) => oldDelegate.color != color;
 }
