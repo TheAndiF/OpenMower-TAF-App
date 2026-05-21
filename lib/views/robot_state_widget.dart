@@ -52,15 +52,15 @@ class RobotStateWidget extends GetView<RobotStateController> {
             Center(child: Icon(iconData, color: Colors.black87)),
             if (isAutoMow)
               Positioned(
-                right: 0,
-                bottom: 0,
+                right: -1,
+                bottom: -1,
                 child: Container(
-                  width: 7,
-                  height: 7,
+                  width: 10,
+                  height: 10,
                   decoration: BoxDecoration(
                     color: Colors.black87,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1),
+                    border: Border.all(color: Colors.white, width: 1.2),
                   ),
                 ),
               ),
