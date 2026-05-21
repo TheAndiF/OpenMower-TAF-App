@@ -390,7 +390,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     return SizedBox(
       width: 420,
       child: TextFormField(
-        key: ValueKey('$id-name-$value-$enabled'),
+        key: ValueKey('area-$id-name'),
         initialValue: value,
         decoration: const InputDecoration(labelText: 'Name'),
         enabled: enabled,
@@ -404,7 +404,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     return SizedBox(
       width: 160,
       child: TextFormField(
-        key: ValueKey('$id-mowing-order-$text-$enabled'),
+        key: ValueKey('area-$id-mowing-order'),
         initialValue: text,
         decoration: const InputDecoration(labelText: 'Mähreihenfolge'),
         keyboardType: TextInputType.number,

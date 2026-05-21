@@ -1053,7 +1053,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
     return SizedBox(
       width: width,
       child: TextFormField(
-        key: ValueKey('$id-$field-$value-$enabled'),
+        key: ValueKey('timetable-$id-$field'),
         initialValue: value,
         decoration: InputDecoration(
           labelText: label,
@@ -1074,7 +1074,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
     return SizedBox(
       width: width,
       child: TextFormField(
-        key: ValueKey('new-entry-$field-$value'),
+        key: ValueKey('new-entry-$field'),
         initialValue: value,
         decoration: InputDecoration(
           labelText: label,

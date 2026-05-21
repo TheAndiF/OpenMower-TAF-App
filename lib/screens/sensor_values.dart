@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:niku/namespace.dart' as n;
 import 'package:open_mower_app/controllers/sensors_controller.dart';
+import 'package:open_mower_app/views/load_factor_status_widget.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 import 'package:open_mower_app/views/sensor_widget.dart';
 
@@ -57,7 +58,8 @@ class SensorValues extends GetView<SensorsController> {
               }))
               .entries
                 .map((e) => SensorWidget(sensor: e.value))
-                .toList(growable: false)
+                .toList(growable: true)
+                ..insert(0, const LoadFactorStatusWidget())
           // ..backgroundColor = Colors.red
             ..wFull
             ..hFull
