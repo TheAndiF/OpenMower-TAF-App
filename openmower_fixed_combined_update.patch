@@ -1,0 +1,671 @@
+diff --git a/lib/screens/advanced_options.dart b/lib/screens/advanced_options.dart
+index 89c26f6..03cbfda 100644
+--- a/lib/screens/advanced_options.dart
++++ b/lib/screens/advanced_options.dart
+@@ -1,68 +1,238 @@
+ import 'package:flutter/material.dart';
+-import 'package:niku/namespace.dart' as n;
+ import 'package:get/get.dart';
+-import 'package:open_mower_app/controllers/robot_state_controller.dart';
+ import 'package:open_mower_app/controllers/remote_controller.dart';
++import 'package:open_mower_app/controllers/robot_state_controller.dart';
++import 'package:open_mower_app/views/robot_state_widget.dart';
+ 
+ class AdvancedOptions extends GetView<RobotStateController> {
+   AdvancedOptions({super.key});
+-  final RemoteController remoteControl = Get.find();
++
++  final RemoteController remoteControl = Get.find<RemoteController>();
++
+   @override
+   Widget build(BuildContext context) {
+-    return n.Column([
+-      n.Row([
+-            const Text("Current Area:   ",
+-                  style: TextStyle(fontSize: 22, color: Colors.black)),
+-             Obx(() => Text( controller.robotState.value.currentArea.toString(),
+-                     style: const TextStyle(
+-                      fontSize: 22,
+-                      fontWeight: FontWeight.bold,
+-                      color: Colors.blue)) ,
++    return Stack(
++      children: [
++        SingleChildScrollView(
++          padding: const EdgeInsets.fromLTRB(16, 60, 16, 16),
++          child: Column(
++            crossAxisAlignment: CrossAxisAlignment.stretch,
++            children: [
++              _buildOverviewSection(context),
++              const SizedBox(height: 16),
++              _buildManualMowingSection(context),
++            ],
++          ),
++        ),
++        const Positioned(
++          top: 0,
++          left: 0,
++          right: 0,
++          child: RobotStateWidget(),
++        ),
++      ],
++    );
++  }
++
++  Widget _buildOverviewSection(BuildContext context) {
++    return Obx(() {
++      final currentArea = controller.robotState.value.currentArea;
++      final skipAvailable = controller.hasAction('mower_logic:mowing/skip_area');
++
++      return Card(
++        margin: EdgeInsets.zero,
++        child: Column(
++          crossAxisAlignment: CrossAxisAlignment.stretch,
++          children: [
++            Padding(
++              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
++              child: LayoutBuilder(
++                builder: (context, constraints) {
++                  final isMobile = constraints.maxWidth < 720;
++                  final header = Row(
++                    crossAxisAlignment: CrossAxisAlignment.start,
++                    children: [
++                      _headerIcon(context, Icons.settings_applications_outlined, active: skipAvailable),
++                      const SizedBox(width: 14),
++                      Expanded(
++                        child: Column(
++                          crossAxisAlignment: CrossAxisAlignment.start,
++                          children: [
++                            Text(
++                              'Advanced Options',
++                              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
++                            ),
++                            const SizedBox(height: 2),
++                            Text(
++                              'Erweiterte Aktionen für Mählogik und manuelle Flächensteuerung',
++                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor),
++                            ),
++                          ],
++                        ),
++                      ),
++                    ],
++                  );
++                  final skipButton = OutlinedButton.icon(
++                    onPressed: skipAvailable
++                        ? () => remoteControl.callAction('mower_logic:mowing/skip_area')
++                        : null,
++                    icon: const Icon(Icons.skip_next),
++                    label: const Text('Aktuelle Fläche überspringen'),
++                  );
++                  if (isMobile) {
++                    return Column(
++                      crossAxisAlignment: CrossAxisAlignment.stretch,
++                      children: [header, const SizedBox(height: 12), skipButton],
++                    );
++                  }
++                  return Row(
++                    crossAxisAlignment: CrossAxisAlignment.start,
++                    children: [Expanded(child: header), const SizedBox(width: 16), skipButton],
++                  );
++                },
++              ),
++            ),
++            const Divider(height: 1),
++            Padding(
++              padding: const EdgeInsets.all(16),
++              child: Wrap(
++                spacing: 12,
++                runSpacing: 12,
++                children: [
++                  _statusChip(
++                    context,
++                    icon: Icons.grass,
++                    label: 'Aktuelle Fläche',
++                    value: currentArea >= 0 ? currentArea.toString() : '-',
++                  ),
++                  _statusChip(
++                    context,
++                    icon: skipAvailable ? Icons.check_circle_outline : Icons.block,
++                    label: 'Überspringen',
++                    value: skipAvailable ? 'Verfügbar' : 'Nicht verfügbar',
++                  ),
++                ],
++              ),
+             ),
+-            const SizedBox(
+-              width: 40, 
++          ],
++        ),
++      );
++    });
++  }
++
++  Widget _buildManualMowingSection(BuildContext context) {
++    return Obx(() {
++      final stopAvailable = controller.hasAction('mower_logic:area_recording/stop_manual_mowing');
++      final startAvailable = controller.hasAction('mower_logic:area_recording/start_manual_mowing');
++
++      return Card(
++        margin: EdgeInsets.zero,
++        child: Column(
++          crossAxisAlignment: CrossAxisAlignment.stretch,
++          children: [
++            Padding(
++              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
++              child: Row(
++                crossAxisAlignment: CrossAxisAlignment.start,
++                children: [
++                  _headerIcon(context, Icons.route_outlined, active: startAvailable || stopAvailable),
++                  const SizedBox(width: 14),
++                  Expanded(
++                    child: Column(
++                      crossAxisAlignment: CrossAxisAlignment.start,
++                      children: [
++                        Text(
++                          'Manual Mowing',
++                          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
++                        ),
++                        const SizedBox(height: 2),
++                        Text(
++                          'Manuelles Mähen starten oder eine laufende manuelle Aufzeichnung stoppen',
++                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor),
++                        ),
++                      ],
++                    ),
++                  ),
++                ],
++              ),
++            ),
++            const Divider(height: 1),
++            Padding(
++              padding: const EdgeInsets.all(16),
++              child: Align(
++                alignment: Alignment.centerLeft,
++                child: stopAvailable
++                    ? ElevatedButton.icon(
++                        onPressed: () => remoteControl.callAction('mower_logic:area_recording/stop_manual_mowing'),
++                        style: ElevatedButton.styleFrom(
++                          backgroundColor: Theme.of(context).colorScheme.error,
++                          foregroundColor: Theme.of(context).colorScheme.onError,
++                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
++                        ),
++                        icon: const Icon(Icons.stop_circle_outlined),
++                        label: const Text('Manual Mowing stoppen'),
++                      )
++                    : ElevatedButton.icon(
++                        onPressed: startAvailable
++                            ? () => remoteControl.callAction('mower_logic:area_recording/start_manual_mowing')
++                            : null,
++                        style: ElevatedButton.styleFrom(
++                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
++                        ),
++                        icon: const Icon(Icons.play_circle_outline),
++                        label: const Text('Manual Mowing starten'),
++                      ),
++              ),
+             ),
+-            Obx(()=>SizedBox(
+-                width: 200,
+-                child: (n.Button.elevatedIcon("Skip current Area".n,n.Icon(Icons.skip_next))
+-                      ..enable = (controller
+-                              .hasAction("mower_logic:mowing/skip_area"))
+-                      ..onPressed = () {
+-                        remoteControl.callAction("mower_logic:mowing/skip_area");
+-                      })
+-                  ..elevation = 2
+-                  ..p = 16),
+-            )
+-      ])
+-        ..gap = 8
+-        ..px = 16
+-        ..py = 8,
+-      n.Row([
+-        Obx(
+-         () =>!controller.hasAction("mower_logic:area_recording/stop_manual_mowing")
+-          ?(n.Button.elevatedIcon("Start Manual Mowing".n, n.Icon(Icons.autorenew))
+-          ..enable = (controller.hasAction("mower_logic:area_recording/start_manual_mowing"))
+-          ..onPressed = () {
+-            remoteControl.callAction("mower_logic:area_recording/start_manual_mowing");
+-          }
+-          ..elevation = 2
+-          ..p = 16)
+-          : (n.Button.elevatedIcon(
+-                  "Stop Manual Mowing".n, n.Icon(Icons.autorenew))
+-                ..style = n.ButtonStyle(backgroundColor: Colors.red)
+-                ..visible = controller
+-                    .hasAction("mower_logic:area_recording/stop_manual_mowing")
+-                ..onPressed = () {
+-                  remoteControl
+-                      .callAction("mower_logic:area_recording/stop_manual_mowing");
+-                }
+-          ..elevation = 2
+-          ..p = 16)
+-        )
+-      ])
+-        ..gap = 8
+-        ..px = 16
+-        ..py = 8,
+-    ]);
++          ],
++        ),
++      );
++    });
++  }
++
++  Widget _statusChip(
++    BuildContext context, {
++    required IconData icon,
++    required String label,
++    required String value,
++  }) {
++    final color = Theme.of(context).primaryColor;
++    return Container(
++      constraints: const BoxConstraints(minWidth: 180),
++      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
++      decoration: BoxDecoration(
++        color: color.withOpacity(0.08),
++        borderRadius: BorderRadius.circular(12),
++        border: Border.all(color: color.withOpacity(0.18)),
++      ),
++      child: Row(
++        mainAxisSize: MainAxisSize.min,
++        children: [
++          Icon(icon, color: color, size: 22),
++          const SizedBox(width: 10),
++          Column(
++            crossAxisAlignment: CrossAxisAlignment.start,
++            children: [
++              Text(label, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor)),
++              const SizedBox(height: 2),
++              Text(value, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
++            ],
++          ),
++        ],
++      ),
++    );
++  }
++
++  Widget _headerIcon(BuildContext context, IconData icon, {required bool active}) {
++    final color = Theme.of(context).primaryColor;
++    return Container(
++      width: 46,
++      height: 46,
++      decoration: BoxDecoration(
++        color: color.withOpacity(active ? 0.16 : 0.08),
++        borderRadius: BorderRadius.circular(14),
++      ),
++      child: Icon(icon, color: active ? color : color.withOpacity(0.55), size: 28),
++    );
+   }
+ }
+diff --git a/lib/screens/mqtt_areas.dart b/lib/screens/mqtt_areas.dart
+index ea79ef5..4fb0f75 100644
+--- a/lib/screens/mqtt_areas.dart
++++ b/lib/screens/mqtt_areas.dart
+@@ -390,7 +390,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
+     return SizedBox(
+       width: 420,
+       child: TextFormField(
+-        key: ValueKey('$id-name-$value-$enabled'),
++        key: ValueKey('area-$id-name'),
+         initialValue: value,
+         decoration: const InputDecoration(labelText: 'Name'),
+         enabled: enabled,
+@@ -404,7 +404,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
+     return SizedBox(
+       width: 160,
+       child: TextFormField(
+-        key: ValueKey('$id-mowing-order-$text-$enabled'),
++        key: ValueKey('area-$id-mowing-order'),
+         initialValue: text,
+         decoration: const InputDecoration(labelText: 'Mähreihenfolge'),
+         keyboardType: TextInputType.number,
+diff --git a/lib/screens/sensor_values.dart b/lib/screens/sensor_values.dart
+index 59b73d8..8475cce 100644
+--- a/lib/screens/sensor_values.dart
++++ b/lib/screens/sensor_values.dart
+@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
+ import 'package:get/get.dart';
+ import 'package:niku/namespace.dart' as n;
+ import 'package:open_mower_app/controllers/sensors_controller.dart';
++import 'package:open_mower_app/views/load_factor_status_widget.dart';
+ import 'package:open_mower_app/views/robot_state_widget.dart';
+ import 'package:open_mower_app/views/sensor_widget.dart';
+ 
+@@ -34,17 +35,12 @@ class SensorValues extends GetView<SensorsController> {
+     return n.Stack(
+       [
+         n.Column([
+-          Obx(()=>
+-          n.GridView.extent(
+-            maxCrossAxisExtent: 200,
+-          )
+-            ..p = 16
+-            ..children = Map.fromEntries(
+-              controller.sensorStates.entries
+-              .where((entry) =>
+-                  !hiddenSensorWidgetIds.contains(entry.key) &&
+-                  entry.value.name != 'Mow Motor Direction')
+-              .toList(growable: false)
++          Obx(() {
++            final sortedSensorEntries = controller.sensorStates.entries
++                .where((entry) =>
++                    !hiddenSensorWidgetIds.contains(entry.key) &&
++                    entry.value.name != 'Mow Motor Direction')
++                .toList(growable: false)
+               ..sort((a, b) {
+                 int ai = widgetSortList.indexWhere((key) => key == a.key);
+                 int bi = widgetSortList.indexWhere((key) => key == b.key);
+@@ -54,16 +50,25 @@ class SensorValues extends GetView<SensorsController> {
+                 if (bi < 0) bi = widgetSortList.length;
+ 
+                 return ai.compareTo(bi);
+-              }))
+-              .entries
+-                .map((e) => SensorWidget(sensor: e.value))
+-                .toList(growable: false)
+-          // ..backgroundColor = Colors.red
+-            ..wFull
+-            ..hFull
+-            ..crossAxisSpacing = 8
+-            ..mainAxisSpacing = 8
+-            ..expanded),
++              });
++
++            final sensorWidgets = <Widget>[
++              const LoadFactorStatusWidget(),
++              ...sortedSensorEntries.map((e) => SensorWidget(sensor: e.value)),
++            ];
++
++            return n.GridView.extent(
++              maxCrossAxisExtent: 200,
++            )
++              ..p = 16
++              ..children = sensorWidgets
++              // ..backgroundColor = Colors.red
++              ..wFull
++              ..hFull
++              ..crossAxisSpacing = 8
++              ..mainAxisSpacing = 8
++              ..expanded;
++          }),
+         ])
+           ..mt=60,
+         const RobotStateWidget()
+diff --git a/lib/screens/timetable.dart b/lib/screens/timetable.dart
+index d7c8d0f..362e455 100644
+--- a/lib/screens/timetable.dart
++++ b/lib/screens/timetable.dart
+@@ -1053,7 +1053,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
+     return SizedBox(
+       width: width,
+       child: TextFormField(
+-        key: ValueKey('$id-$field-$value-$enabled'),
++        key: ValueKey('timetable-$id-$field'),
+         initialValue: value,
+         decoration: InputDecoration(
+           labelText: label,
+@@ -1074,7 +1074,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
+     return SizedBox(
+       width: width,
+       child: TextFormField(
+-        key: ValueKey('new-entry-$field-$value'),
++        key: ValueKey('new-entry-$field'),
+         initialValue: value,
+         decoration: InputDecoration(
+           labelText: label,
+diff --git a/lib/views/load_factor_status_widget.dart b/lib/views/load_factor_status_widget.dart
+new file mode 100644
+index 0000000..eb0c2be
+--- /dev/null
++++ b/lib/views/load_factor_status_widget.dart
+@@ -0,0 +1,140 @@
++import 'package:auto_size_text/auto_size_text.dart';
++import 'package:flutter/material.dart';
++import 'package:get/get.dart';
++import 'package:niku/namespace.dart' as n;
++import 'package:open_mower_app/controllers/mow_load_factor_settings_controller.dart';
++import 'package:open_mower_app/controllers/robot_state_controller.dart';
++
++class LoadFactorStatusWidget extends StatelessWidget {
++  const LoadFactorStatusWidget({super.key});
++
++  @override
++  Widget build(BuildContext context) {
++    final robotStateController = Get.find<RobotStateController>();
++    final mowLoadFactorController = Get.find<MowLoadFactorSettingsController>();
++
++    return Material(
++      elevation: 2,
++      child: Obx(() {
++        final robotState = robotStateController.robotState.value;
++        final enabled = _enabledFromSettings(mowLoadFactorController.settings);
++        final statusText = enabled == null ? 'Status unbekannt' : (enabled ? 'Eingeschaltet' : 'Ausgeschaltet');
++        final statusIcon = enabled == null
++            ? Icons.help_outline
++            : enabled
++                ? Icons.check_circle_outline
++                : Icons.power_settings_new;
++        final statusColor = enabled == null
++            ? Colors.black38
++            : enabled
++                ? Colors.green[600]
++                : Colors.grey[600];
++
++        return n.Column([
++          Expanded(
++            child: Align(
++              alignment: Alignment.bottomCenter,
++              child: 'Mäh-Lastfaktor'.bodyMedium
++                ..color = Colors.black54
++                ..textAlign = TextAlign.center,
++            ),
++          ),
++          Expanded(
++            child: AutoSizeText(
++              _formatFactor(robotState.loadFactorEffective),
++              maxLines: 1,
++              textAlign: TextAlign.center,
++              style: const TextStyle(
++                fontSize: 30,
++                fontWeight: FontWeight.bold,
++                color: Colors.black54,
++              ),
++            ),
++          ),
++          Expanded(
++            child: Column(
++              mainAxisAlignment: MainAxisAlignment.end,
++              children: [
++                Row(
++                  mainAxisAlignment: MainAxisAlignment.center,
++                  children: [
++                    Icon(statusIcon, color: statusColor, size: 18),
++                    const SizedBox(width: 6),
++                    Flexible(
++                      child: AutoSizeText(
++                        statusText,
++                        maxLines: 1,
++                        textAlign: TextAlign.center,
++                        style: TextStyle(
++                          fontSize: 14,
++                          fontWeight: FontWeight.w600,
++                          color: statusColor,
++                        ),
++                      ),
++                    ),
++                  ],
++                ),
++                const SizedBox(height: 4),
++                AutoSizeText(
++                  'berechnet ${_formatFactor(robotState.loadFactorComputed)}',
++                  maxLines: 1,
++                  textAlign: TextAlign.center,
++                  style: const TextStyle(fontSize: 12, color: Colors.black45),
++                ),
++              ],
++            ),
++          ),
++        ])
++          ..p = 12
++          ..center;
++      }),
++    );
++  }
++
++  bool? _enabledFromSettings(Map<String, Map<String, dynamic>> settings) {
++    final setting = settings['enabled'] ??
++        settings['mow_load_factor_enabled'] ??
++        settings['load_factor_enabled'];
++    if (setting == null) {
++      return null;
++    }
++    return _boolOrNull(setting['active'] ?? setting['value'] ?? setting['persistent']);
++  }
++
++  bool? _boolOrNull(dynamic value) {
++    if (value is bool) {
++      return value;
++    }
++    if (value is num) {
++      return value != 0;
++    }
++    if (value is String) {
++      switch (value.trim().toLowerCase()) {
++        case 'true':
++        case '1':
++        case 'yes':
++        case 'on':
++        case 'enabled':
++        case 'ein':
++        case 'an':
++          return true;
++        case 'false':
++        case '0':
++        case 'no':
++        case 'off':
++        case 'disabled':
++        case 'aus':
++          return false;
++      }
++    }
++    return null;
++  }
++
++  String _formatFactor(double value) {
++    final text = value
++        .toStringAsFixed(3)
++        .replaceFirst(RegExp(r'0+$'), '')
++        .replaceFirst(RegExp(r'\.$'), '');
++    return text.isEmpty ? '0' : text;
++  }
++}
+diff --git a/lib/views/robot_state_widget.dart b/lib/views/robot_state_widget.dart
+index 66eb64b..15ef2cb 100644
+--- a/lib/views/robot_state_widget.dart
++++ b/lib/views/robot_state_widget.dart
+@@ -1,5 +1,4 @@
+ import 'package:flutter/material.dart';
+-import 'package:flutter_material_design_icons/flutter_material_design_icons.dart';
+ import 'package:get/get.dart';
+ import 'package:open_mower_app/controllers/robot_state_controller.dart';
+ import 'package:open_mower_app/views/emergency_widget.dart';
+@@ -17,7 +16,7 @@ class RobotStateWidget extends GetView<RobotStateController> {
+         iconData = Icons.radio_button_unchecked;
+         break;
+       case "MOWING":
+-        iconData = MdiIcons.contentCut;
++        iconData = Icons.content_cut;
+         break;
+       case "PAUSED":
+         iconData = Icons.pause;
+@@ -108,57 +107,27 @@ class RobotStateWidget extends GetView<RobotStateController> {
+           ..gap = 8));
+   }
+ 
+-  /* Place this ugly function last.
+-   * Needs to be that ugly for not require --no-tree-shake-icons build option (Flutter >= 1.22),
+-   * which would disable Icon subsetting and thus blow up our code by about 350k
+-   */
+   Icon getBatteryIcon(double percent, bool charging) {
+     if (charging) {
+-      if (percent > 0.9) {
+-        return const Icon(MdiIcons.batteryCharging100, color: Colors.black54);
+-      } else if (percent > 0.8) {
+-        return const Icon(MdiIcons.batteryCharging90, color: Colors.black54);
+-      } else if (percent > 0.7) {
+-        return const Icon(MdiIcons.batteryCharging80, color: Colors.black54);
+-      } else if (percent > 0.6) {
+-        return const Icon(MdiIcons.batteryCharging70, color: Colors.black54);
+-      } else if (percent > 0.5) {
+-        return const Icon(MdiIcons.batteryCharging60, color: Colors.black54);
+-      } else if (percent > 0.4) {
+-        return const Icon(MdiIcons.batteryCharging50, color: Colors.black54);
+-      } else if (percent > 0.3) {
+-        return Icon(MdiIcons.batteryCharging40, color: Colors.orange[300]);
+-      } else if (percent > 0.2) {
+-        return Icon(MdiIcons.batteryCharging30, color: Colors.orange[300]);
+-      } else if (percent > 0.1) {
+-        return Icon(MdiIcons.batteryCharging20, color: Colors.red[200]);
+-      } else {
+-        return Icon(MdiIcons.batteryCharging10, color: Colors.red[200]);
+-      }
+-    } else {
+-      if (percent > 0.9) { 
+-        return const Icon(MdiIcons.battery, color: Colors.black54);
+-      } else if (percent > 0.8) {
+-        return const Icon(MdiIcons.battery90, color: Colors.black54);
+-      } else if (percent > 0.7) {
+-        return const Icon(MdiIcons.battery80, color: Colors.black54);
+-      } else if (percent > 0.6) {
+-        return const Icon(MdiIcons.battery70, color: Colors.black54);
+-      } else if (percent > 0.5) {
+-        return const Icon(MdiIcons.battery60, color: Colors.black54);
+-      } else if (percent > 0.4) {
+-        return const Icon(MdiIcons.battery50, color: Colors.black54);
+-      } else if (percent > 0.3) {
+-        return Icon(MdiIcons.battery40, color: Colors.orange[300]);
+-      } else if (percent > 0.2) {
+-        return Icon(MdiIcons.battery30, color: Colors.orange[300]);
+-      } else if (percent > 0.1) {
+-        return Icon(MdiIcons.battery20, color: Colors.red[200]);
+-      } else if (percent > 0) {
+-        return Icon(MdiIcons.battery10, color: Colors.red[200]);
+-      } else {
+-        return Icon(MdiIcons.batteryUnknown, color: Colors.grey[400]);
+-      }
++      return Icon(
++        Icons.battery_charging_full,
++        color: percent > 0.4
++            ? Colors.black54
++            : percent > 0.2
++                ? Colors.orange[300]
++                : Colors.red[200],
++      );
+     }
++
++    if (percent > 0.4) {
++      return const Icon(Icons.battery_full, color: Colors.black54);
++    } else if (percent > 0.2) {
++      return Icon(Icons.battery_alert, color: Colors.orange[300]);
++    } else if (percent > 0) {
++      return Icon(Icons.battery_alert, color: Colors.red[200]);
++    }
++
++    return Icon(Icons.battery_unknown, color: Colors.grey[400]);
+   }
++
+ }
+diff --git a/pubspec.yaml b/pubspec.yaml
+index 4d57e61..004375d 100644
+--- a/pubspec.yaml
++++ b/pubspec.yaml
+@@ -44,9 +44,6 @@ dependencies:
+   # Use with the CupertinoIcons class for iOS style icons.
+   cupertino_icons: ^1.0.8
+ 
+-  # This icon package has the newer battery_charging_* icons included
+-  flutter_material_design_icons: ^1.1.7447
+-
+   typed_data: ^1.3.2
+   gauge_indicator: ^0.4.3
+   geekyants_flutter_gauges: ^1.0.4

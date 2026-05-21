@@ -35,17 +35,12 @@ class SensorValues extends GetView<SensorsController> {
     return n.Stack(
       [
         n.Column([
-          Obx(()=>
-          n.GridView.extent(
-            maxCrossAxisExtent: 200,
-          )
-            ..p = 16
-            ..children = Map.fromEntries(
-              controller.sensorStates.entries
-              .where((entry) =>
-                  !hiddenSensorWidgetIds.contains(entry.key) &&
-                  entry.value.name != 'Mow Motor Direction')
-              .toList(growable: false)
+          Obx(() {
+            final sortedSensorEntries = controller.sensorStates.entries
+                .where((entry) =>
+                    !hiddenSensorWidgetIds.contains(entry.key) &&
+                    entry.value.name != 'Mow Motor Direction')
+                .toList(growable: false)
               ..sort((a, b) {
                 int ai = widgetSortList.indexWhere((key) => key == a.key);
                 int bi = widgetSortList.indexWhere((key) => key == b.key);
@@ -55,17 +50,25 @@ class SensorValues extends GetView<SensorsController> {
                 if (bi < 0) bi = widgetSortList.length;
 
                 return ai.compareTo(bi);
-              }))
-              .entries
-                .map((e) => SensorWidget(sensor: e.value))
-                .toList(growable: true)
-                ..insert(0, const LoadFactorStatusWidget())
-          // ..backgroundColor = Colors.red
-            ..wFull
-            ..hFull
-            ..crossAxisSpacing = 8
-            ..mainAxisSpacing = 8
-            ..expanded),
+              });
+
+            final sensorWidgets = <Widget>[
+              const LoadFactorStatusWidget(),
+              ...sortedSensorEntries.map((e) => SensorWidget(sensor: e.value)),
+            ];
+
+            return n.GridView.extent(
+              maxCrossAxisExtent: 200,
+            )
+              ..p = 16
+              ..children = sensorWidgets
+              // ..backgroundColor = Colors.red
+              ..wFull
+              ..hFull
+              ..crossAxisSpacing = 8
+              ..mainAxisSpacing = 8
+              ..expanded;
+          }),
         ])
           ..mt=60,
         const RobotStateWidget()
