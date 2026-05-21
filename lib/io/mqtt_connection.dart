@@ -250,6 +250,37 @@ class MqttConnection  {
     return null;
   }
 
+  bool _readAutoMowIndicator(Map<String, dynamic> raw, {bool fallback = false}) {
+    final suspensionValue = _firstExistingValue(raw, const [
+      "AutoMowSuspension",
+      "autoMowSuspension",
+      "automowSuspension",
+      "auto_mow_suspension",
+    ]);
+
+    // AutoMow dot follows suspension state:
+    // suspension == 0  -> AutoMow active/valid -> show dot
+    // suspension != 0  -> suspended           -> hide dot
+    if (suspensionValue == null) {
+      return fallback;
+    }
+    if (suspensionValue is bool) {
+      return suspensionValue == false;
+    }
+    if (suspensionValue is num) {
+      return suspensionValue == 0;
+    }
+
+    final text = suspensionValue.toString().trim().toLowerCase();
+    if (text.isEmpty || text == 'null') {
+      return fallback;
+    }
+    if (text == '0' || text == '0.0' || text == 'false') {
+      return true;
+    }
+    return false;
+  }
+
   void _updateRobotStateControllerFromRaw(Map<String, dynamic> raw) {
     final state = robotStateController.robotState.value;
     state.isConnected = true;
@@ -288,16 +319,7 @@ class MqttConnection  {
         state.loadFactorEffective = double.tryParse(value?.toString() ?? "") ?? state.loadFactorEffective;
       }
     }
-
-    final autoMowValue = _firstExistingValue(raw, const [
-      "AutoMow",
-      "autoMow",
-      "automow",
-      "auto_mow",
-    ]);
-    if (autoMowValue != null) {
-      state.isAutoMow = _readBoolValue(autoMowValue, fallback: state.isAutoMow);
-    }
+    state.isAutoMow = _readAutoMowIndicator(raw, fallback: state.isAutoMow);
 
     robotStateController.robotState.refresh();
   }
@@ -979,13 +1001,7 @@ class MqttConnection  {
     state.isCharging        = obj["d"]["is_charging"] > 0;
     state.rainDetected      = obj["d"]["rain_detected"] > 0;
     state.currentState      = obj["d"]["current_state"];
-    final autoMowValue = _firstExistingValue(Map<String, dynamic>.from(obj["d"] as Map), const [
-      "AutoMow",
-      "autoMow",
-      "automow",
-      "auto_mow",
-    ]);
-    state.isAutoMow        = _readBoolValue(autoMowValue);
+    state.isAutoMow         = _readAutoMowIndicator(Map<String, dynamic>.from(obj["d"] as Map));
     state.gpsPercent        = obj["d"]["gps_percentage"];
     state.batteryPercent    = obj["d"]["battery_percentage"];
     final loadFactorComputed = obj["d"]["load_factor_computed"];
