@@ -36,9 +36,37 @@ class RobotStateWidget extends GetView<RobotStateController> {
         break;
     }
 
+    final isAutoMow = controller.robotState.value.isAutoMow;
+    final tooltipMessage = isAutoMow
+        ? "${controller.robotState.value.currentState} · AutoMow"
+        : controller.robotState.value.currentState;
+
     return Tooltip(
-      message: controller.robotState.value.currentState,
-      child: Icon(iconData, color: Colors.black87),
+      message: tooltipMessage,
+      child: SizedBox(
+        width: 24,
+        height: 24,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Center(child: Icon(iconData, color: Colors.black87)),
+            if (isAutoMow)
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: Colors.black87,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 

@@ -226,6 +226,30 @@ class MqttConnection  {
     }
   }
 
+
+  bool _readBoolValue(dynamic value, {bool fallback = false}) {
+    if (value is bool) {
+      return value;
+    }
+    if (value is num) {
+      return value != 0;
+    }
+    final text = value?.toString().toLowerCase().trim() ?? '';
+    if (text.isEmpty || text == 'null') {
+      return fallback;
+    }
+    return text == 'true' || text == '1' || text == 'yes' || text == 'on';
+  }
+
+  dynamic _firstExistingValue(Map<String, dynamic> raw, List<String> keys) {
+    for (final key in keys) {
+      if (raw.containsKey(key)) {
+        return raw[key];
+      }
+    }
+    return null;
+  }
+
   void _updateRobotStateControllerFromRaw(Map<String, dynamic> raw) {
     final state = robotStateController.robotState.value;
     state.isConnected = true;
@@ -264,6 +288,17 @@ class MqttConnection  {
         state.loadFactorEffective = double.tryParse(value?.toString() ?? "") ?? state.loadFactorEffective;
       }
     }
+
+    final autoMowValue = _firstExistingValue(raw, const [
+      "AutoMow",
+      "autoMow",
+      "automow",
+      "auto_mow",
+    ]);
+    if (autoMowValue != null) {
+      state.isAutoMow = _readBoolValue(autoMowValue, fallback: state.isAutoMow);
+    }
+
     robotStateController.robotState.refresh();
   }
 
@@ -944,6 +979,13 @@ class MqttConnection  {
     state.isCharging        = obj["d"]["is_charging"] > 0;
     state.rainDetected      = obj["d"]["rain_detected"] > 0;
     state.currentState      = obj["d"]["current_state"];
+    final autoMowValue = _firstExistingValue(Map<String, dynamic>.from(obj["d"] as Map), const [
+      "AutoMow",
+      "autoMow",
+      "automow",
+      "auto_mow",
+    ]);
+    state.isAutoMow        = _readBoolValue(autoMowValue);
     state.gpsPercent        = obj["d"]["gps_percentage"];
     state.batteryPercent    = obj["d"]["battery_percentage"];
     final loadFactorComputed = obj["d"]["load_factor_computed"];
