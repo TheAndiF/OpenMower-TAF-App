@@ -18,7 +18,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
   final TransformationController _transformationController = TransformationController();
 
   static const double _minViewerScale = 1.0;
-  static const double _maxViewerScale = 20.0;
+  static const double _maxViewerScale = 80.0;
   double _viewerScale = 1.0;
   Size _lastViewportSize = Size.zero;
 
@@ -80,7 +80,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
                             viewport: viewport,
                             editMode: controller.editMode.value,
                             selectedAreaIndex: controller.selectedAreaIndex.value,
-                            selectedPointIndex: controller.selectedPointIndex.value,
+                            selectedPointIndices: controller.selectedPointIndices.toSet(),
                             viewerScale: _viewerScale,
                             showGrid: controller.showGrid.value,
                           ),
@@ -118,7 +118,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
               children: [
                 _controlButton(
                   tooltip: 'Herauszoomen',
-                  onPressed: _viewerScale <= _minViewerScale + 0.01 ? null : () => _zoomBy(0.78),
+                  onPressed: _viewerScale <= _minViewerScale + 0.01 ? null : () => _zoomBy(0.62),
                   icon: Icons.remove,
                 ),
                 _controlButton(
@@ -128,7 +128,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
                 ),
                 _controlButton(
                   tooltip: 'Hineinzoomen',
-                  onPressed: _viewerScale >= _maxViewerScale - 0.01 ? null : () => _zoomBy(1.32),
+                  onPressed: _viewerScale >= _maxViewerScale - 0.01 ? null : () => _zoomBy(1.60),
                   icon: Icons.add,
                 ),
               ],
@@ -167,7 +167,16 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
                   onPressed: () => _panBy(const Offset(0, 1)),
                   icon: Icons.keyboard_arrow_down,
                 ),
-                const SizedBox(width: 40, height: 40),
+                SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Center(
+                    child: Text(
+                      '${_viewerScale.toStringAsFixed(_viewerScale < 10 ? 1 : 0)}×',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ),
+                ),
               ],
             ),
           ],
@@ -210,7 +219,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
       if (dy == 0) return;
 
       resolvedEvent.respond(allowPlatformDefault: false);
-      _zoomBy(dy > 0 ? 0.90 : 1.10);
+      _zoomBy(dy > 0 ? 0.86 : 1.18);
     });
   }
 
@@ -223,7 +232,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
       if (dy == 0) return;
 
       resolvedEvent.respond(allowPlatformDefault: false);
-      _zoomBy(dy > 0 ? 0.90 : 1.10);
+      _zoomBy(dy > 0 ? 0.86 : 1.18);
     });
   }
 
@@ -241,8 +250,13 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
     }
 
     // Punktbearbeitung ist nur innerhalb der aktuell aktiven Fläche relevant.
-    if (controller.insertPointNearMidpoint(worldPoint, toleranceWorld)) return;
-    if (controller.selectPointNear(worldPoint, toleranceWorld) != null) return;
+    if (controller.multiPointSelectionMode.value) {
+      if (controller.togglePointSelectionNear(worldPoint, toleranceWorld) != null) return;
+      if (hitAreaIndex != null && hitAreaIndex == currentAreaIndex) return;
+    } else {
+      if (controller.insertPointNearMidpoint(worldPoint, toleranceWorld)) return;
+      if (controller.selectPointNear(worldPoint, toleranceWorld) != null) return;
+    }
 
     if (hitAreaIndex != null) {
       controller.selectAreaByIndex(hitAreaIndex);

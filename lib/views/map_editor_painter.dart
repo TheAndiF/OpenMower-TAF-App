@@ -67,7 +67,7 @@ class MapEditorPainter extends CustomPainter {
     required this.viewport,
     required this.editMode,
     required this.selectedAreaIndex,
-    required this.selectedPointIndex,
+    required this.selectedPointIndices,
     required this.viewerScale,
     required this.showGrid,
   });
@@ -76,7 +76,7 @@ class MapEditorPainter extends CustomPainter {
   final MapEditorViewport viewport;
   final bool editMode;
   final int? selectedAreaIndex;
-  final int? selectedPointIndex;
+  final Set<int> selectedPointIndices;
   final double viewerScale;
   final bool showGrid;
 
@@ -214,7 +214,7 @@ class MapEditorPainter extends CustomPainter {
     _vertexBorderPaint.strokeWidth = borderWidth;
     for (var i = 0; i < area.outline.length; i++) {
       final center = viewport.worldToCanvas(area.outline[i].displayOffset);
-      final selected = i == selectedPointIndex;
+      final selected = selectedPointIndices.contains(i);
       final radius = (selected ? 7.2 : 6.0) / scale;
       canvas.drawCircle(center, radius, selected ? _selectedVertexPaint : _vertexPaint);
       canvas.drawCircle(center, radius, _vertexBorderPaint);
@@ -245,7 +245,8 @@ class MapEditorPainter extends CustomPainter {
         oldDelegate.viewport != viewport ||
         oldDelegate.editMode != editMode ||
         oldDelegate.selectedAreaIndex != selectedAreaIndex ||
-        oldDelegate.selectedPointIndex != selectedPointIndex ||
+        oldDelegate.selectedPointIndices.length != selectedPointIndices.length ||
+        !oldDelegate.selectedPointIndices.containsAll(selectedPointIndices) ||
         oldDelegate.viewerScale != viewerScale ||
         oldDelegate.showGrid != showGrid;
   }

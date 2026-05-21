@@ -440,14 +440,17 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     return Obx(() {
       final selectedArea = mapEditorController.selectedArea;
       final selectedPoint = mapEditorController.selectedPoint;
+      final selectedPointCount = mapEditorController.selectedPointCount;
       final status = mapEditorController.editorStatus.value;
       final editMode = mapEditorController.editMode.value;
       final hasChanges = mapEditorController.hasUnsavedChanges.value;
       final selectedType = selectedArea?.type ?? '-';
       final selectedName = selectedArea?.displayName ?? 'Keine Fläche ausgewählt';
-      final selectedPointText = selectedPoint == null
+      final selectedPointText = selectedPointCount == 0
           ? '-'
-          : 'x ${selectedPoint.x.toStringAsFixed(3)} / y ${selectedPoint.y.toStringAsFixed(3)}';
+          : selectedPointCount == 1 && selectedPoint != null
+              ? 'x ${selectedPoint.x.toStringAsFixed(3)} / y ${selectedPoint.y.toStringAsFixed(3)}'
+              : '$selectedPointCount Punkte ausgewählt';
       final editableAreas = mapEditorController.editableAreas.toList(growable: false);
       final selectedAreaIndex = mapEditorController.selectedAreaIndex.value;
 
@@ -481,9 +484,19 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
                   label: const Text('Speichern'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: selectedPoint == null ? null : () => mapEditorController.deleteSelectedPoint(),
+                  onPressed: editMode ? mapEditorController.toggleMultiPointSelectionMode : null,
+                  icon: Icon(mapEditorController.multiPointSelectionMode.value ? Icons.check_box : Icons.check_box_outline_blank),
+                  label: Text(mapEditorController.multiPointSelectionMode.value ? 'Mehrfachauswahl an' : 'Mehrfachauswahl'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: selectedPointCount == 0 ? null : mapEditorController.clearPointSelection,
+                  icon: const Icon(Icons.deselect),
+                  label: const Text('Punkte abwählen'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: selectedPointCount == 0 ? null : () => mapEditorController.deleteSelectedPoint(),
                   icon: const Icon(Icons.delete_outline),
-                  label: const Text('Punkt löschen'),
+                  label: Text(selectedPointCount > 1 ? 'Punkte löschen' : 'Punkt löschen'),
                 ),
               ],
             ),
@@ -528,7 +541,8 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
                   _editorMetaText(context, 'Fläche', selectedName),
                   _editorMetaText(context, 'Typ', selectedType),
                   _editorMetaText(context, 'Punkte', '${selectedArea?.outline.length ?? 0}'),
-                  _editorMetaText(context, 'Punkt', selectedPointText),
+                  _editorMetaText(context, 'Auswahl', selectedPointText),
+                  _editorMetaText(context, 'Mehrfachauswahl', mapEditorController.multiPointSelectionMode.value ? 'An' : 'Aus'),
                   _editorMetaText(context, 'Raster', mapEditorController.showGrid.value ? 'An' : 'Aus'),
                 ],
               ),
@@ -542,7 +556,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
             const SizedBox(height: 10),
             Text(
               editMode
-                  ? 'Fläche bevorzugt über das Dropdown wählen. Alternativ weiter direkt in der Karte antippen. Punkte ziehen: Grenze verschieben. Plus-Marker antippen: Punkt einfügen. Unten links in der 3×3-Matrix lässt sich das Raster ein- oder ausblenden.'
+                  ? 'Fläche bevorzugt über das Dropdown wählen. Punkte ziehen: Grenze verschieben. Plus-Marker antippen: Punkt einfügen. Mehrfachauswahl aktivieren: mehrere Punkte antippen, gemeinsam ziehen oder gemeinsam löschen. Der Zoom reicht jetzt bis 80×.'
                   : 'Der Editor ist getrennt von Dashboard- und Steuerkarten. Bearbeiten aktiviert ausschließlich diesen Bereich.',
               style: Theme.of(context).textTheme.bodySmall,
             ),

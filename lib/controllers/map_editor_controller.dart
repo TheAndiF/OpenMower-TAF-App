@@ -15,12 +15,16 @@ class MapEditorController extends GetxController {
   final editableAreas = <EditableMapArea>[].obs;
   final selectedAreaIndex = RxnInt();
   final selectedPointIndex = RxnInt();
+  final selectedPointIndices = <int>{}.obs;
+  final multiPointSelectionMode = false.obs;
   final hasUnsavedChanges = false.obs;
   final isDraggingPoint = false.obs;
   final showGrid = true.obs;
   final editorStatus = ''.obs;
 
   final List<List<EditableMapArea>> _undoStack = <List<EditableMapArea>>[];
+  Offset? _dragStartWorldPoint;
+  final Map<int, EditableMapPoint> _dragStartPoints = <int, EditableMapPoint>{};
 
   @override
   void onInit() {
@@ -37,6 +41,8 @@ class MapEditorController extends GetxController {
 
   bool get hasEditableAreas => editableAreas.isNotEmpty;
   bool get canUndo => _undoStack.isNotEmpty;
+  bool get hasPointSelection => selectedPointIndices.isNotEmpty || selectedPointIndex.value != null;
+  int get selectedPointCount => selectedPointIndices.isNotEmpty ? selectedPointIndices.length : (selectedPointIndex.value == null ? 0 : 1);
 
   EditableMapArea? get selectedArea {
     final index = selectedAreaIndex.value;
@@ -81,9 +87,10 @@ class MapEditorController extends GetxController {
 
     editableAreas.assignAll(next);
     selectedAreaIndex.value = null;
-    selectedPointIndex.value = null;
+    _clearPointSelectionOnly();
     hasUnsavedChanges.value = false;
     isDraggingPoint.value = false;
+    _clearDragState();
     _undoStack.clear();
     if (!keepStatus) {
       editorStatus.value = next.isEmpty
@@ -99,13 +106,13 @@ class MapEditorController extends GetxController {
       }
       editMode.value = true;
       editorStatus.value = hasEditableAreas
-          ? 'Bearbeitungsmodus aktiv. Fläche auswählen oder einen Punkt verschieben.'
+          ? 'Bearbeitungsmodus aktiv. Fläche auswählen, Punkt verschieben oder Mehrfachauswahl nutzen.'
           : 'Bearbeitungsmodus aktiv, aber es sind keine editierbaren Flächen vorhanden.';
       return;
     }
     editMode.value = false;
     isDraggingPoint.value = false;
-    selectedPointIndex.value = null;
+    _clearPointSelectionOnly();
     editorStatus.value = hasUnsavedChanges.value
         ? 'Bearbeitung pausiert. Ungespeicherte Änderungen bleiben lokal erhalten.'
         : 'Bearbeitungsmodus deaktiviert.';
@@ -129,13 +136,13 @@ class MapEditorController extends GetxController {
       return;
     }
     selectedAreaIndex.value = index;
-    selectedPointIndex.value = null;
+    _clearPointSelectionOnly();
     editorStatus.value = '${editableAreas[index].displayName} ausgewählt.';
   }
 
   void clearAreaSelection() {
     selectedAreaIndex.value = null;
-    selectedPointIndex.value = null;
+    _clearPointSelectionOnly();
     editorStatus.value = 'Keine Fläche ausgewählt.';
   }
 
@@ -143,11 +150,50 @@ class MapEditorController extends GetxController {
     final area = selectedArea;
     if (area == null) return null;
     final index = _nearestPointIndex(area, worldPoint, toleranceWorld);
+    if (index == null) {
+      _clearPointSelectionOnly();
+      return null;
+    }
+    selectedPointIndices
+      ..clear()
+      ..add(index);
+    selectedPointIndices.refresh();
     selectedPointIndex.value = index;
-    if (index != null) {
-      editorStatus.value = 'Punkt ${index + 1} von ${area.outline.length} ausgewählt.';
+    editorStatus.value = 'Punkt ${index + 1} von ${area.outline.length} ausgewählt.';
+    return index;
+  }
+
+  int? togglePointSelectionNear(Offset worldPoint, double toleranceWorld) {
+    final area = selectedArea;
+    if (area == null) return null;
+    final index = _nearestPointIndex(area, worldPoint, toleranceWorld);
+    if (index == null) return null;
+    if (selectedPointIndices.contains(index)) {
+      selectedPointIndices.remove(index);
+      selectedPointIndices.refresh();
+      selectedPointIndex.value = selectedPointIndices.isEmpty ? null : _sortedSelectedPointIndices().last;
+      editorStatus.value = selectedPointIndices.isEmpty
+          ? 'Keine Punkte ausgewählt.'
+          : '${selectedPointIndices.length} Punkt(e) ausgewählt.';
+    } else {
+      selectedPointIndices.add(index);
+      selectedPointIndices.refresh();
+      selectedPointIndex.value = index;
+      editorStatus.value = '${selectedPointIndices.length} Punkt(e) ausgewählt.';
     }
     return index;
+  }
+
+  void toggleMultiPointSelectionMode() {
+    multiPointSelectionMode.toggle();
+    editorStatus.value = multiPointSelectionMode.value
+        ? 'Mehrfachauswahl aktiv: Punkte antippen zum Hinzufügen/Entfernen, ausgewählte Punkte gemeinsam ziehen oder löschen.'
+        : 'Mehrfachauswahl deaktiviert.';
+  }
+
+  void clearPointSelection() {
+    _clearPointSelectionOnly();
+    editorStatus.value = 'Keine Punkte ausgewählt.';
   }
 
   bool startPointDrag(Offset worldPoint, double toleranceWorld) {
@@ -158,8 +204,26 @@ class MapEditorController extends GetxController {
     }
     final index = _nearestPointIndex(area, worldPoint, toleranceWorld);
     if (index == null) return false;
-    _pushUndoSnapshot();
+
+    if (!selectedPointIndices.contains(index)) {
+      if (!multiPointSelectionMode.value) {
+        selectedPointIndices.clear();
+      }
+      selectedPointIndices.add(index);
+      selectedPointIndices.refresh();
+    }
     selectedPointIndex.value = index;
+
+    final selectedIndices = _sortedSelectedPointIndices()
+        .where((pointIndex) => pointIndex >= 0 && pointIndex < area.outline.length)
+        .toList(growable: false);
+    if (selectedIndices.isEmpty) return false;
+
+    _pushUndoSnapshot();
+    _dragStartWorldPoint = worldPoint;
+    _dragStartPoints
+      ..clear()
+      ..addEntries(selectedIndices.map((pointIndex) => MapEntry(pointIndex, area.outline[pointIndex].copy())));
     isDraggingPoint.value = true;
     return true;
   }
@@ -167,13 +231,20 @@ class MapEditorController extends GetxController {
   void updateDraggedPoint(Offset displayWorldPoint) {
     if (!isDraggingPoint.value) return;
     final area = selectedArea;
-    final pointIndex = selectedPointIndex.value;
-    if (area == null || pointIndex == null || pointIndex < 0 || pointIndex >= area.outline.length) {
+    final dragStartWorldPoint = _dragStartWorldPoint;
+    if (area == null || dragStartWorldPoint == null || _dragStartPoints.isEmpty) {
       return;
     }
-    area.outline[pointIndex]
-      ..x = _rounded(displayWorldPoint.dx)
-      ..y = _rounded(-displayWorldPoint.dy);
+
+    final delta = displayWorldPoint - dragStartWorldPoint;
+    for (final entry in _dragStartPoints.entries) {
+      final pointIndex = entry.key;
+      if (pointIndex < 0 || pointIndex >= area.outline.length) continue;
+      final startPoint = entry.value;
+      area.outline[pointIndex]
+        ..x = _rounded(startPoint.x + delta.dx)
+        ..y = _rounded(startPoint.y - delta.dy);
+    }
     editableAreas.refresh();
     hasUnsavedChanges.value = true;
   }
@@ -182,9 +253,12 @@ class MapEditorController extends GetxController {
     if (!isDraggingPoint.value) return;
     isDraggingPoint.value = false;
     final area = selectedArea;
-    final pointIndex = selectedPointIndex.value;
-    if (area != null && pointIndex != null) {
-      editorStatus.value = 'Punkt ${pointIndex + 1} in ${area.displayName} lokal verschoben.';
+    final count = _dragStartPoints.length;
+    _clearDragState();
+    if (area != null && count > 0) {
+      editorStatus.value = count == 1
+          ? 'Punkt in ${area.displayName} lokal verschoben.'
+          : '$count Punkte in ${area.displayName} lokal verschoben.';
     }
   }
 
@@ -200,6 +274,10 @@ class MapEditorController extends GetxController {
       if ((midpoint - worldPoint).distance <= toleranceWorld) {
         _pushUndoSnapshot();
         area.outline.insert(i + 1, EditableMapPoint(x: _rounded(midpoint.dx), y: _rounded(-midpoint.dy)));
+        selectedPointIndices
+          ..clear()
+          ..add(i + 1);
+        selectedPointIndices.refresh();
         selectedPointIndex.value = i + 1;
         editableAreas.refresh();
         hasUnsavedChanges.value = true;
@@ -213,18 +291,25 @@ class MapEditorController extends GetxController {
   bool deleteSelectedPoint() {
     if (!editMode.value) return false;
     final area = selectedArea;
-    final index = selectedPointIndex.value;
-    if (area == null || index == null) return false;
-    if (area.outline.length <= 3) {
-      editorStatus.value = 'Ein Polygon benötigt mindestens drei Punkte.';
+    if (area == null) return false;
+    final indices = _sortedSelectedPointIndices()
+        .where((index) => index >= 0 && index < area.outline.length)
+        .toList(growable: false);
+    if (indices.isEmpty) return false;
+    if (area.outline.length - indices.length < 3) {
+      editorStatus.value = 'Ein Polygon benötigt mindestens drei Punkte. Auswahl kann so nicht gelöscht werden.';
       return false;
     }
     _pushUndoSnapshot();
-    area.outline.removeAt(index);
-    selectedPointIndex.value = null;
+    for (final index in indices.reversed) {
+      area.outline.removeAt(index);
+    }
+    _clearPointSelectionOnly();
     editableAreas.refresh();
     hasUnsavedChanges.value = true;
-    editorStatus.value = 'Punkt aus ${area.displayName} gelöscht.';
+    editorStatus.value = indices.length == 1
+        ? 'Punkt aus ${area.displayName} gelöscht.'
+        : '${indices.length} Punkte aus ${area.displayName} gelöscht.';
     return true;
   }
 
@@ -233,7 +318,7 @@ class MapEditorController extends GetxController {
     final previous = _undoStack.removeLast();
     final selectedAreaSourceIndex = selectedArea?.sourceIndex;
     editableAreas.assignAll(previous.map((area) => area.copy()).toList(growable: true));
-    selectedPointIndex.value = null;
+    _clearPointSelectionOnly();
     selectedAreaIndex.value = selectedAreaSourceIndex == null
         ? null
         : editableAreas.indexWhere((area) => area.sourceIndex == selectedAreaSourceIndex);
@@ -244,6 +329,7 @@ class MapEditorController extends GetxController {
 
   void discardChanges() {
     loadFromAreaPayload();
+    multiPointSelectionMode.value = false;
     editMode.value = false;
     editorStatus.value = 'Lokale Kartenänderungen verworfen.';
   }
@@ -371,6 +457,24 @@ class MapEditorController extends GetxController {
       }
     }
     return bestIndex;
+  }
+
+  List<int> _sortedSelectedPointIndices() {
+    final indices = selectedPointIndices.toList(growable: false)..sort();
+    if (indices.isNotEmpty) return indices;
+    final index = selectedPointIndex.value;
+    return index == null ? <int>[] : <int>[index];
+  }
+
+  void _clearPointSelectionOnly() {
+    selectedPointIndices.clear();
+    selectedPointIndices.refresh();
+    selectedPointIndex.value = null;
+  }
+
+  void _clearDragState() {
+    _dragStartWorldPoint = null;
+    _dragStartPoints.clear();
   }
 
   void _pushUndoSnapshot() {
