@@ -58,7 +58,7 @@ class RobotStateWidget extends GetView<RobotStateController> {
                   width: 10,
                   height: 10,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF2E7D32),
+                    color: Colors.green[200],
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 1.2),
                   ),
