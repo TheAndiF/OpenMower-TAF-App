@@ -1,0 +1,359 @@
+diff -ruN om/OpenMowerApp/lib/controllers/settings_controller.dart om_mod/lib/controllers/settings_controller.dart
+--- om/OpenMowerApp/lib/controllers/settings_controller.dart	2026-05-20 12:15:52.000000000 +0000
++++ om_mod/lib/controllers/settings_controller.dart	2026-05-21 04:11:18.145858250 +0000
+@@ -1,56 +1,68 @@
+-import 'package:flutter/cupertino.dart';
+-import 'package:get/get.dart';
+-import 'package:open_mower_app/io/mqtt_connection.dart';
+-import 'package:get_storage/get_storage.dart';
+-
+-
+-class SettingsController extends GetxController {
+-  var hostname = "".obs;
+-  var mqttUsername = "".obs;
+-  var mqttPassword = "".obs;
+-  var mqttPort = 0.obs;
+-
+-  final hostnameController = TextEditingController();
+-  final mqttUsernameController = TextEditingController();
+-  final mqttPasswordController = TextEditingController();
+-  final mqttPortController = TextEditingController();
+-
+-  void load() {
+-    final box = GetStorage();
+-    hostname.value = box.read("mqtt_hostname") ?? "127.0.0.1";
+-    mqttUsername.value = box.read("mqtt_username") ?? "";
+-    mqttPassword.value = box.read("mqtt_password") ?? "";
+-    mqttPort.value = box.read("mqtt_port") ?? 9001;
+-
+-    hostnameController.text = hostname.value;
+-    mqttUsernameController.text = mqttUsername.value;
+-    mqttPasswordController.text = mqttPassword.value;
+-    mqttPortController.text = mqttPort.value.toString();
+-    update();
+-  }
+-
+-  void save() {
+-    final box = GetStorage();
+-
+-    hostname.value = hostnameController.text;
+-    mqttUsername.value = mqttUsernameController.text;
+-    mqttPassword.value = mqttPasswordController.text;
+-    mqttPort.value = int.tryParse(mqttPortController.text) ?? 1883;
+-
+-    box.write("mqtt_hostname", hostname.value);
+-    box.write("mqtt_username", mqttUsername.value);
+-    box.write("mqtt_password", mqttPassword.value);
+-    box.write("mqtt_port", mqttPort.value);
+-    box.save();
+-
+-    hostnameController.text = hostname.value;
+-    mqttUsernameController.text = mqttUsername.value;
+-    mqttPasswordController.text = mqttPassword.value;
+-    mqttPortController.text = mqttPort.value.toString();
+-    update();
+-
+-    // reconnect mqtt
+-    final MqttConnection mqttConnection = Get.find();
+-    mqttConnection.connect();
+-  }
+-}
+\ No newline at end of file
++import 'package:flutter/cupertino.dart';
++import 'package:get/get.dart';
++import 'package:open_mower_app/io/mqtt_connection.dart';
++import 'package:get_storage/get_storage.dart';
++
++
++class SettingsController extends GetxController {
++  var hostname = "".obs;
++  var mqttUsername = "".obs;
++  var mqttPassword = "".obs;
++  var mqttPort = 0.obs;
++  var expertModeEnabled = false.obs;
++
++  final hostnameController = TextEditingController();
++  final mqttUsernameController = TextEditingController();
++  final mqttPasswordController = TextEditingController();
++  final mqttPortController = TextEditingController();
++
++  void load() {
++    final box = GetStorage();
++    hostname.value = box.read("mqtt_hostname") ?? "127.0.0.1";
++    mqttUsername.value = box.read("mqtt_username") ?? "";
++    mqttPassword.value = box.read("mqtt_password") ?? "";
++    mqttPort.value = box.read("mqtt_port") ?? 9001;
++    expertModeEnabled.value = box.read("expert_mode_enabled") ?? false;
++
++    hostnameController.text = hostname.value;
++    mqttUsernameController.text = mqttUsername.value;
++    mqttPasswordController.text = mqttPassword.value;
++    mqttPortController.text = mqttPort.value.toString();
++    update();
++  }
++
++  void save() {
++    final box = GetStorage();
++
++    hostname.value = hostnameController.text;
++    mqttUsername.value = mqttUsernameController.text;
++    mqttPassword.value = mqttPasswordController.text;
++    mqttPort.value = int.tryParse(mqttPortController.text) ?? 1883;
++
++    box.write("mqtt_hostname", hostname.value);
++    box.write("mqtt_username", mqttUsername.value);
++    box.write("mqtt_password", mqttPassword.value);
++    box.write("mqtt_port", mqttPort.value);
++    box.write("expert_mode_enabled", expertModeEnabled.value);
++    box.save();
++
++    hostnameController.text = hostname.value;
++    mqttUsernameController.text = mqttUsername.value;
++    mqttPasswordController.text = mqttPassword.value;
++    mqttPortController.text = mqttPort.value.toString();
++    update();
++
++    // reconnect mqtt
++    final MqttConnection mqttConnection = Get.find();
++    mqttConnection.connect();
++  }
++
++  void setExpertModeEnabled(bool value) {
++    expertModeEnabled.value = value;
++    final box = GetStorage();
++    box.write("expert_mode_enabled", value);
++    box.save();
++    update();
++  }
++
++}
+diff -ruN om/OpenMowerApp/lib/screens/main_screen.dart om_mod/lib/screens/main_screen.dart
+--- om/OpenMowerApp/lib/screens/main_screen.dart	2026-05-20 12:15:52.000000000 +0000
++++ om_mod/lib/screens/main_screen.dart	2026-05-21 04:11:35.961067115 +0000
+@@ -3,6 +3,7 @@
+ import 'package:get/get.dart';
+ import 'package:niku/namespace.dart' as n;
+ import 'package:open_mower_app/controllers/robot_state_controller.dart';
++import 'package:open_mower_app/controllers/settings_controller.dart';
+ import 'package:open_mower_app/screens/dashboard.dart';
+ import 'package:open_mower_app/screens/advanced_options.dart';
+ import 'package:open_mower_app/screens/sensor_values.dart';
+@@ -33,6 +34,7 @@
+   final _index = 0.obs;
+ 
+   final RobotStateController robotStateController = Get.find();
++  final SettingsController settingsController = Get.find();
+ 
+   @override
+   Widget build(BuildContext context) {
+@@ -47,16 +49,22 @@
+         child: Column(
+           children: <Widget>[
+             Expanded(
+-              child: ListView(
+-                padding: EdgeInsets.zero,
+-                children: buildDrawerList(),
+-              ),
++              child: Obx(() => ListView(
++                    padding: EdgeInsets.zero,
++                    children: buildDrawerList(),
++                  )),
+             ),
+             Obx(() => Text(robotStateController.softwareVersion.value).paddingAll(10)),
+           ],
+         ),
+       ),
+-      body: Obx(() => widgetList[_index.value]),
++      body: Obx(() {
++        final selectedIndex = _index.value;
++        if (selectedIndex == 1 && !settingsController.expertModeEnabled.value) {
++          return widgetList[0];
++        }
++        return widgetList[selectedIndex];
++      }),
+     );
+   }
+ 
+@@ -93,11 +101,12 @@
+         title: 'Dashboard',
+         index: 0,
+       ),
+-      _buildDrawerTile(
+-        leading: n.Icon(Icons.settings_applications),
+-        title: 'Advanced Options',
+-        index: 1,
+-      ),
++      if (settingsController.expertModeEnabled.value)
++        _buildDrawerTile(
++          leading: n.Icon(Icons.settings_applications),
++          title: 'Advanced Options',
++          index: 1,
++        ),
+       _buildDrawerTile(
+         leading: n.Icon(Icons.line_axis),
+         title: 'Sensor Values',
+diff -ruN om/OpenMowerApp/lib/screens/mower_logic_settings.dart om_mod/lib/screens/mower_logic_settings.dart
+--- om/OpenMowerApp/lib/screens/mower_logic_settings.dart	2026-05-20 12:15:52.000000000 +0000
++++ om_mod/lib/screens/mower_logic_settings.dart	2026-05-21 04:12:03.631894119 +0000
+@@ -7,6 +7,7 @@
+ import 'package:open_mower_app/controllers/mower_logic_settings_controller.dart';
+ import 'package:open_mower_app/controllers/mow_load_factor_settings_controller.dart';
+ import 'package:open_mower_app/controllers/robot_state_controller.dart';
++import 'package:open_mower_app/controllers/settings_controller.dart';
+ import 'package:open_mower_app/controllers/low_level_power_settings_controller.dart';
+ import 'package:open_mower_app/views/robot_state_widget.dart';
+ 
+@@ -22,6 +23,7 @@
+   final MowLoadFactorSettingsController mowLoadFactorController = Get.find<MowLoadFactorSettingsController>();
+   final RobotStateController robotStateController = Get.find<RobotStateController>();
+   final LowLevelPowerSettingsController lowLevelPowerController = Get.find<LowLevelPowerSettingsController>();
++  final SettingsController settingsController = Get.find<SettingsController>();
+   bool _renewSent = false;
+   bool _jsonExpanded = false;
+ 
+@@ -49,6 +51,8 @@
+               children: [
+                 _buildOverviewSection(context),
+                 const SizedBox(height: 16),
++                _buildExpertModeSection(context),
++                const SizedBox(height: 16),
+                 _buildMowLoadFactorSection(context),
+                 const SizedBox(height: 16),
+                 if (!controller.hasData)
+@@ -176,6 +180,25 @@
+     );
+   }
+ 
++  Widget _buildExpertModeSection(BuildContext context) {
++    final color = Theme.of(context).primaryColor;
++    return Card(
++      margin: EdgeInsets.zero,
++      child: Obx(() => SwitchListTile(
++            secondary: Icon(Icons.admin_panel_settings_outlined, color: color),
++            title: Text(
++              'Expertenmodus',
++              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
++            ),
++            subtitle: const Text(
++              'Blendet die Unterseite „Advanced Options“ im linken Menü ein. Ausgeschaltet bleibt die Seite verborgen.',
++            ),
++            value: settingsController.expertModeEnabled.value,
++            onChanged: settingsController.setExpertModeEnabled,
++          )),
++    );
++  }
++
+   Widget _buildEmptySettingsCard(BuildContext context) {
+     return Card(
+       margin: EdgeInsets.zero,
+diff -ruN om/OpenMowerApp/lib/views/robot_state_widget.dart om_mod/lib/views/robot_state_widget.dart
+--- om/OpenMowerApp/lib/views/robot_state_widget.dart	2026-05-21 03:16:27.000000000 +0000
++++ om_mod/lib/views/robot_state_widget.dart	2026-05-21 04:12:17.525539618 +0000
+@@ -1,4 +1,5 @@
+ import 'package:flutter/material.dart';
++import 'package:flutter_material_design_icons/flutter_material_design_icons.dart';
+ import 'package:get/get.dart';
+ import 'package:open_mower_app/controllers/robot_state_controller.dart';
+ import 'package:open_mower_app/views/emergency_widget.dart';
+@@ -16,7 +17,7 @@
+         iconData = Icons.radio_button_unchecked;
+         break;
+       case "MOWING":
+-        iconData = Icons.content_cut;
++        iconData = MdiIcons.contentCut;
+         break;
+       case "PAUSED":
+         iconData = Icons.pause;
+@@ -108,26 +109,63 @@
+   }
+ 
+   Icon getBatteryIcon(double percent, bool charging) {
+-    if (charging) {
+-      return Icon(
+-        Icons.battery_charging_full,
+-        color: percent > 0.4
+-            ? Colors.black54
+-            : percent > 0.2
+-                ? Colors.orange[300]
+-                : Colors.red[200],
+-      );
+-    }
+-
+-    if (percent > 0.4) {
+-      return const Icon(Icons.battery_full, color: Colors.black54);
+-    } else if (percent > 0.2) {
+-      return Icon(Icons.battery_alert, color: Colors.orange[300]);
+-    } else if (percent > 0) {
+-      return Icon(Icons.battery_alert, color: Colors.red[200]);
++    final IconData iconData;
++    if (percent <= 0) {
++      iconData = MdiIcons.batteryUnknown;
++    } else if (charging) {
++      if (percent >= 0.95) {
++        iconData = MdiIcons.batteryCharging100;
++      } else if (percent >= 0.85) {
++        iconData = MdiIcons.batteryCharging90;
++      } else if (percent >= 0.75) {
++        iconData = MdiIcons.batteryCharging80;
++      } else if (percent >= 0.65) {
++        iconData = MdiIcons.batteryCharging70;
++      } else if (percent >= 0.55) {
++        iconData = MdiIcons.batteryCharging60;
++      } else if (percent >= 0.45) {
++        iconData = MdiIcons.batteryCharging50;
++      } else if (percent >= 0.35) {
++        iconData = MdiIcons.batteryCharging40;
++      } else if (percent >= 0.25) {
++        iconData = MdiIcons.batteryCharging30;
++      } else if (percent >= 0.15) {
++        iconData = MdiIcons.batteryCharging20;
++      } else {
++        iconData = MdiIcons.batteryCharging10;
++      }
++    } else if (percent >= 0.95) {
++      iconData = MdiIcons.battery;
++    } else if (percent >= 0.85) {
++      iconData = MdiIcons.battery90;
++    } else if (percent >= 0.75) {
++      iconData = MdiIcons.battery80;
++    } else if (percent >= 0.65) {
++      iconData = MdiIcons.battery70;
++    } else if (percent >= 0.55) {
++      iconData = MdiIcons.battery60;
++    } else if (percent >= 0.45) {
++      iconData = MdiIcons.battery50;
++    } else if (percent >= 0.35) {
++      iconData = MdiIcons.battery40;
++    } else if (percent >= 0.25) {
++      iconData = MdiIcons.battery30;
++    } else if (percent >= 0.15) {
++      iconData = MdiIcons.battery20;
++    } else {
++      iconData = MdiIcons.battery10;
+     }
+ 
+-    return Icon(Icons.battery_unknown, color: Colors.grey[400]);
++    return Icon(
++      iconData,
++      color: percent > 0.4
++          ? Colors.black54
++          : percent > 0.2
++              ? Colors.orange[300]
++              : percent > 0
++                  ? Colors.red[200]
++                  : Colors.grey[400],
++    );
+   }
+ 
+ }
+diff -ruN om/OpenMowerApp/pubspec.yaml om_mod/pubspec.yaml
+--- om/OpenMowerApp/pubspec.yaml	2026-05-21 03:16:27.000000000 +0000
++++ om_mod/pubspec.yaml	2026-05-21 04:11:16.747236538 +0000
+@@ -39,6 +39,7 @@
+   mqtt5_client: ^4.3.0
+   bson: ^5.0.4
+   web_socket_channel: ^3.0.0
++  flutter_material_design_icons: ^3.1.0
+ 
+   # The following adds the Cupertino Icons font to your application.
+   # Use with the CupertinoIcons class for iOS style icons.

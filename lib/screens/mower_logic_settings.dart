@@ -7,6 +7,7 @@ import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/mower_logic_settings_controller.dart';
 import 'package:open_mower_app/controllers/mow_load_factor_settings_controller.dart';
 import 'package:open_mower_app/controllers/robot_state_controller.dart';
+import 'package:open_mower_app/controllers/settings_controller.dart';
 import 'package:open_mower_app/controllers/low_level_power_settings_controller.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 
@@ -22,6 +23,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
   final MowLoadFactorSettingsController mowLoadFactorController = Get.find<MowLoadFactorSettingsController>();
   final RobotStateController robotStateController = Get.find<RobotStateController>();
   final LowLevelPowerSettingsController lowLevelPowerController = Get.find<LowLevelPowerSettingsController>();
+  final SettingsController settingsController = Get.find<SettingsController>();
   bool _renewSent = false;
   bool _jsonExpanded = false;
 
@@ -48,6 +50,8 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildOverviewSection(context),
+                const SizedBox(height: 16),
+                _buildExpertModeSection(context),
                 const SizedBox(height: 16),
                 _buildMowLoadFactorSection(context),
                 const SizedBox(height: 16),
@@ -173,6 +177,25 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildExpertModeSection(BuildContext context) {
+    final color = Theme.of(context).primaryColor;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Obx(() => SwitchListTile(
+            secondary: Icon(Icons.admin_panel_settings_outlined, color: color),
+            title: Text(
+              'Expertenmodus',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text(
+              'Blendet die Unterseite „Advanced Options“ im linken Menü ein. Ausgeschaltet bleibt die Seite verborgen.',
+            ),
+            value: settingsController.expertModeEnabled.value,
+            onChanged: settingsController.setExpertModeEnabled,
+          )),
     );
   }
 

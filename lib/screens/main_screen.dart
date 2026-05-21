@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:niku/namespace.dart' as n;
 import 'package:open_mower_app/controllers/robot_state_controller.dart';
+import 'package:open_mower_app/controllers/settings_controller.dart';
 import 'package:open_mower_app/screens/dashboard.dart';
 import 'package:open_mower_app/screens/advanced_options.dart';
 import 'package:open_mower_app/screens/sensor_values.dart';
@@ -33,6 +34,7 @@ class MainScreen extends GetView<RobotStateController> {
   final _index = 0.obs;
 
   final RobotStateController robotStateController = Get.find();
+  final SettingsController settingsController = Get.find();
 
   @override
   Widget build(BuildContext context) {
@@ -47,16 +49,22 @@ class MainScreen extends GetView<RobotStateController> {
         child: Column(
           children: <Widget>[
             Expanded(
-              child: ListView(
-                padding: EdgeInsets.zero,
-                children: buildDrawerList(),
-              ),
+              child: Obx(() => ListView(
+                    padding: EdgeInsets.zero,
+                    children: buildDrawerList(),
+                  )),
             ),
             Obx(() => Text(robotStateController.softwareVersion.value).paddingAll(10)),
           ],
         ),
       ),
-      body: Obx(() => widgetList[_index.value]),
+      body: Obx(() {
+        final selectedIndex = _index.value;
+        if (selectedIndex == 1 && !settingsController.expertModeEnabled.value) {
+          return widgetList[0];
+        }
+        return widgetList[selectedIndex];
+      }),
     );
   }
 
@@ -93,11 +101,12 @@ class MainScreen extends GetView<RobotStateController> {
         title: 'Dashboard',
         index: 0,
       ),
-      _buildDrawerTile(
-        leading: n.Icon(Icons.settings_applications),
-        title: 'Advanced Options',
-        index: 1,
-      ),
+      if (settingsController.expertModeEnabled.value)
+        _buildDrawerTile(
+          leading: n.Icon(Icons.settings_applications),
+          title: 'Advanced Options',
+          index: 1,
+        ),
       _buildDrawerTile(
         leading: n.Icon(Icons.line_axis),
         title: 'Sensor Values',

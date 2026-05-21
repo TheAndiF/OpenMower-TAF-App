@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_material_design_icons/flutter_material_design_icons.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/robot_state_controller.dart';
 import 'package:open_mower_app/views/emergency_widget.dart';
@@ -16,7 +17,7 @@ class RobotStateWidget extends GetView<RobotStateController> {
         iconData = Icons.radio_button_unchecked;
         break;
       case "MOWING":
-        iconData = Icons.content_cut;
+        iconData = MdiIcons.contentCut;
         break;
       case "PAUSED":
         iconData = Icons.pause;
@@ -108,26 +109,63 @@ class RobotStateWidget extends GetView<RobotStateController> {
   }
 
   Icon getBatteryIcon(double percent, bool charging) {
-    if (charging) {
-      return Icon(
-        Icons.battery_charging_full,
-        color: percent > 0.4
-            ? Colors.black54
-            : percent > 0.2
-                ? Colors.orange[300]
-                : Colors.red[200],
-      );
+    final IconData iconData;
+    if (percent <= 0) {
+      iconData = MdiIcons.batteryUnknown;
+    } else if (charging) {
+      if (percent >= 0.95) {
+        iconData = MdiIcons.batteryCharging100;
+      } else if (percent >= 0.85) {
+        iconData = MdiIcons.batteryCharging90;
+      } else if (percent >= 0.75) {
+        iconData = MdiIcons.batteryCharging80;
+      } else if (percent >= 0.65) {
+        iconData = MdiIcons.batteryCharging70;
+      } else if (percent >= 0.55) {
+        iconData = MdiIcons.batteryCharging60;
+      } else if (percent >= 0.45) {
+        iconData = MdiIcons.batteryCharging50;
+      } else if (percent >= 0.35) {
+        iconData = MdiIcons.batteryCharging40;
+      } else if (percent >= 0.25) {
+        iconData = MdiIcons.batteryCharging30;
+      } else if (percent >= 0.15) {
+        iconData = MdiIcons.batteryCharging20;
+      } else {
+        iconData = MdiIcons.batteryCharging10;
+      }
+    } else if (percent >= 0.95) {
+      iconData = MdiIcons.battery;
+    } else if (percent >= 0.85) {
+      iconData = MdiIcons.battery90;
+    } else if (percent >= 0.75) {
+      iconData = MdiIcons.battery80;
+    } else if (percent >= 0.65) {
+      iconData = MdiIcons.battery70;
+    } else if (percent >= 0.55) {
+      iconData = MdiIcons.battery60;
+    } else if (percent >= 0.45) {
+      iconData = MdiIcons.battery50;
+    } else if (percent >= 0.35) {
+      iconData = MdiIcons.battery40;
+    } else if (percent >= 0.25) {
+      iconData = MdiIcons.battery30;
+    } else if (percent >= 0.15) {
+      iconData = MdiIcons.battery20;
+    } else {
+      iconData = MdiIcons.battery10;
     }
 
-    if (percent > 0.4) {
-      return const Icon(Icons.battery_full, color: Colors.black54);
-    } else if (percent > 0.2) {
-      return Icon(Icons.battery_alert, color: Colors.orange[300]);
-    } else if (percent > 0) {
-      return Icon(Icons.battery_alert, color: Colors.red[200]);
-    }
-
-    return Icon(Icons.battery_unknown, color: Colors.grey[400]);
+    return Icon(
+      iconData,
+      color: percent > 0.4
+          ? Colors.black54
+          : percent > 0.2
+              ? Colors.orange[300]
+              : percent > 0
+                  ? Colors.red[200]
+                  : Colors.grey[400],
+    );
   }
 
 }

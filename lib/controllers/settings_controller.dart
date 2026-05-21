@@ -9,6 +9,7 @@ class SettingsController extends GetxController {
   var mqttUsername = "".obs;
   var mqttPassword = "".obs;
   var mqttPort = 0.obs;
+  var expertModeEnabled = false.obs;
 
   final hostnameController = TextEditingController();
   final mqttUsernameController = TextEditingController();
@@ -21,6 +22,7 @@ class SettingsController extends GetxController {
     mqttUsername.value = box.read("mqtt_username") ?? "";
     mqttPassword.value = box.read("mqtt_password") ?? "";
     mqttPort.value = box.read("mqtt_port") ?? 9001;
+    expertModeEnabled.value = box.read("expert_mode_enabled") ?? false;
 
     hostnameController.text = hostname.value;
     mqttUsernameController.text = mqttUsername.value;
@@ -41,6 +43,7 @@ class SettingsController extends GetxController {
     box.write("mqtt_username", mqttUsername.value);
     box.write("mqtt_password", mqttPassword.value);
     box.write("mqtt_port", mqttPort.value);
+    box.write("expert_mode_enabled", expertModeEnabled.value);
     box.save();
 
     hostnameController.text = hostname.value;
@@ -53,4 +56,13 @@ class SettingsController extends GetxController {
     final MqttConnection mqttConnection = Get.find();
     mqttConnection.connect();
   }
+
+  void setExpertModeEnabled(bool value) {
+    expertModeEnabled.value = value;
+    final box = GetStorage();
+    box.write("expert_mode_enabled", value);
+    box.save();
+    update();
+  }
+
 }
