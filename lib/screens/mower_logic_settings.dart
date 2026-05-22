@@ -752,7 +752,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      'Diese Einstellwerte kommen aus settings/mow_load_factor/json. Die laufenden Lastfaktor-Zustandswerte werden über robot_state/json angezeigt.',
+                      'Diese Einstellwerte kommen jetzt aus settings/mower_logic/json. Die laufenden Lastfaktor-Zustandswerte werden über robot_state/json angezeigt.',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
@@ -763,7 +763,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Text(
-                        'Noch keine settings/mow_load_factor/json-Daten empfangen.',
+                        'Noch keine Mäh-Lastregelungsdaten aus settings/mower_logic/json empfangen.',
                         style: Theme.of(context).textTheme.bodyMedium,
                         textAlign: TextAlign.center,
                       ),
@@ -794,7 +794,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                     tilePadding: EdgeInsets.zero,
                     childrenPadding: EdgeInsets.zero,
                     title: const Text('Mäh-Lastregelung JSON-Status'),
-                    subtitle: const Text('Rohdaten aus settings/mow_load_factor/json'),
+                    subtitle: const Text('Gefilterte Rohdaten aus settings/mower_logic/json'),
                     children: [
                       Container(
                         width: double.infinity,

@@ -101,11 +101,18 @@ class MqttConnection  {
   static const String mowerLogicSettingsSetSessionJsonTopic = "settings/mower_logic/set/session/json";
   static const String mowerLogicSettingsSetPersistentJsonTopic = "settings/mower_logic/set/persistent/json";
 
-  static const String mowLoadFactorSettingsJsonTopic = "settings/mow_load_factor/json";
-  static const String mowLoadFactorSettingsValidationJsonTopic = "settings/mow_load_factor/validation/json";
-  static const String mowLoadFactorSettingsRenewJsonTopic = "settings/mow_load_factor/set/renew/json";
-  static const String mowLoadFactorSettingsSetSessionJsonTopic = "settings/mow_load_factor/set/session/json";
-  static const String mowLoadFactorSettingsSetPersistentJsonTopic = "settings/mow_load_factor/set/persistent/json";
+  // Mäh-Lastregelung ist kein eigener Settings-Namespace mehr.
+  // Die UI nutzt weiterhin einen eigenen Controller als gefilterte Ansicht,
+  // MQTT läuft aber vollständig über settings/mower_logic/....
+  static const String mowLoadFactorSettingsJsonTopic = mowerLogicSettingsJsonTopic;
+  static const String mowLoadFactorSettingsValidationJsonTopic = mowerLogicSettingsValidationJsonTopic;
+  static const String mowLoadFactorSettingsRenewJsonTopic = mowerLogicSettingsRenewJsonTopic;
+  static const String mowLoadFactorSettingsSetSessionJsonTopic = mowerLogicSettingsSetSessionJsonTopic;
+  static const String mowLoadFactorSettingsSetPersistentJsonTopic = mowerLogicSettingsSetPersistentJsonTopic;
+
+  // Legacy retained backend values may still exist, but are no longer subscribed.
+  static const String legacyMowLoadFactorSettingsJsonTopic = "settings/mow_load_factor/json";
+  static const String legacyMowLoadFactorSettingsValidationJsonTopic = "settings/mow_load_factor/validation/json";
 
   static const String lowLevelPowerJsonTopic = "settings/ll_board/json";
   static const String lowLevelPowerValidationJsonTopic = "settings/ll_board/validation/json";
@@ -376,6 +383,24 @@ class MqttConnection  {
     }
   }
 
+  bool _validationMentionsMowLoadFactor(Map<String, dynamic> payload) {
+    final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
+    bool keyMatches(dynamic value) {
+      if (value is Map) {
+        return value.keys.any((key) => keyMatches(key)) || value.values.any(keyMatches);
+      }
+      if (value is List) {
+        return value.any(keyMatches);
+      }
+      final text = value?.toString() ?? '';
+      return text.startsWith('mow_load_') || text.startsWith('load_factor_');
+    }
+    return keyMatches(root['accepted']) ||
+        keyMatches(root['applied']) ||
+        keyMatches(root['rejected']) ||
+        keyMatches(root['remarks']);
+  }
+
   void parseMowerLogicSettings(MqttPublishMessage payload) {
     try {
       final map = _decodeMap(payload);
@@ -384,6 +409,7 @@ class MqttConnection  {
         return;
       }
       mowerLogicSettingsController.setStatusPayload(map, topic: mowerLogicSettingsJsonTopic);
+      mowLoadFactorSettingsController.setStatusPayload(map, topic: mowerLogicSettingsJsonTopic);
     } catch (e) {
       mowerLogicSettingsController.setError("Settings-Status konnte nicht gelesen werden: $e", topic: mowerLogicSettingsJsonTopic);
     }
@@ -397,6 +423,9 @@ class MqttConnection  {
         return;
       }
       mowerLogicSettingsController.setValidation(map, topic: mowerLogicSettingsValidationJsonTopic);
+      if (_validationMentionsMowLoadFactor(map) || mowLoadFactorSettingsController.actionInProgress.value) {
+        mowLoadFactorSettingsController.setValidation(map, topic: mowerLogicSettingsValidationJsonTopic);
+      }
     } catch (e) {
       mowerLogicSettingsController.setError("Mäher-Logik-Validierung konnte nicht gelesen werden: $e", topic: mowerLogicSettingsValidationJsonTopic);
     }
@@ -1177,11 +1206,13 @@ class MqttConnection  {
               parseMowerLogicSettingsValidation(payload);
             }
             break;
-            case mowLoadFactorSettingsJsonTopic: {
+            case legacyMowLoadFactorSettingsJsonTopic: {
+              // Legacy namespace is ignored by default; if a retained value is still delivered,
+              // parse it only as compatibility input for the filtered UI.
               parseMowLoadFactorSettings(payload);
             }
             break;
-            case mowLoadFactorSettingsValidationJsonTopic: {
+            case legacyMowLoadFactorSettingsValidationJsonTopic: {
               parseMowLoadFactorSettingsValidation(payload);
             }
             break;
@@ -1257,8 +1288,7 @@ class MqttConnection  {
     client.subscribe(statusTransitionLogJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mowerLogicSettingsJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mowerLogicSettingsValidationJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(mowLoadFactorSettingsJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(mowLoadFactorSettingsValidationJsonTopic, MqttQos.atLeastOnce);
+    // Kein Subscribe auf settings/mow_load_factor/...: dieser Namespace ist entfallen.
     client.subscribe(lowLevelPowerJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(lowLevelPowerValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mapOverlayJsonTopic, MqttQos.atMostOnce);

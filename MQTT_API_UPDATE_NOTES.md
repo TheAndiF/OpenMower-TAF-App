@@ -1,6 +1,6 @@
-# MQTT API Update - 2026-05-20
+# MQTT API Update - 2026-05-21
 
-Dieses Paket passt die OpenMower-App an die Kommunikationsstruktur vom 20.05.2026 an und trennt die Einstellungsnavigation in hardware- und softwarenahe Bereiche.
+Dieses Paket passt die OpenMower-App an die aktualisierte Kommunikationsstruktur vom 21.05.2026 an und trennt die Einstellungsnavigation in hardware- und softwarenahe Bereiche.
 
 ## Menü und Seitenstruktur
 
@@ -19,8 +19,9 @@ Enthält ausschließlich:
 
 Enthält:
 
-- `settings/mow_load_factor`
 - `settings/mower_logic`
+
+Die Mäh-Lastregelung wird weiterhin als eigener UI-Abschnitt dargestellt, kommt aber aus `settings/mower_logic` und nicht mehr aus einem eigenen MQTT-Namespace.
 
 Die Softwareseite gliedert die Inhalte in:
 
@@ -41,16 +42,21 @@ Die dynamischen Mäher-Logik-Settings werden jetzt über die vorgesehenen Topics
 
 ### Mäh-Lastregelung
 
-Der Mäh-Lastfaktor bleibt als eigener Settings-Bereich erhalten:
+Der Mäh-Lastfaktor ist kein eigener Settings-Hauptbereich mehr. Die App filtert die `mow_load_*`-Einträge aus `settings/mower_logic/json` heraus und zeigt sie im Abschnitt **Mäh-Lastregelung** an.
 
-- `settings/mow_load_factor/json`
-- `settings/mow_load_factor/set/session/json`
-- `settings/mow_load_factor/set/persistent/json`
-- `settings/mow_load_factor/set/renew/json`
+Schreiben und Renew laufen über:
+
+- `settings/mower_logic/json`
+- `settings/mower_logic/set/session/json`
+- `settings/mower_logic/set/persistent/json`
+- `settings/mower_logic/set/renew/json`
+- `settings/mower_logic/validation/json`
+
+Auf `settings/mow_load_factor/...` wird nicht mehr abonniert. Alte retained Werte werden damit nicht mehr als dritter Settings-Bereich angezeigt.
 
 ## Robot State
 
-Die App verarbeitet zusätzlich die laufenden Lastfaktor-Zustandswerte aus `robot_state/json`:
+Die App verarbeitet die laufenden Lastfaktor-Zustandswerte aus `robot_state/json`:
 
 - `load_factor_computed`
 - `load_factor_effective`

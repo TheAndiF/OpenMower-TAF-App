@@ -265,15 +265,15 @@ class MowLoadFactorSettingsController extends GetxController {
     lastStatusOk.value = null;
     lastRemarks.clear();
     lastStatus.value = 'Mäh-Lastregelungs-Status wird neu angefordert ...';
-    lastTopic.value = 'settings/mow_load_factor/set/renew/json';
+    lastTopic.value = 'settings/mower_logic/set/renew/json';
     lastUpdated.value = DateTime.now();
     _armStatusResponseTimeout(
-      'Keine Mäh-Lastregelungs-Antwort empfangen. Bitte MQTT-Topic settings/mow_load_factor/json und Backend-Rückmeldung prüfen.',
+      'Keine Mäh-Lastregelungs-Antwort empfangen. Bitte MQTT-Topic settings/mower_logic/json und Backend-Rückmeldung prüfen.',
     );
     Get.find<MqttConnection>().requestMowLoadFactorSettings();
   }
 
-  void setStatusPayload(Map<String, dynamic> payload, {String topic = 'settings/mow_load_factor/json'}) {
+  void setStatusPayload(Map<String, dynamic> payload, {String topic = 'settings/mower_logic/json'}) {
     final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
     final rawSettings = root['settings'];
     if (rawSettings is! Map) {
@@ -287,8 +287,9 @@ class MowLoadFactorSettingsController extends GetxController {
 
     final next = <String, Map<String, dynamic>>{};
     rawSettings.forEach((key, value) {
-      if (value is Map) {
-        next[key.toString()] = Map<String, dynamic>.from(value);
+      final settingKey = key.toString();
+      if (value is Map && _isMowLoadFactorSetting(settingKey, value)) {
+        next[settingKey] = Map<String, dynamic>.from(value);
       }
     });
 
@@ -318,7 +319,22 @@ class MowLoadFactorSettingsController extends GetxController {
     lastUpdated.value = DateTime.now();
   }
 
-  void setValidation(Map<String, dynamic> payload, {String topic = 'settings/mow_load_factor/validation/json'}) {
+  bool _isMowLoadFactorSetting(String key, dynamic value) {
+    if (key.startsWith('mow_load_') || key.startsWith('load_factor_')) {
+      return true;
+    }
+    if (value is Map) {
+      final group = value['group']?.toString().toLowerCase() ?? '';
+      return group.contains('lastregelung') ||
+          group.contains('load_factor') ||
+          group.contains('load factor') ||
+          group.contains('mowing_load_control') ||
+          group == 'mow_load_factor';
+    }
+    return false;
+  }
+
+  void setValidation(Map<String, dynamic> payload, {String topic = 'settings/mower_logic/validation/json'}) {
     final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
     final valid = _boolOrNull(root['valid']);
     final mode = _text(root['mode'] ?? root['scope']);
@@ -439,7 +455,7 @@ class MowLoadFactorSettingsController extends GetxController {
     _syncWaitingState();
     lastStatusOk.value = null;
     lastStatus.value = 'Session-Änderungen werden gesendet ...';
-    lastTopic.value = 'settings/mow_load_factor/set/session/json';
+    lastTopic.value = 'settings/mower_logic/set/session/json';
     lastUpdated.value = DateTime.now();
     _armActionResponseTimeout(
       'Keine Backend-Bestätigung für die Session-Änderung empfangen. Bitte Validation-Topic prüfen.',
@@ -456,7 +472,7 @@ class MowLoadFactorSettingsController extends GetxController {
     _syncWaitingState();
     lastStatusOk.value = null;
     lastStatus.value = 'Dauerhafte Einstellungen werden gespeichert ...';
-    lastTopic.value = 'settings/mow_load_factor/set/persistent/json';
+    lastTopic.value = 'settings/mower_logic/set/persistent/json';
     lastUpdated.value = DateTime.now();
     _armActionResponseTimeout(
       'Keine Backend-Bestätigung für das dauerhafte Speichern empfangen. Bitte Validation-Topic prüfen.',

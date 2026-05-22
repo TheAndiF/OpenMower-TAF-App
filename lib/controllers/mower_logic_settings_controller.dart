@@ -285,8 +285,9 @@ class MowerLogicSettingsController extends GetxController {
 
     final next = <String, Map<String, dynamic>>{};
     rawSettings.forEach((key, value) {
-      if (value is Map) {
-        next[key.toString()] = Map<String, dynamic>.from(value);
+      final settingKey = key.toString();
+      if (value is Map && !_isMowLoadFactorSetting(settingKey, value)) {
+        next[settingKey] = Map<String, dynamic>.from(value);
       }
     });
 
@@ -314,6 +315,21 @@ class MowerLogicSettingsController extends GetxController {
     }
     lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
+  }
+
+  bool _isMowLoadFactorSetting(String key, dynamic value) {
+    if (key.startsWith('mow_load_') || key.startsWith('load_factor_')) {
+      return true;
+    }
+    if (value is Map) {
+      final group = value['group']?.toString().toLowerCase() ?? '';
+      return group.contains('lastregelung') ||
+          group.contains('load_factor') ||
+          group.contains('load factor') ||
+          group.contains('mowing_load_control') ||
+          group == 'mow_load_factor';
+    }
+    return false;
   }
 
   void setValidation(Map<String, dynamic> payload, {String topic = 'settings/mower_logic/validation/json'}) {
