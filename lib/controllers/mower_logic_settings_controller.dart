@@ -9,7 +9,9 @@ class MowerLogicSettingsController extends GetxController {
   final statusPayload = <String, dynamic>{}.obs;
   final settings = <String, Map<String, dynamic>>{}.obs;
   final draftValues = <String, dynamic>{}.obs;
+  final groupDraftValues = <String, String>{}.obs;
   final dirtyKeys = <String>{}.obs;
+  final dirtyGroupKeys = <String>{}.obs;
   final editorRevision = 0.obs;
 
   final lastRemarks = <String>[].obs;
@@ -23,6 +25,8 @@ class MowerLogicSettingsController extends GetxController {
 
   Timer? _statusResponseTimeout;
   Timer? _actionResponseTimeout;
+  Set<String> _pendingValueKeys = <String>{};
+  Set<String> _pendingGroupKeys = <String>{};
   int _statusResponseWaitGeneration = 0;
   int _actionResponseWaitGeneration = 0;
 
@@ -30,7 +34,7 @@ class MowerLogicSettingsController extends GetxController {
   int get settingCount => settings.length;
   int get differenceCount => settings.values.where((setting) => _bool(setting['different'])).length;
   int get restartRequiredCount => settings.values.where((setting) => _bool(setting['restart_required'])).length;
-  int get dirtyCount => dirtyKeys.length;
+  int get dirtyCount => {...dirtyKeys, ...dirtyGroupKeys}.length;
 
   String get rawStatusJson {
     if (statusPayload.isEmpty) {
@@ -56,13 +60,18 @@ class MowerLogicSettingsController extends GetxController {
     return entries;
   }
 
-  int dirtyCountForGroup(String group) => settingsForGroup(group).where((entry) => dirtyKeys.contains(entry.key)).length;
+  int dirtyCountForGroup(String group) => settingsForGroup(group)
+      .where((entry) => dirtyKeys.contains(entry.key) || dirtyGroupKeys.contains(entry.key))
+      .length;
 
   int differenceCountForGroup(String group) => settingsForGroup(group).where((entry) => _bool(entry.value['different'])).length;
 
   int sessionSupportedDirtyCountForGroup(String group) => settingsForGroup(group)
       .where((entry) => dirtyKeys.contains(entry.key) && _bool(entry.value['session_apply_supported']))
       .length;
+
+  int metadataDirtyCountForGroup(String group) =>
+      settingsForGroup(group).where((entry) => dirtyGroupKeys.contains(entry.key)).length;
 
   String groupLabel(String group) {
     switch (group) {
@@ -299,9 +308,14 @@ class MowerLogicSettingsController extends GetxController {
       if (!dirtyKeys.contains(entry.key)) {
         draftValues[entry.key] = _seedValue(entry.value);
       }
+      if (!dirtyGroupKeys.contains(entry.key)) {
+        groupDraftValues[entry.key] = _groupSeed(entry.value);
+      }
     }
     draftValues.removeWhere((key, value) => !settings.containsKey(key));
+    groupDraftValues.removeWhere((key, value) => !settings.containsKey(key));
     dirtyKeys.removeWhere((key) => !settings.containsKey(key));
+    dirtyGroupKeys.removeWhere((key) => !settings.containsKey(key));
     // TextFormFields receive a fresh initial value only after backend refreshes.
     // The revision deliberately does not change while the user is typing.
     editorRevision.value++;
@@ -350,8 +364,14 @@ class MowerLogicSettingsController extends GetxController {
     actionInProgress.value = false;
     _syncWaitingState();
 
-    for (final key in accepted) {
+    final keysToClear = accepted.isNotEmpty || valid != true ? accepted : {..._pendingValueKeys, ..._pendingGroupKeys}.toList();
+    for (final key in keysToClear) {
       dirtyKeys.remove(key);
+      dirtyGroupKeys.remove(key);
+    }
+    if (valid == true || valid == false) {
+      _pendingValueKeys = <String>{};
+      _pendingGroupKeys = <String>{};
     }
 
     if (valid == true) {
@@ -433,12 +453,24 @@ class MowerLogicSettingsController extends GetxController {
     _updateDirtyState(key, setting);
   }
 
+  void updateDraftGroup(String key, Map<String, dynamic> setting, String rawValue) {
+    groupDraftValues[key] = rawValue.trim();
+    _updateGroupDirtyState(key, setting);
+  }
+
+  String groupDraftText(String key, Map<String, dynamic> setting) =>
+      groupDraftValues[key] ?? _groupSeed(setting);
+
+  String groupOriginalText(Map<String, dynamic> setting) => _groupSeed(setting);
+
   bool isString(Map<String, dynamic> setting) => typeFor(setting) == 'string';
 
   void resetGroupDrafts(String group) {
     for (final entry in settingsForGroup(group)) {
       draftValues[entry.key] = _seedValue(entry.value);
+      groupDraftValues[entry.key] = _groupSeed(entry.value);
       dirtyKeys.remove(entry.key);
+      dirtyGroupKeys.remove(entry.key);
     }
     editorRevision.value++;
     setInfo('Entwürfe in „${groupLabel(group)}“ wurden zurückgesetzt.', topic: 'local/reset');
@@ -458,6 +490,7 @@ class MowerLogicSettingsController extends GetxController {
     _armActionResponseTimeout(
       'Keine Backend-Bestätigung für die Session-Änderung empfangen. Bitte Validation-Topic prüfen.',
     );
+    _rememberPendingAction(payload, sessionOnly: true);
     Get.find<MqttConnection>().publishMowerLogicSessionSettings(payload);
   }
 
@@ -475,7 +508,28 @@ class MowerLogicSettingsController extends GetxController {
     _armActionResponseTimeout(
       'Keine Backend-Bestätigung für das dauerhafte Speichern empfangen. Bitte Validation-Topic prüfen.',
     );
+    _rememberPendingAction(payload, sessionOnly: false);
     Get.find<MqttConnection>().publishMowerLogicPersistentSettings(payload);
+  }
+
+  void _rememberPendingAction(Map<String, dynamic> payload, {required bool sessionOnly}) {
+    final valueKeys = <String>{};
+    final groupKeys = <String>{};
+    payload.forEach((key, value) {
+      final settingKey = key.toString();
+      if (value is Map) {
+        if (value.containsKey('value')) {
+          valueKeys.add(settingKey);
+        }
+        if (!sessionOnly && value.containsKey('group')) {
+          groupKeys.add(settingKey);
+        }
+      } else {
+        valueKeys.add(settingKey);
+      }
+    });
+    _pendingValueKeys = valueKeys;
+    _pendingGroupKeys = groupKeys;
   }
 
   Map<String, dynamic>? _payloadForGroup(String group, {required bool sessionOnly}) {
@@ -483,18 +537,38 @@ class MowerLogicSettingsController extends GetxController {
     for (final entry in settingsForGroup(group)) {
       final key = entry.key;
       final setting = entry.value;
-      if (!dirtyKeys.contains(key)) {
+      final valueDirty = dirtyKeys.contains(key);
+      final groupDirty = dirtyGroupKeys.contains(key);
+      if (!valueDirty && (!groupDirty || sessionOnly)) {
         continue;
       }
       if (sessionOnly && !_bool(setting['session_apply_supported'])) {
         continue;
       }
-      final value = _normalizedDraftValue(key, setting);
-      if (value == _invalidValue) {
-        setError('Der Wert für „${labelFor(key, setting)}“ ist nicht gültig.', topic: 'local/validation');
-        return null;
+
+      dynamic value;
+      if (valueDirty) {
+        value = _normalizedDraftValue(key, setting);
+        if (value == _invalidValue) {
+          setError('Der Wert für „${labelFor(key, setting)}“ ist nicht gültig.', topic: 'local/validation');
+          return null;
+        }
       }
-      payload[key] = value;
+
+      if (groupDirty && !sessionOnly) {
+        final groupValue = _normalizedGroupDraftValue(key, setting);
+        if (groupValue == null) {
+          setError('Die Gruppe für „${labelFor(key, setting)}“ darf nicht leer sein.', topic: 'local/validation');
+          return null;
+        }
+        final metadataPayload = <String, dynamic>{'group': groupValue};
+        if (valueDirty) {
+          metadataPayload['value'] = value;
+        }
+        payload[key] = metadataPayload;
+      } else if (valueDirty) {
+        payload[key] = value;
+      }
     }
 
     if (payload.isEmpty) {
@@ -551,6 +625,23 @@ class MowerLogicSettingsController extends GetxController {
       dirtyKeys.remove(key);
     }
   }
+
+  void _updateGroupDirtyState(String key, Map<String, dynamic> setting) {
+    final normalized = _normalizedGroupDraftValue(key, setting);
+    final seed = _groupSeed(setting);
+    if (normalized == null || normalized != seed) {
+      dirtyGroupKeys.add(key);
+    } else {
+      dirtyGroupKeys.remove(key);
+    }
+  }
+
+  String? _normalizedGroupDraftValue(String key, Map<String, dynamic> setting) {
+    final value = (groupDraftValues[key] ?? _groupSeed(setting)).trim();
+    return value.isEmpty ? null : value;
+  }
+
+  String _groupSeed(Map<String, dynamic> setting) => _text(setting['group'], fallback: 'general');
 
   dynamic _seedValue(Map<String, dynamic> setting) {
     if (setting.containsKey('active')) {

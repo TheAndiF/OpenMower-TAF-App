@@ -191,7 +191,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
             subtitle: const Text(
-              'Blendet die Unterseite „Advanced Options“ im linken Menü ein. Ausgeschaltet bleibt die Seite verborgen.',
+              'Blendet Advanced Options ein und zeigt in den Mäher-Logik-Karten editierbare JSON-Metadaten wie „group“. Die Gruppierung wird erst nach Speichern und Backend-Rückmeldung neu aufgebaut.',
             ),
             value: settingsController.expertModeEnabled.value,
             onChanged: settingsController.setExpertModeEnabled,
@@ -232,6 +232,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     final dirty = controller.dirtyCountForGroup(group);
     final differences = controller.differenceCountForGroup(group);
     final liveDirty = controller.sessionSupportedDirtyCountForGroup(group);
+    final metadataDirty = controller.metadataDirtyCountForGroup(group);
     return Card(
       margin: EdgeInsets.zero,
       child: Theme(
@@ -253,6 +254,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
               Text('${groupEntries.length} Werte', style: Theme.of(context).textTheme.bodyMedium),
               if (differences > 0) Text('$differences aktiv/gespeichert unterschiedlich', style: Theme.of(context).textTheme.bodyMedium),
               if (dirty > 0) Text('$dirty lokale Änderung(en)', style: Theme.of(context).textTheme.bodyMedium),
+              if (metadataDirty > 0) Text('$metadataDirty Gruppen-Metadaten', style: Theme.of(context).textTheme.bodyMedium),
             ],
           ),
           children: [
@@ -281,7 +283,9 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
   Widget _buildSettingCard(BuildContext context, String key, Map<String, dynamic> setting) {
     final color = Theme.of(context).primaryColor;
     final different = _bool(setting['different']);
-    final dirty = controller.dirtyKeys.contains(key);
+    final valueDirty = controller.dirtyKeys.contains(key);
+    final groupDirty = controller.dirtyGroupKeys.contains(key);
+    final dirty = valueDirty || groupDirty;
     final sessionSupported = _bool(setting['session_apply_supported']);
     final restartRequired = _bool(setting['restart_required']);
     final description = controller.descriptionFor(setting);
@@ -310,11 +314,22 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
-                  if (dirty) _smallBadge(context, 'Geändert', Icons.edit_outlined, color),
+                  if (valueDirty) _smallBadge(context, 'Wert geändert', Icons.edit_outlined, color),
+                  if (groupDirty) ...[
+                    const SizedBox(width: 6),
+                    _smallBadge(context, 'Gruppe geändert', Icons.category_outlined, color),
+                  ],
                 ],
               ),
               const SizedBox(height: 2),
               Text(key, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor)),
+              if (settingsController.expertModeEnabled.value) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'JSON group: ${controller.groupOriginalText(setting)}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+                ),
+              ],
               if (description.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text(description, style: Theme.of(context).textTheme.bodySmall),
@@ -337,7 +352,16 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
             ],
           );
 
-          final editor = _buildEditor(context, key, setting, unit: unit);
+          final editor = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildEditor(context, key, setting, unit: unit),
+              if (settingsController.expertModeEnabled.value) ...[
+                const SizedBox(height: 10),
+                _buildGroupMetadataEditor(context, key, setting),
+              ],
+            ],
+          );
           if (isMobile) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -358,6 +382,24 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
           );
         },
       ),
+    );
+  }
+
+  Widget _buildGroupMetadataEditor(BuildContext context, String key, Map<String, dynamic> setting) {
+    final groupDirty = controller.dirtyGroupKeys.contains(key);
+    return TextFormField(
+      key: ValueKey('mower-setting-group-$key-${controller.editorRevision.value}'),
+      initialValue: controller.groupDraftText(key, setting),
+      textInputAction: TextInputAction.done,
+      decoration: InputDecoration(
+        border: const OutlineInputBorder(),
+        labelText: 'JSON-Feld „group“',
+        helperText: groupDirty
+            ? 'Wird erst beim dauerhaften Speichern ans Backend gesendet'
+            : 'Expertenmodus: Backend-Metadatum, keine lokale Neusortierung während der Eingabe',
+        prefixIcon: const Icon(Icons.category_outlined),
+      ),
+      onChanged: (value) => controller.updateDraftGroup(key, setting, value),
     );
   }
 
