@@ -546,11 +546,23 @@ class MowerLogicSettingsController extends GetxController {
           setError('Die Gruppe für „${labelFor(key, setting)}“ darf nicht leer sein.', topic: 'local/validation');
           return null;
         }
-        final metadataPayload = <String, dynamic>{'group': groupValue};
-        if (valueDirty) {
-          metadataPayload['value'] = value;
+
+        // The backend validates metadata writes with the same schema as value
+        // writes. Therefore a group-only edit must still carry the current
+        // value in its real JSON type; otherwise validators reject entries like
+        // undock_distance/fixed_angle because `value` is missing or typed as
+        // text. The frontend still does not mark the value dirty or reorder the
+        // UI while the group is edited.
+        final valueForMetadata = valueDirty ? value : _normalizedSettingValue(_seedValue(setting), setting);
+        if (valueForMetadata == _invalidValue) {
+          setError('Der aktuelle Wert für „${labelFor(key, setting)}“ kann nicht gültig gespeichert werden.', topic: 'local/validation');
+          return null;
         }
-        payload[key] = metadataPayload;
+
+        payload[key] = <String, dynamic>{
+          'value': valueForMetadata,
+          'group': groupValue,
+        };
       } else if (valueDirty) {
         payload[key] = value;
       }
@@ -569,7 +581,10 @@ class MowerLogicSettingsController extends GetxController {
   }
 
   dynamic _normalizedDraftValue(String key, Map<String, dynamic> setting) {
-    final raw = draftValues[key];
+    return _normalizedSettingValue(draftValues[key], setting);
+  }
+
+  dynamic _normalizedSettingValue(dynamic raw, Map<String, dynamic> setting) {
     final type = typeFor(setting);
     dynamic value;
     switch (type) {

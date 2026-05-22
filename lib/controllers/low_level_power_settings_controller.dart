@@ -311,11 +311,19 @@ class LowLevelPowerSettingsController extends GetxController {
           setError('Die Gruppe für „${labelFor(key)}“ darf nicht leer sein.', topic: 'local/validation');
           return null;
         }
-        final metadataPayload = <String, dynamic>{'group': groupValue};
-        if (valueDirty) {
-          metadataPayload['value'] = parsed;
+
+        // Metadata writes are sent as full setting updates so the backend can
+        // validate the unchanged value together with the changed group.
+        final valueForMetadata = parsed ?? activeValues[key] ?? _double(settings[key]?['persistent']) ?? _double(settings[key]?['active']);
+        if (valueForMetadata == null) {
+          setError('Der aktuelle Wert für „${labelFor(key)}“ kann nicht gültig gespeichert werden.', topic: 'local/validation');
+          return null;
         }
-        payload[key] = metadataPayload;
+
+        payload[key] = <String, dynamic>{
+          'value': valueForMetadata,
+          'group': groupValue,
+        };
       } else if (valueDirty) {
         payload[key] = parsed;
       }
