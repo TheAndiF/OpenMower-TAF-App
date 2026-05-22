@@ -52,6 +52,7 @@ class MqttConnection  {
   final LowLevelPowerSettingsController lowLevelPowerSettingsController = Get.find();
 
   final RegExp exp = RegExp(r'sensors/(.*)/bson');
+  final RegExp expJson = RegExp(r'sensors/(.*)/json');
 
   final client = mqttclient.get();
 
@@ -125,15 +126,25 @@ class MqttConnection  {
   static const String mapOverlayLegacyJsonTopic = "map_overlay/json";
   static const String mapOverlayLegacyBsonTopic = "map_overlay/bson";
 
+  static const String robotStateJsonTopic = "robot_state/json";
+  static const String robotStateBsonTopic = "robot_state/bson";
+  static const String robotPoseJsonTopic = "robot_pose/json";
+  static const String sensorsPoseJsonTopic = "sensors/pose/json";
+  static const String sensorsStatusJsonTopic = "sensors/status/json";
+
   List<int>? _payloadBytes(MqttPublishMessage payload) {
     return payload.payload.message?.toList(growable: false);
   }
 
-  Map<String, dynamic>? _decodeJsonMap(List<int>? bytes) {
+  dynamic _decodeJsonValue(List<int>? bytes) {
     if (bytes == null || bytes.isEmpty) {
       return null;
     }
-    final decoded = jsonDecode(utf8.decode(bytes));
+    return jsonDecode(utf8.decode(bytes));
+  }
+
+  Map<String, dynamic>? _decodeJsonMap(List<int>? bytes) {
+    final decoded = _decodeJsonValue(bytes);
     if (decoded is Map) {
       return Map<String, dynamic>.from(decoded);
     }
@@ -224,15 +235,41 @@ class MqttConnection  {
     try {
       final map = _decodeMap(payload);
       if (map != null) {
-        timetableController.setRobotState(map, topic: "robot_state/json");
+        timetableController.setRobotState(map, topic: robotStateJsonTopic);
         final raw = map["d"] is Map ? Map<String, dynamic>.from(map["d"] as Map) : map;
         _updateRobotStateControllerFromRaw(raw);
       }
     } catch (e) {
-      timetableController.setError("Robot-State konnte nicht gelesen werden: $e", topic: "robot_state/json");
+      timetableController.setError("Robot-State konnte nicht gelesen werden: $e", topic: robotStateJsonTopic);
     }
   }
 
+  void parseRobotPoseJson(MqttPublishMessage payload, {required String topic}) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) {
+        return;
+      }
+      final root = map["d"] is Map ? Map<String, dynamic>.from(map["d"] as Map) : map;
+      final pose = root["pose"] is Map ? Map<String, dynamic>.from(root["pose"] as Map) : root;
+      _updateRobotPoseFromRaw(pose);
+    } catch (e) {
+      debugPrint("Roboter-Pose konnte nicht gelesen werden ($topic): $e");
+    }
+  }
+
+  void parseSensorsStatusJson(MqttPublishMessage payload) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) {
+        return;
+      }
+      final raw = map["d"] is Map ? Map<String, dynamic>.from(map["d"] as Map) : map;
+      _updateRobotStateControllerFromRaw(raw);
+    } catch (e) {
+      debugPrint("Sensor-Status konnte nicht gelesen werden ($sensorsStatusJsonTopic): $e");
+    }
+  }
 
   bool _readBoolValue(dynamic value, {bool fallback = false}) {
     if (value is bool) {
@@ -246,6 +283,23 @@ class MqttConnection  {
       return fallback;
     }
     return text == 'true' || text == '1' || text == 'yes' || text == 'on';
+  }
+
+  double _readDoubleValue(dynamic value, {required double fallback}) {
+    if (value is num) {
+      return value.toDouble();
+    }
+    return double.tryParse(value?.toString() ?? "") ?? fallback;
+  }
+
+  int _readIntValue(dynamic value, {required int fallback}) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    return int.tryParse(value?.toString() ?? "") ?? fallback;
   }
 
   dynamic _firstExistingValue(Map<String, dynamic> raw, List<String> keys) {
@@ -288,21 +342,68 @@ class MqttConnection  {
     return false;
   }
 
+  void _updateRobotPoseFromRaw(Map<String, dynamic> pose) {
+    final state = robotStateController.robotState.value;
+    state.isConnected = true;
+
+    if (pose.containsKey("x")) {
+      state.posX = _readDoubleValue(pose["x"], fallback: state.posX);
+    }
+    if (pose.containsKey("y")) {
+      state.posY = -_readDoubleValue(pose["y"], fallback: -state.posY);
+    }
+    if (pose.containsKey("heading")) {
+      state.heading = _readDoubleValue(pose["heading"], fallback: state.heading);
+    }
+    if (pose.containsKey("pos_accuracy")) {
+      state.posAccuracy = _readDoubleValue(pose["pos_accuracy"], fallback: state.posAccuracy);
+    }
+    if (pose.containsKey("heading_accuracy")) {
+      state.headingAccuracy = _readDoubleValue(pose["heading_accuracy"], fallback: state.headingAccuracy);
+    }
+    if (pose.containsKey("heading_valid")) {
+      state.headingValid = _readBoolValue(pose["heading_valid"], fallback: state.headingValid);
+    }
+
+    robotStateController.robotState.refresh();
+  }
+
   void _updateRobotStateControllerFromRaw(Map<String, dynamic> raw) {
     final state = robotStateController.robotState.value;
     state.isConnected = true;
+
+    if (raw["pose"] is Map) {
+      _updateRobotPoseFromRaw(Map<String, dynamic>.from(raw["pose"] as Map));
+    } else if (raw.containsKey("x") || raw.containsKey("y") || raw.containsKey("heading")) {
+      _updateRobotPoseFromRaw(raw);
+    }
+
+    if (raw.containsKey("battery_percentage")) {
+      state.batteryPercent = _readDoubleValue(raw["battery_percentage"], fallback: state.batteryPercent);
+    }
+    if (raw.containsKey("gps_percentage")) {
+      state.gpsPercent = _readDoubleValue(raw["gps_percentage"], fallback: state.gpsPercent);
+    }
+    if (raw.containsKey("emergency")) {
+      state.isEmergency = _readBoolValue(raw["emergency"], fallback: state.isEmergency);
+    }
+    if (raw.containsKey("is_charging")) {
+      state.isCharging = _readBoolValue(raw["is_charging"], fallback: state.isCharging);
+    }
+    if (raw.containsKey("rain_detected")) {
+      state.rainDetected = _readBoolValue(raw["rain_detected"], fallback: state.rainDetected);
+    }
     if (raw.containsKey("current_area_id")) {
       state.currentAreaId = raw["current_area_id"]?.toString() ?? "";
     }
     if (raw.containsKey("current_area")) {
-      final value = raw["current_area"];
-      if (value is int) {
-        state.currentArea = value;
-      } else if (value is num) {
-        state.currentArea = value.toInt();
-      } else {
-        state.currentArea = int.tryParse(value?.toString() ?? "") ?? state.currentArea;
-      }
+      state.currentArea = _readIntValue(raw["current_area"], fallback: state.currentArea);
+    }
+    if (raw.containsKey("current_path")) {
+      state.currentPath = _readIntValue(raw["current_path"], fallback: state.currentPath);
+    }
+    if (raw.containsKey("current_path_index")) {
+      state.currentPathIndex = _readIntValue(raw["current_path_index"], fallback: state.currentPathIndex);
     }
     if (raw.containsKey("current_state")) {
       state.currentState = raw["current_state"]?.toString() ?? state.currentState;
@@ -311,24 +412,76 @@ class MqttConnection  {
       state.currentSubState = raw["current_sub_state"]?.toString() ?? state.currentSubState;
     }
     if (raw.containsKey("load_factor_computed")) {
-      final value = raw["load_factor_computed"];
-      if (value is num) {
-        state.loadFactorComputed = value.toDouble();
-      } else {
-        state.loadFactorComputed = double.tryParse(value?.toString() ?? "") ?? state.loadFactorComputed;
-      }
+      state.loadFactorComputed = _readDoubleValue(raw["load_factor_computed"], fallback: state.loadFactorComputed);
     }
     if (raw.containsKey("load_factor_effective")) {
-      final value = raw["load_factor_effective"];
-      if (value is num) {
-        state.loadFactorEffective = value.toDouble();
-      } else {
-        state.loadFactorEffective = double.tryParse(value?.toString() ?? "") ?? state.loadFactorEffective;
-      }
+      state.loadFactorEffective = _readDoubleValue(raw["load_factor_effective"], fallback: state.loadFactorEffective);
     }
     state.isAutoMow = _readAutoMowIndicator(raw, fallback: state.isAutoMow);
 
     robotStateController.robotState.refresh();
+  }
+
+  void parseSensorJsonData(String sensorId, MqttPublishMessage payload) {
+    try {
+      final decoded = _decodeJsonValue(_payloadBytes(payload));
+      if (decoded == null) {
+        return;
+      }
+
+      final value = decoded is Map
+          ? (decoded["d"] ?? decoded["value"] ?? decoded[sensorId] ?? decoded)
+          : decoded;
+      final state = robotStateController.robotState.value;
+      state.isConnected = true;
+
+      switch (sensorId) {
+        case "battery":
+        case "battery_percentage":
+          state.batteryPercent = _readDoubleValue(value, fallback: state.batteryPercent);
+          break;
+        case "gps":
+        case "gps_percentage":
+          state.gpsPercent = _readDoubleValue(value, fallback: state.gpsPercent);
+          break;
+        case "emergency":
+          state.isEmergency = _readBoolValue(value, fallback: state.isEmergency);
+          break;
+        case "charging":
+        case "is_charging":
+          state.isCharging = _readBoolValue(value, fallback: state.isCharging);
+          break;
+        case "rain":
+        case "rain_detected":
+          state.rainDetected = _readBoolValue(value, fallback: state.rainDetected);
+          break;
+        case "pos_accuracy":
+          state.posAccuracy = _readDoubleValue(value, fallback: state.posAccuracy);
+          break;
+        case "heading_accuracy":
+          state.headingAccuracy = _readDoubleValue(value, fallback: state.headingAccuracy);
+          break;
+        case "heading_valid":
+          state.headingValid = _readBoolValue(value, fallback: state.headingValid);
+          break;
+        case "x":
+          state.posX = _readDoubleValue(value, fallback: state.posX);
+          break;
+        case "y":
+          state.posY = -_readDoubleValue(value, fallback: -state.posY);
+          break;
+        case "heading":
+          state.heading = _readDoubleValue(value, fallback: state.heading);
+          break;
+        default:
+          debugPrint("got unknown JSON sensor on topic: sensors/$sensorId/json");
+          return;
+      }
+
+      robotStateController.robotState.refresh();
+    } catch (e) {
+      debugPrint("JSON-Sensorwert konnte nicht gelesen werden (sensors/$sensorId/json): $e");
+    }
   }
 
   void parseTimeStatus(MqttPublishMessage payload, {bool bson = false}) {
@@ -1234,11 +1387,20 @@ class MqttConnection  {
               parseMapOverlayMessage(payload, bson: true, topic: msg.topic!);
             }
             break;
-            case "robot_state/json": {
+            case robotStateJsonTopic: {
               parseRobotStateJson(payload);
             }
             break;
-            case "robot_state/bson": {
+            case robotPoseJsonTopic:
+            case sensorsPoseJsonTopic: {
+              parseRobotPoseJson(payload, topic: msg.topic!);
+            }
+            break;
+            case sensorsStatusJsonTopic: {
+              parseSensorsStatusJson(payload);
+            }
+            break;
+            case robotStateBsonTopic: {
               // Got the robot state
               final bytes = payload.payload.message?.toList(growable: false);
               if(bytes == null || bytes.isBlank == true) {
@@ -1271,7 +1433,12 @@ class MqttConnection  {
                   final object = BsonCodec.deserialize(BsonBinary.from(bytes));
                   parseSensorData(match[1], object);
                 } else {
-                  debugPrint("got unknown message on topic: ${msg.topic}");
+                  final jsonMatch = expJson.firstMatch(msg.topic!);
+                  if (jsonMatch != null) {
+                    parseSensorJsonData(jsonMatch[1]!, payload);
+                  } else {
+                    debugPrint("got unknown message on topic: ${msg.topic}");
+                  }
                 }
               }
             }
@@ -1296,9 +1463,13 @@ class MqttConnection  {
     client.subscribe(mapOverlayLegacyJsonTopic, MqttQos.atMostOnce);
     client.subscribe(mapOverlayLegacyBsonTopic, MqttQos.atMostOnce);
     client.subscribe("sensor_infos/bson", MqttQos.atLeastOnce);
-    client.subscribe("robot_state/json", MqttQos.atMostOnce);
-    client.subscribe("robot_state/bson", MqttQos.atMostOnce);
+    client.subscribe(robotStateJsonTopic, MqttQos.atMostOnce);
+    client.subscribe(robotStateBsonTopic, MqttQos.atMostOnce);
+    client.subscribe(robotPoseJsonTopic, MqttQos.atMostOnce);
+    client.subscribe(sensorsPoseJsonTopic, MqttQos.atMostOnce);
+    client.subscribe(sensorsStatusJsonTopic, MqttQos.atMostOnce);
     client.subscribe("sensors/+/bson", MqttQos.atMostOnce);
+    client.subscribe("sensors/+/json", MqttQos.atMostOnce);
     client.subscribe("version", MqttQos.atLeastOnce);
     client.subscribe(timetableTopic, MqttQos.atLeastOnce);
     client.subscribe(timetableBsonTopic, MqttQos.atLeastOnce);

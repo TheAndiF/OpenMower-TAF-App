@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:html' as html;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -1338,8 +1336,13 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
   }
 
   void _copyJsonToClipboard(BuildContext context) {
-    Clipboard.setData(ClipboardData(text: controller.rawStatusJson));
+    _copyTextToClipboard(controller.rawStatusJson);
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Settings-JSON wurde in die Zwischenablage kopiert.')));
+  }
+
+
+  void _copyTextToClipboard(String text) {
+    Clipboard.setData(ClipboardData(text: text));
   }
 
   void _downloadJsonFile() {

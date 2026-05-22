@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:html' as html;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -854,10 +852,15 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
   }
 
   void _copyJsonToClipboard(BuildContext context) {
-    Clipboard.setData(ClipboardData(text: controller.rawJsonController.text));
+    _copyTextToClipboard(controller.rawJsonController.text);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('JSON wurde in die Zwischenablage kopiert.')),
     );
+  }
+
+
+  void _copyTextToClipboard(String text) {
+    Clipboard.setData(ClipboardData(text: text));
   }
 
   void _downloadJsonFile() {
