@@ -679,7 +679,9 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
 
   Widget _buildLowLevelPowerValueCard(BuildContext context, String key) {
     final color = Theme.of(context).primaryColor;
-    final dirty = lowLevelPowerController.dirtyKeys.contains(key);
+    final valueDirty = lowLevelPowerController.dirtyKeys.contains(key);
+    final groupDirty = lowLevelPowerController.dirtyGroupKeys.contains(key);
+    final dirty = valueDirty || groupDirty;
     final unit = lowLevelPowerController.unitFor(key);
     return Container(
       padding: const EdgeInsets.all(14),
@@ -702,11 +704,22 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
-                  if (dirty) _smallBadge(context, 'Geändert', Icons.edit_outlined, color),
+                  if (valueDirty) _smallBadge(context, 'Wert geändert', Icons.edit_outlined, color),
+                  if (groupDirty) ...[
+                    const SizedBox(width: 6),
+                    _smallBadge(context, 'Gruppe geändert', Icons.category_outlined, color),
+                  ],
                 ],
               ),
               const SizedBox(height: 2),
               Text(key, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor)),
+              if (settingsController.expertModeEnabled.value) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'JSON group: ${lowLevelPowerController.groupOriginalText(key)}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+                ),
+              ],
               const SizedBox(height: 8),
               Text(lowLevelPowerController.descriptionFor(key), style: Theme.of(context).textTheme.bodySmall),
               if (lowLevelPowerController.rangeText(key).isNotEmpty) ...[
@@ -722,18 +735,27 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
               ),
             ],
           );
-          final field = TextFormField(
-            key: ValueKey('ll_board_${key}_${lowLevelPowerController.editorRevision.value}'),
-            initialValue: lowLevelPowerController.draftText(key),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,\.\-]'))],
-            onChanged: (value) => lowLevelPowerController.updateDraftText(key, value),
-            decoration: InputDecoration(
-              labelText: 'Neuer Wert',
-              suffixText: unit.isEmpty ? null : unit,
-              border: const OutlineInputBorder(),
-              helperText: 'Wird als JSON-number gesendet.',
-            ),
+          final field = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextFormField(
+                key: ValueKey('ll_board_${key}_${lowLevelPowerController.editorRevision.value}'),
+                initialValue: lowLevelPowerController.draftText(key),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,\.\-]'))],
+                onChanged: (value) => lowLevelPowerController.updateDraftText(key, value),
+                decoration: InputDecoration(
+                  labelText: 'Neuer Wert',
+                  suffixText: unit.isEmpty ? null : unit,
+                  border: const OutlineInputBorder(),
+                  helperText: 'Wird als JSON-number gesendet.',
+                ),
+              ),
+              if (settingsController.expertModeEnabled.value) ...[
+                const SizedBox(height: 10),
+                _buildLowLevelPowerGroupMetadataEditor(context, key),
+              ],
+            ],
           );
           if (isMobile) {
             return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [meta, const SizedBox(height: 12), field]);
@@ -741,6 +763,25 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
           return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 3, child: meta), const SizedBox(width: 16), Expanded(flex: 2, child: field)]);
         },
       ),
+    );
+  }
+
+
+  Widget _buildLowLevelPowerGroupMetadataEditor(BuildContext context, String key) {
+    final groupDirty = lowLevelPowerController.dirtyGroupKeys.contains(key);
+    return TextFormField(
+      key: ValueKey('ll-board-group-$key-${lowLevelPowerController.editorRevision.value}'),
+      initialValue: lowLevelPowerController.groupDraftText(key),
+      textInputAction: TextInputAction.done,
+      decoration: InputDecoration(
+        border: const OutlineInputBorder(),
+        labelText: 'JSON-Feld „group“',
+        helperText: groupDirty
+            ? 'Wird erst beim dauerhaften Speichern ans Backend gesendet'
+            : 'Expertenmodus: keine lokale Neusortierung während der Eingabe',
+        prefixIcon: const Icon(Icons.category_outlined),
+      ),
+      onChanged: (value) => lowLevelPowerController.updateDraftGroup(key, value),
     );
   }
 
@@ -865,6 +906,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     final entries = mowLoadFactorController.settingsForGroup(group);
     final dirty = mowLoadFactorController.dirtyCountForGroup(group);
     final liveDirty = mowLoadFactorController.sessionSupportedDirtyCountForGroup(group);
+    final metadataDirty = mowLoadFactorController.metadataDirtyCountForGroup(group);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -875,9 +917,16 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            mowLoadFactorController.groupLabel(group),
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(color: color, fontWeight: FontWeight.w600),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  mowLoadFactorController.groupLabel(group),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(color: color, fontWeight: FontWeight.w600),
+                ),
+              ),
+              if (metadataDirty > 0) _smallBadge(context, '$metadataDirty Gruppen-Metadaten', Icons.category_outlined, color),
+            ],
           ),
           const SizedBox(height: 10),
           for (var i = 0; i < entries.length; i++) ...[
@@ -893,7 +942,9 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
 
   Widget _buildMowLoadFactorSettingCard(BuildContext context, String key, Map<String, dynamic> setting) {
     final color = Theme.of(context).primaryColor;
-    final dirty = mowLoadFactorController.dirtyKeys.contains(key);
+    final valueDirty = mowLoadFactorController.dirtyKeys.contains(key);
+    final groupDirty = mowLoadFactorController.dirtyGroupKeys.contains(key);
+    final dirty = valueDirty || groupDirty;
     final different = _bool(setting['different']);
     final unit = mowLoadFactorController.unitFor(setting);
     final description = mowLoadFactorController.descriptionFor(setting);
@@ -919,11 +970,22 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
-                  if (dirty) _smallBadge(context, 'Geändert', Icons.edit_outlined, color),
+                  if (valueDirty) _smallBadge(context, 'Wert geändert', Icons.edit_outlined, color),
+                  if (groupDirty) ...[
+                    const SizedBox(width: 6),
+                    _smallBadge(context, 'Gruppe geändert', Icons.category_outlined, color),
+                  ],
                 ],
               ),
               const SizedBox(height: 2),
               Text(key, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor)),
+              if (settingsController.expertModeEnabled.value) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'JSON group: ${mowLoadFactorController.groupOriginalText(setting)}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+                ),
+              ],
               if (description.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text(description, style: Theme.of(context).textTheme.bodySmall),
@@ -943,13 +1005,41 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
               ],
             ],
           );
-          final editor = _buildMowLoadFactorEditor(context, key, setting, unit: unit);
+          final editor = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildMowLoadFactorEditor(context, key, setting, unit: unit),
+              if (settingsController.expertModeEnabled.value) ...[
+                const SizedBox(height: 10),
+                _buildMowLoadFactorGroupMetadataEditor(context, key, setting),
+              ],
+            ],
+          );
           if (isMobile) {
             return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [meta, const SizedBox(height: 12), editor]);
           }
           return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 3, child: meta), const SizedBox(width: 20), Expanded(flex: 2, child: editor)]);
         },
       ),
+    );
+  }
+
+
+  Widget _buildMowLoadFactorGroupMetadataEditor(BuildContext context, String key, Map<String, dynamic> setting) {
+    final groupDirty = mowLoadFactorController.dirtyGroupKeys.contains(key);
+    return TextFormField(
+      key: ValueKey('mow-load-factor-group-$key-${mowLoadFactorController.editorRevision.value}'),
+      initialValue: mowLoadFactorController.groupDraftText(key, setting),
+      textInputAction: TextInputAction.done,
+      decoration: InputDecoration(
+        border: const OutlineInputBorder(),
+        labelText: 'JSON-Feld „group“',
+        helperText: groupDirty
+            ? 'Wird erst beim dauerhaften Speichern ans Backend gesendet'
+            : 'Expertenmodus: keine lokale Neusortierung während der Eingabe',
+        prefixIcon: const Icon(Icons.category_outlined),
+      ),
+      onChanged: (value) => mowLoadFactorController.updateDraftGroup(key, setting, value),
     );
   }
 

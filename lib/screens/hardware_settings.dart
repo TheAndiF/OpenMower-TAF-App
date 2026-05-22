@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/low_level_power_settings_controller.dart';
+import 'package:open_mower_app/controllers/settings_controller.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 
 class HardwareSettingsScreen extends StatefulWidget {
@@ -13,6 +14,7 @@ class HardwareSettingsScreen extends StatefulWidget {
 
 class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
   final LowLevelPowerSettingsController controller = Get.find<LowLevelPowerSettingsController>();
+  final SettingsController settingsController = Get.find<SettingsController>();
   bool _renewSent = false;
 
   @override
@@ -275,7 +277,9 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
 
   Widget _buildValueCard(BuildContext context, String key) {
     final color = Theme.of(context).primaryColor;
-    final dirty = controller.dirtyKeys.contains(key);
+    final valueDirty = controller.dirtyKeys.contains(key);
+    final groupDirty = controller.dirtyGroupKeys.contains(key);
+    final dirty = valueDirty || groupDirty;
     final unit = controller.unitFor(key);
     return Container(
       padding: const EdgeInsets.all(14),
@@ -298,11 +302,22 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
-                  if (dirty) _smallBadge(context, 'Geändert', Icons.edit_outlined, color),
+                  if (valueDirty) _smallBadge(context, 'Wert geändert', Icons.edit_outlined, color),
+                  if (groupDirty) ...[
+                    const SizedBox(width: 6),
+                    _smallBadge(context, 'Gruppe geändert', Icons.category_outlined, color),
+                  ],
                 ],
               ),
               const SizedBox(height: 2),
               Text(key, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor)),
+              if (settingsController.expertModeEnabled.value) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'JSON group: ${controller.groupOriginalText(key)}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+                ),
+              ],
               const SizedBox(height: 8),
               Text(controller.descriptionFor(key), style: Theme.of(context).textTheme.bodySmall),
               if (controller.rangeText(key).isNotEmpty) ...[
@@ -313,18 +328,27 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
               _valueChip(context, label: 'Aktiv', value: _withUnit(controller.activeText(key), unit), emphasis: dirty),
             ],
           );
-          final field = TextFormField(
-            key: ValueKey('ll_board_${key}_${controller.editorRevision.value}'),
-            initialValue: controller.draftText(key),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,\.\-]'))],
-            onChanged: (value) => controller.updateDraftText(key, value),
-            decoration: InputDecoration(
-              labelText: 'Neuer Wert',
-              suffixText: unit.isEmpty ? null : unit,
-              border: const OutlineInputBorder(),
-              helperText: 'Wird als JSON-number gesendet.',
-            ),
+          final field = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextFormField(
+                key: ValueKey('ll_board_${key}_${controller.editorRevision.value}'),
+                initialValue: controller.draftText(key),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,\.\-]'))],
+                onChanged: (value) => controller.updateDraftText(key, value),
+                decoration: InputDecoration(
+                  labelText: 'Neuer Wert',
+                  suffixText: unit.isEmpty ? null : unit,
+                  border: const OutlineInputBorder(),
+                  helperText: 'Wird als JSON-number gesendet.',
+                ),
+              ),
+              if (settingsController.expertModeEnabled.value) ...[
+                const SizedBox(height: 10),
+                _buildGroupMetadataEditor(context, key),
+              ],
+            ],
           );
           if (isMobile) {
             return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [meta, const SizedBox(height: 12), field]);
@@ -332,6 +356,25 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
           return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 3, child: meta), const SizedBox(width: 16), Expanded(flex: 2, child: field)]);
         },
       ),
+    );
+  }
+
+
+  Widget _buildGroupMetadataEditor(BuildContext context, String key) {
+    final groupDirty = controller.dirtyGroupKeys.contains(key);
+    return TextFormField(
+      key: ValueKey('ll-board-group-$key-${controller.editorRevision.value}'),
+      initialValue: controller.groupDraftText(key),
+      textInputAction: TextInputAction.done,
+      decoration: InputDecoration(
+        border: const OutlineInputBorder(),
+        labelText: 'JSON-Feld „group“',
+        helperText: groupDirty
+            ? 'Wird erst beim dauerhaften Speichern ans Backend gesendet'
+            : 'Expertenmodus: keine lokale Neusortierung während der Eingabe',
+        prefixIcon: const Icon(Icons.category_outlined),
+      ),
+      onChanged: (value) => controller.updateDraftGroup(key, value),
     );
   }
 

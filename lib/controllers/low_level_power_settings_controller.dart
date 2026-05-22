@@ -51,7 +51,9 @@ class LowLevelPowerSettingsController extends GetxController {
   final settings = <String, Map<String, dynamic>>{}.obs;
   final activeValues = <String, double>{}.obs;
   final draftTexts = <String, String>{}.obs;
+  final groupDraftTexts = <String, String>{}.obs;
   final dirtyKeys = <String>{}.obs;
+  final dirtyGroupKeys = <String>{}.obs;
   final editorRevision = 0.obs;
 
   final lastStatus = ''.obs;
@@ -65,7 +67,7 @@ class LowLevelPowerSettingsController extends GetxController {
   int _responseWaitGeneration = 0;
 
   bool get hasData => activeValues.isNotEmpty;
-  int get dirtyCount => dirtyKeys.length;
+  int get dirtyCount => {...dirtyKeys, ...dirtyGroupKeys}.length;
 
   String get rawStatusJson {
     if (statusPayload.isEmpty) {
@@ -111,7 +113,7 @@ class LowLevelPowerSettingsController extends GetxController {
         final value = _double(root[key]);
         if (value != null) {
           parsed[key] = value;
-          nextSettings[key] = <String, dynamic>{'active': value};
+          nextSettings[key] = <String, dynamic>{'active': value, 'group': 'll_board'};
         }
       }
     }
@@ -145,9 +147,14 @@ class LowLevelPowerSettingsController extends GetxController {
       } else {
         draftTexts[key] = _displayNumber(active);
       }
+      if (!dirtyGroupKeys.contains(key)) {
+        groupDraftTexts[key] = groupOriginalText(key);
+      }
     }
     draftTexts.removeWhere((key, value) => !orderedKeys.contains(key));
+    groupDraftTexts.removeWhere((key, value) => !orderedKeys.contains(key));
     dirtyKeys.removeWhere((key) => !orderedKeys.contains(key));
+    dirtyGroupKeys.removeWhere((key) => !orderedKeys.contains(key));
     editorRevision.value++;
 
     _clearResponseTimeout();
@@ -179,6 +186,7 @@ class LowLevelPowerSettingsController extends GetxController {
 
     for (final key in accepted) {
       dirtyKeys.remove(key);
+      dirtyGroupKeys.remove(key);
     }
 
     if (valid == true) {
@@ -217,6 +225,10 @@ class LowLevelPowerSettingsController extends GetxController {
   String descriptionFor(String key) => settings[key]?['description']?.toString() ?? fallbackMeta[key]?['description'] ?? '';
   String activeText(String key) => activeValues.containsKey(key) ? _displayNumber(activeValues[key]!) : '-';
   String draftText(String key) => draftTexts[key] ?? activeText(key);
+  String groupOriginalText(String key) => settings[key]?['group']?.toString().trim().isNotEmpty == true
+      ? settings[key]!['group'].toString().trim()
+      : 'll_board';
+  String groupDraftText(String key) => groupDraftTexts[key] ?? groupOriginalText(key);
   String rangeText(String key) {
     final setting = settings[key];
     final min = setting?['min'];
@@ -244,46 +256,86 @@ class LowLevelPowerSettingsController extends GetxController {
     }
   }
 
+  void updateDraftGroup(String key, String rawValue) {
+    groupDraftTexts[key] = rawValue.trim();
+    final normalized = _normalizedGroupDraftValue(key);
+    final original = groupOriginalText(key);
+    if (normalized == null || normalized != original) {
+      dirtyGroupKeys.add(key);
+    } else {
+      dirtyGroupKeys.remove(key);
+    }
+  }
+
   void resetDrafts() {
     for (final key in orderedKeys) {
       final active = activeValues[key];
       if (active != null) {
         draftTexts[key] = _displayNumber(active);
       }
+      groupDraftTexts[key] = groupOriginalText(key);
       dirtyKeys.remove(key);
+      dirtyGroupKeys.remove(key);
     }
     editorRevision.value++;
     setInfo('Low-Level-Board-Entwürfe wurden zurückgesetzt.', topic: 'local/reset');
   }
 
-  Map<String, dynamic>? _payloadFromDrafts() {
+  Map<String, dynamic>? _payloadFromDrafts({required bool sessionOnly}) {
     final payload = <String, dynamic>{};
     for (final key in orderedKeys) {
-      if (!dirtyKeys.contains(key)) {
+      final valueDirty = dirtyKeys.contains(key);
+      final groupDirty = dirtyGroupKeys.contains(key);
+      if (!valueDirty && (!groupDirty || sessionOnly)) {
         continue;
       }
-      final parsed = _double(draftTexts[key]);
-      if (parsed == null) {
-        setError('Der Wert für „${labelFor(key)}“ ist keine gültige JSON-Zahl.', topic: 'local/validation');
-        return null;
+
+      double? parsed;
+      if (valueDirty) {
+        parsed = _double(draftTexts[key]);
+        if (parsed == null) {
+          setError('Der Wert für „${labelFor(key)}“ ist keine gültige JSON-Zahl.', topic: 'local/validation');
+          return null;
+        }
+        final min = _double(settings[key]?['min']);
+        final max = _double(settings[key]?['max']);
+        if ((min != null && parsed < min) || (max != null && parsed > max)) {
+          setError('Der Wert für „${labelFor(key)}“ liegt außerhalb des erlaubten Bereichs.', topic: 'local/validation');
+          return null;
+        }
       }
-      final min = _double(settings[key]?['min']);
-      final max = _double(settings[key]?['max']);
-      if ((min != null && parsed < min) || (max != null && parsed > max)) {
-        setError('Der Wert für „${labelFor(key)}“ liegt außerhalb des erlaubten Bereichs.', topic: 'local/validation');
-        return null;
+
+      if (groupDirty && !sessionOnly) {
+        final groupValue = _normalizedGroupDraftValue(key);
+        if (groupValue == null) {
+          setError('Die Gruppe für „${labelFor(key)}“ darf nicht leer sein.', topic: 'local/validation');
+          return null;
+        }
+        final metadataPayload = <String, dynamic>{'group': groupValue};
+        if (valueDirty) {
+          metadataPayload['value'] = parsed;
+        }
+        payload[key] = metadataPayload;
+      } else if (valueDirty) {
+        payload[key] = parsed;
       }
-      payload[key] = parsed;
     }
     if (payload.isEmpty) {
-      setInfo('Es gibt keine geänderten Low-Level-Board-Werte.', topic: 'local/info');
+      setInfo(sessionOnly
+          ? 'Es gibt keine live anwendbaren Low-Level-Board-Werte.'
+          : 'Es gibt keine geänderten Low-Level-Board-Werte.', topic: 'local/info');
       return null;
     }
     return payload;
   }
 
+  String? _normalizedGroupDraftValue(String key) {
+    final value = (groupDraftTexts[key] ?? groupOriginalText(key)).trim();
+    return value.isEmpty ? null : value;
+  }
+
   void applySessionChanges() {
-    final payload = _payloadFromDrafts();
+    final payload = _payloadFromDrafts(sessionOnly: true);
     if (payload == null) {
       return;
     }
@@ -299,7 +351,7 @@ class LowLevelPowerSettingsController extends GetxController {
   }
 
   void savePersistentChanges() {
-    final payload = _payloadFromDrafts();
+    final payload = _payloadFromDrafts(sessionOnly: false);
     if (payload == null) {
       return;
     }
