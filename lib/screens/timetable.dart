@@ -18,6 +18,13 @@ class _TimetableScreenState extends State<TimetableScreen> {
   bool _renewSent = false;
   bool _jsonExpanded = false;
 
+  final TextEditingController _newStartController = TextEditingController(text: '00:00');
+  final TextEditingController _newEndController = TextEditingController(text: '23:59');
+
+  String? _editingEntryId;
+  TextEditingController? _editStartController;
+  TextEditingController? _editEndController;
+
   static const days = <String>[
     'Monday',
     'Tuesday',
@@ -38,12 +45,21 @@ class _TimetableScreenState extends State<TimetableScreen> {
   @override
   void initState() {
     super.initState();
+    _syncNewEntryTimeControllers();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_renewSent) {
         _renewSent = true;
         controller.requestTimetable();
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _disposeEditingEntryControllers();
+    _newStartController.dispose();
+    _newEndController.dispose();
+    super.dispose();
   }
 
   @override
@@ -878,7 +894,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
               _entryEndBehaviorDropdown(id, item, enabled: editing),
               _fieldsButton(context, id, item),
               _boolSwitch('Aktiv', item['enabled'] == true, editing ? (value) => controller.updateEntry(id, 'enabled', value) : null),
-              _boolSwitch('Auto-Start', item['auto_start'] == true, editing ? (value) => controller.updateEntry(id, 'auto_start', value) : null),
               SizedBox(
                 width: 56,
                 child: Column(
@@ -891,7 +906,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                     ),
                     IconButton(
                       tooltip: editing ? 'Eintrag speichern' : 'Eintrag ändern',
-                      onPressed: () => controller.toggleEditEntry(id),
+                      onPressed: () => _handleEditEntryAction(id, item, editing),
                       icon: Icon(editing ? Icons.save_outlined : Icons.edit_outlined),
                     ),
                   ],
@@ -931,6 +946,54 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
+  void _handleEditEntryAction(String id, Map<String, dynamic> item, bool editing) {
+    if (editing) {
+      _saveEditingEntry(id, item);
+    } else {
+      _startEditingEntry(id, item);
+    }
+  }
+
+  void _startEditingEntry(String id, Map<String, dynamic> item) {
+    if (_editingEntryId != null && _editingEntryId != id && controller.isEntryEditing(_editingEntryId!)) {
+      controller.toggleEditEntry(_editingEntryId!);
+    }
+
+    _disposeEditingEntryControllers();
+    _editingEntryId = id;
+    _editStartController = TextEditingController(text: (item['start'] ?? '00:00').toString());
+    _editEndController = TextEditingController(text: (item['end'] ?? '23:59').toString());
+
+    if (!controller.isEntryEditing(id)) {
+      controller.toggleEditEntry(id);
+    }
+    setState(() {});
+  }
+
+  void _saveEditingEntry(String id, Map<String, dynamic> item) {
+    controller.updateEntry(id, 'start', _editStartController?.text ?? (item['start'] ?? '00:00').toString());
+    controller.updateEntry(id, 'end', _editEndController?.text ?? (item['end'] ?? '23:59').toString());
+
+    if (controller.isEntryEditing(id)) {
+      controller.toggleEditEntry(id);
+    }
+    _disposeEditingEntryControllers();
+    setState(() {});
+  }
+
+  void _disposeEditingEntryControllers() {
+    _editStartController?.dispose();
+    _editEndController?.dispose();
+    _editStartController = null;
+    _editEndController = null;
+    _editingEntryId = null;
+  }
+
+  void _syncNewEntryTimeControllers() {
+    _newStartController.text = (controller.newEntryDraft['start'] ?? '00:00').toString();
+    _newEndController.text = (controller.newEntryDraft['end'] ?? '23:59').toString();
+  }
+
   void _confirmRemoveEntry(BuildContext context, String id) {
     showDialog<void>(
       context: context,
@@ -941,6 +1004,9 @@ class _TimetableScreenState extends State<TimetableScreen> {
           TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Abbrechen')),
           ElevatedButton(
             onPressed: () {
+              if (_editingEntryId == id) {
+                _disposeEditingEntryControllers();
+              }
               controller.removeEntry(id);
               Navigator.of(dialogContext).pop();
             },
@@ -988,17 +1054,16 @@ class _TimetableScreenState extends State<TimetableScreen> {
               },
             ),
           ),
-          OutlinedButton(
-            onPressed: null,
-            child: const Text('0 Felder'),
-          ),
+          _newEntryFieldsButton(context, Map<String, dynamic>.from(draft)),
           _boolSwitch('Aktiv', draft['enabled'] == true, (value) => controller.updateNewEntry('enabled', value)),
-          _boolSwitch('Auto-Start', draft['auto_start'] == true, (value) => controller.updateNewEntry('auto_start', value)),
           SizedBox(
             width: 56,
             child: IconButton(
               tooltip: 'Eintrag hinzufügen',
-              onPressed: () => controller.addEntryFromDraft(),
+              onPressed: () {
+                controller.addEntryFromDraft();
+                _syncNewEntryTimeControllers();
+              },
               icon: const Icon(Icons.add_circle_outline),
             ),
           ),
@@ -1049,11 +1114,26 @@ class _TimetableScreenState extends State<TimetableScreen> {
     bool enabled = true,
   }) {
     final value = (item[field] ?? '').toString();
+
+    if (!enabled) {
+      return SizedBox(
+        width: width,
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: label,
+            border: const UnderlineInputBorder(),
+          ),
+          child: Text(value.isEmpty ? '-' : value),
+        ),
+      );
+    }
+
+    final textController = field == 'start' ? _editStartController : _editEndController;
     return SizedBox(
       width: width,
       child: TextFormField(
-        key: ValueKey('timetable-$id-$field'),
-        initialValue: value,
+        key: ValueKey('timetable-$id-$field-edit'),
+        controller: textController,
         decoration: InputDecoration(
           labelText: label,
           hintText: 'HH:MM',
@@ -1062,19 +1142,18 @@ class _TimetableScreenState extends State<TimetableScreen> {
         keyboardType: TextInputType.datetime,
         inputFormatters: _timeInputFormatters,
         readOnly: true,
-        enabled: enabled,
-        onTap: enabled ? () => _pickEntryTime(context, id, item, field) : null,
+        onTap: () => _pickEntryTime(context, id, field),
       ),
     );
   }
 
   Widget _newEntryTimeField(BuildContext context, String field, String label, {double width = 120}) {
-    final value = (controller.newEntryDraft[field] ?? '').toString();
+    final textController = field == 'start' ? _newStartController : _newEndController;
     return SizedBox(
       width: width,
       child: TextFormField(
         key: ValueKey('new-entry-$field'),
-        initialValue: value,
+        controller: textController,
         decoration: InputDecoration(
           labelText: label,
           hintText: 'HH:MM',
@@ -1092,17 +1171,18 @@ class _TimetableScreenState extends State<TimetableScreen> {
         LengthLimitingTextInputFormatter(5),
       ];
 
-  Future<void> _pickEntryTime(BuildContext context, String id, Map<String, dynamic> item, String field) async {
+  Future<void> _pickEntryTime(BuildContext context, String id, String field) async {
+    final textController = field == 'start' ? _editStartController : _editEndController;
     final picked = await showTimePicker(
       context: context,
-      initialTime: _parseTimeOfDay((item[field] ?? '').toString()) ?? const TimeOfDay(hour: 0, minute: 0),
+      initialTime: _parseTimeOfDay(textController?.text ?? '') ?? const TimeOfDay(hour: 0, minute: 0),
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
         child: child ?? const SizedBox.shrink(),
       ),
     );
-    if (picked != null) {
-      controller.updateEntry(id, field, _formatTimeOfDay(picked));
+    if (picked != null && textController != null) {
+      textController.text = _formatTimeOfDay(picked);
     }
   }
 
@@ -1116,7 +1196,13 @@ class _TimetableScreenState extends State<TimetableScreen> {
       ),
     );
     if (picked != null) {
-      controller.updateNewEntry(field, _formatTimeOfDay(picked));
+      final formatted = _formatTimeOfDay(picked);
+      controller.updateNewEntry(field, formatted);
+      if (field == 'start') {
+        _newStartController.text = formatted;
+      } else if (field == 'end') {
+        _newEndController.text = formatted;
+      }
     }
   }
 
@@ -1135,6 +1221,14 @@ class _TimetableScreenState extends State<TimetableScreen> {
     final count = controller.extraFieldsCount(item);
     return OutlinedButton(
       onPressed: () => _showExtraFieldsDialog(context, id, item),
+      child: Text('$count Felder'),
+    );
+  }
+
+  Widget _newEntryFieldsButton(BuildContext context, Map<String, dynamic> draft) {
+    final count = controller.extraFieldsCount(draft);
+    return OutlinedButton(
+      onPressed: () => _showNewEntryExtraFieldsDialog(context, draft),
       child: Text('$count Felder'),
     );
   }
@@ -1166,6 +1260,44 @@ class _TimetableScreenState extends State<TimetableScreen> {
             ElevatedButton(
               onPressed: () {
                 if (controller.updateExtraFieldsFromJson(id, textController.text)) {
+                  Navigator.of(dialogContext).pop();
+                }
+              },
+              child: const Text('Übernehmen'),
+            ),
+          ],
+        );
+      },
+    ).whenComplete(textController.dispose);
+  }
+
+  void _showNewEntryExtraFieldsDialog(BuildContext context, Map<String, dynamic> draft) {
+    final extra = controller.extraFieldsFor(draft);
+    final textController = TextEditingController(text: const JsonEncoder.withIndent('  ').convert(extra));
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Zusätzliche Felder für neuen Eintrag'),
+          content: SizedBox(
+            width: 520,
+            child: TextField(
+              controller: textController,
+              minLines: 8,
+              maxLines: 16,
+              keyboardType: TextInputType.multiline,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Zusätzliche Felder als JSON',
+              ),
+              style: const TextStyle(fontFamily: 'monospace'),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Abbrechen')),
+            ElevatedButton(
+              onPressed: () {
+                if (controller.updateNewEntryExtraFieldsFromJson(textController.text)) {
                   Navigator.of(dialogContext).pop();
                 }
               },

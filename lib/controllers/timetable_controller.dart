@@ -26,7 +26,6 @@ class TimetableController extends GetxController {
     'end',
     'end_behavior',
     'enabled',
-    'auto_start',
   };
 
   final timetableData = <String, dynamic>{}.obs;
@@ -542,6 +541,29 @@ class TimetableController extends GetxController {
         ..addAll(next);
       syncRawJsonFromData();
       lastStatus.value = 'Zusätzliche Felder übernommen, noch nicht an den Server gesendet.';
+      lastStatusOk.value = true;
+      return true;
+    } catch (e) {
+      setError('Felder-JSON ist ungültig: $e');
+      return false;
+    }
+  }
+
+  bool updateNewEntryExtraFieldsFromJson(String jsonText) {
+    try {
+      final parsed = jsonDecode(jsonText.trim().isEmpty ? '{}' : jsonText);
+      if (parsed is! Map) {
+        setError('Felder-JSON muss ein Objekt sein.');
+        return false;
+      }
+      final cleaned = Map<String, dynamic>.from(parsed);
+      for (final key in visibleEntryFields) {
+        cleaned.remove(key);
+      }
+
+      newEntryDraft.removeWhere((key, value) => !visibleEntryFields.contains(key));
+      newEntryDraft.addAll(cleaned);
+      lastStatus.value = 'Zusätzliche Felder für neuen Eintrag übernommen.';
       lastStatusOk.value = true;
       return true;
     } catch (e) {
