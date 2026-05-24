@@ -346,13 +346,7 @@ class TimetableController extends GetxController {
       settings['active_source'] = selectedTimeSource.value;
       _applySourceSpecificValues(settings);
     }, setLocalStatus: false);
-    syncRawJsonFromData();
-    Get.find<MqttConnection>().publishTimetable(Map<String, dynamic>.from(timetableData));
-    waitingForResponse.value = true;
-    lastUpdated.value = DateTime.now();
-    lastTopic.value = 'timetable/set/json';
-    lastStatus.value = 'Zeitaktualisierung gesendet. Warte auf Serverantwort ...';
-    lastStatusOk.value = null;
+    syncAndSendTimetable('Zeitaktualisierung gesendet. Warte auf Serverantwort ...');
   }
 
   void _applySourceSpecificValues(Map<String, dynamic> settings) {
@@ -382,12 +376,16 @@ class TimetableController extends GetxController {
   }
 
   void sendTimetable() {
+    syncAndSendTimetable('Timetable gesendet. Warte auf Serverantwort ...');
+  }
+
+  void syncAndSendTimetable(String statusMessage) {
     syncRawJsonFromData();
     Get.find<MqttConnection>().publishTimetable(Map<String, dynamic>.from(timetableData));
     waitingForResponse.value = true;
     lastUpdated.value = DateTime.now();
     lastTopic.value = 'timetable/set/json';
-    lastStatus.value = 'Timetable gesendet. Warte auf Serverantwort ...';
+    lastStatus.value = statusMessage;
     lastStatusOk.value = null;
   }
 
@@ -406,7 +404,7 @@ class TimetableController extends GetxController {
       syncRawJsonFromData();
       lastUpdated.value = DateTime.now();
       lastTopic.value = 'local/upload';
-      lastStatus.value = 'JSON wurde lokal übernommen. Zum Übertragen an den Server bitte Speichern drücken.';
+      lastStatus.value = 'JSON wurde lokal übernommen. Zum Senden bitte Speichern drücken.';
       lastStatusOk.value = true;
       return true;
     } catch (e) {
@@ -443,9 +441,7 @@ class TimetableController extends GetxController {
     if (isEntryEditing(entryId)) {
       editingEntryIds.remove(entryId);
       editingEntryIds.refresh();
-      syncRawJsonFromData();
-      lastStatus.value = 'Mähzeit gespeichert, noch nicht an den Server gesendet.';
-      lastStatusOk.value = true;
+      syncAndSendTimetable('Mähzeit gespeichert und gesendet. Warte auf Serverantwort ...');
     } else {
       editingEntryIds.add(entryId);
       editingEntryIds.refresh();
@@ -485,9 +481,7 @@ class TimetableController extends GetxController {
     editingEntryIds.remove(id);
     editingEntryIds.refresh();
     _resetNewEntryDraft();
-    syncRawJsonFromData();
-    lastStatus.value = 'Neue Mähzeit hinzugefügt, noch nicht an den Server gesendet.';
-    lastStatusOk.value = true;
+    syncAndSendTimetable('Neue Mähzeit hinzugefügt und gesendet. Warte auf Serverantwort ...');
   }
 
   void removeEntry(String entryId) {
@@ -500,9 +494,7 @@ class TimetableController extends GetxController {
     timetableData
       ..clear()
       ..addAll(next);
-    syncRawJsonFromData();
-    lastStatus.value = 'Mähzeit gelöscht, noch nicht an den Server gesendet.';
-    lastStatusOk.value = true;
+    syncAndSendTimetable('Mähzeit gelöscht und gesendet. Warte auf Serverantwort ...');
   }
 
   Map<String, dynamic> extraFieldsFor(Map<String, dynamic> item) {
@@ -539,9 +531,7 @@ class TimetableController extends GetxController {
       timetableData
         ..clear()
         ..addAll(next);
-      syncRawJsonFromData();
-      lastStatus.value = 'Zusätzliche Felder übernommen, noch nicht an den Server gesendet.';
-      lastStatusOk.value = true;
+      syncAndSendTimetable('Zusätzliche Felder übernommen und gesendet. Warte auf Serverantwort ...');
       return true;
     } catch (e) {
       setError('Felder-JSON ist ungültig: $e');

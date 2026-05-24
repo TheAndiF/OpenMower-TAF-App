@@ -17,6 +17,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
   final TimetableController controller = Get.find<TimetableController>();
   bool _renewSent = false;
   bool _jsonExpanded = false;
+  bool _jsonEditUnlocked = false;
+  String _jsonBeforeEditing = '';
 
   final TextEditingController _newStartController = TextEditingController(text: '00:00');
   final TextEditingController _newEndController = TextEditingController(text: '23:59');
@@ -906,7 +908,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                     ),
                     IconButton(
                       tooltip: editing ? 'Eintrag speichern' : 'Eintrag ändern',
-                      onPressed: () => _handleEditEntryAction(id, item, editing),
+                      onPressed: () => _handleEditEntryAction(context, id, item, editing),
                       icon: Icon(editing ? Icons.save_outlined : Icons.edit_outlined),
                     ),
                   ],
@@ -946,17 +948,22 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  void _handleEditEntryAction(String id, Map<String, dynamic> item, bool editing) {
+  void _handleEditEntryAction(BuildContext context, String id, Map<String, dynamic> item, bool editing) {
     if (editing) {
       _saveEditingEntry(id, item);
     } else {
-      _startEditingEntry(id, item);
+      _startEditingEntry(context, id, item);
     }
   }
 
-  void _startEditingEntry(String id, Map<String, dynamic> item) {
-    if (_editingEntryId != null && _editingEntryId != id && controller.isEntryEditing(_editingEntryId!)) {
-      controller.toggleEditEntry(_editingEntryId!);
+  void _startEditingEntry(BuildContext context, String id, Map<String, dynamic> item) {
+    if (_jsonEditUnlocked) {
+      _showJsonEditBlockedMessage(context);
+      return;
+    }
+    if (_blocksBecauseAnotherEntryIsEditing(id)) {
+      _showEditBlockedMessage(context);
+      return;
     }
 
     _disposeEditingEntryControllers();
@@ -968,6 +975,66 @@ class _TimetableScreenState extends State<TimetableScreen> {
       controller.toggleEditEntry(id);
     }
     setState(() {});
+  }
+
+
+  bool _blocksBecauseAnotherEntryIsEditing(String requestedEntryId) {
+    final openEntryId = _editingEntryId;
+    if (openEntryId == null || openEntryId == requestedEntryId) {
+      return false;
+    }
+
+    if (!controller.isEntryEditing(openEntryId)) {
+      _disposeEditingEntryControllers();
+      return false;
+    }
+
+    return true;
+  }
+
+  bool get _hasActiveEntryEdit {
+    final openEntryId = _editingEntryId;
+    return openEntryId != null && controller.isEntryEditing(openEntryId);
+  }
+
+  bool _blocksBecauseAnyEntryIsEditing() {
+    if (!_hasActiveEntryEdit) {
+      if (_editingEntryId != null) {
+        _disposeEditingEntryControllers();
+      }
+      return false;
+    }
+    return true;
+  }
+
+  bool _blocksNewEntryEdit(BuildContext context) {
+    if (_jsonEditUnlocked) {
+      _showJsonEditBlockedMessage(context);
+      return true;
+    }
+    if (_blocksBecauseAnyEntryIsEditing()) {
+      _showEditBlockedMessage(context);
+      return true;
+    }
+    return false;
+  }
+
+  void _showEditBlockedMessage(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Bitte zuerst den aktuell geöffneten Mähzeit-Eintrag mit der Diskette speichern.'),
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showJsonEditBlockedMessage(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Bitte zuerst die JSON-Bearbeitung mit Speichern oder JSON sperren abschließen.'),
+        duration: Duration(seconds: 3),
+      ),
+    );
   }
 
   void _saveEditingEntry(String id, Map<String, dynamic> item) {
@@ -995,11 +1062,20 @@ class _TimetableScreenState extends State<TimetableScreen> {
   }
 
   void _confirmRemoveEntry(BuildContext context, String id) {
+    if (_jsonEditUnlocked) {
+      _showJsonEditBlockedMessage(context);
+      return;
+    }
+    if (_blocksBecauseAnyEntryIsEditing()) {
+      _showEditBlockedMessage(context);
+      return;
+    }
+
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Mähzeit löschen?'),
-        content: const Text('Der Timeslot wird lokal aus der JSON entfernt. Übertragen wird erst mit Speichern.'),
+        content: const Text('Der Timeslot wird aus der lokalen JSON entfernt und direkt per MQTT gesendet.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Abbrechen')),
           ElevatedButton(
@@ -1037,7 +1113,9 @@ class _TimetableScreenState extends State<TimetableScreen> {
               decoration: const InputDecoration(labelText: 'Tag'),
               items: days.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
               onChanged: (value) {
-                if (value != null) controller.updateNewEntry('day', value);
+                if (value != null && !_blocksNewEntryEdit(context)) {
+                  controller.updateNewEntry('day', value);
+                }
               },
             ),
           ),
@@ -1050,17 +1128,30 @@ class _TimetableScreenState extends State<TimetableScreen> {
               decoration: const InputDecoration(labelText: 'Verhalten bei Ende'),
               items: endBehaviors.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
               onChanged: (value) {
-                if (value != null) controller.updateNewEntry('end_behavior', value);
+                if (value != null && !_blocksNewEntryEdit(context)) {
+                  controller.updateNewEntry('end_behavior', value);
+                }
               },
             ),
           ),
           _newEntryFieldsButton(context, Map<String, dynamic>.from(draft)),
-          _boolSwitch('Aktiv', draft['enabled'] == true, (value) => controller.updateNewEntry('enabled', value)),
+          _boolSwitch(
+            'Aktiv',
+            draft['enabled'] == true,
+            (value) {
+              if (!_blocksNewEntryEdit(context)) {
+                controller.updateNewEntry('enabled', value);
+              }
+            },
+          ),
           SizedBox(
             width: 56,
             child: IconButton(
               tooltip: 'Eintrag hinzufügen',
               onPressed: () {
+                if (_blocksNewEntryEdit(context)) {
+                  return;
+                }
                 controller.addEntryFromDraft();
                 _syncNewEntryTimeControllers();
               },
@@ -1162,7 +1253,11 @@ class _TimetableScreenState extends State<TimetableScreen> {
         keyboardType: TextInputType.datetime,
         inputFormatters: _timeInputFormatters,
         readOnly: true,
-        onTap: () => _pickNewEntryTime(context, field),
+        onTap: () {
+          if (!_blocksNewEntryEdit(context)) {
+            _pickNewEntryTime(context, field);
+          }
+        },
       ),
     );
   }
@@ -1220,7 +1315,17 @@ class _TimetableScreenState extends State<TimetableScreen> {
   Widget _fieldsButton(BuildContext context, String id, Map<String, dynamic> item) {
     final count = controller.extraFieldsCount(item);
     return OutlinedButton(
-      onPressed: () => _showExtraFieldsDialog(context, id, item),
+      onPressed: () {
+        if (_jsonEditUnlocked) {
+          _showJsonEditBlockedMessage(context);
+          return;
+        }
+        if (_blocksBecauseAnyEntryIsEditing()) {
+          _showEditBlockedMessage(context);
+          return;
+        }
+        _showExtraFieldsDialog(context, id, item);
+      },
       child: Text('$count Felder'),
     );
   }
@@ -1228,7 +1333,12 @@ class _TimetableScreenState extends State<TimetableScreen> {
   Widget _newEntryFieldsButton(BuildContext context, Map<String, dynamic> draft) {
     final count = controller.extraFieldsCount(draft);
     return OutlinedButton(
-      onPressed: () => _showNewEntryExtraFieldsDialog(context, draft),
+      onPressed: () {
+        if (_blocksNewEntryEdit(context)) {
+          return;
+        }
+        _showNewEntryExtraFieldsDialog(context, draft);
+      },
       child: Text('$count Felder'),
     );
   }
@@ -1402,17 +1512,22 @@ class _TimetableScreenState extends State<TimetableScreen> {
   Widget _jsonActionButtons(BuildContext context, {required bool isMobile}) {
     final buttons = <Widget>[
       OutlinedButton.icon(
-        onPressed: _downloadJsonFile,
+        onPressed: () => _downloadJsonFile(context),
         icon: const Icon(Icons.download),
         label: Text(isMobile ? 'Herunterladen' : 'Download'),
       ),
       OutlinedButton.icon(
-        onPressed: _uploadJsonFile,
+        onPressed: () => _uploadJsonFile(context),
         icon: const Icon(Icons.upload),
         label: Text(isMobile ? 'Hochladen' : 'Upload'),
       ),
+      OutlinedButton.icon(
+        onPressed: () => _toggleJsonEditLock(context),
+        icon: Icon(_jsonEditUnlocked ? Icons.lock_open : Icons.lock_outline),
+        label: Text(_jsonEditUnlocked ? 'JSON sperren' : 'JSON entsperren'),
+      ),
       ElevatedButton.icon(
-        onPressed: controller.hasData ? controller.sendTimetable : null,
+        onPressed: controller.hasData ? () => _handleJsonSave(context) : null,
         icon: const Icon(Icons.save_outlined),
         label: const Text('Speichern'),
       ),
@@ -1574,6 +1689,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
           const SizedBox(height: 12),
           TextField(
             controller: controller.rawJsonController,
+            readOnly: !_jsonEditUnlocked,
             minLines: 10,
             maxLines: 22,
             keyboardType: TextInputType.multiline,
@@ -1581,8 +1697,12 @@ class _TimetableScreenState extends State<TimetableScreen> {
               border: const OutlineInputBorder(),
               labelText: 'timetable.json',
               alignLabelWithHint: true,
-              helperText: 'Änderungen im Editor werden erst mit „Speichern“ an MQTT gesendet.',
+              helperText: _jsonEditUnlocked
+                  ? 'JSON-Bearbeitung ist freigegeben. Speichern übernimmt lokal und sendet per MQTT.'
+                  : 'JSON ist gesperrt. Zum Bearbeiten bitte JSON entsperren.',
               helperStyle: TextStyle(color: color.withOpacity(0.9)),
+              filled: !_jsonEditUnlocked,
+              fillColor: !_jsonEditUnlocked ? Colors.grey.withOpacity(0.06) : null,
             ),
             style: const TextStyle(fontFamily: 'monospace'),
           ),
@@ -1605,6 +1725,55 @@ class _TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
+  void _toggleJsonEditLock(BuildContext context) {
+    if (!_jsonEditUnlocked) {
+      if (_blocksBecauseAnyEntryIsEditing()) {
+        _showEditBlockedMessage(context);
+        return;
+      }
+      setState(() {
+        _jsonBeforeEditing = controller.rawJsonController.text;
+        _jsonEditUnlocked = true;
+        _jsonExpanded = true;
+      });
+      return;
+    }
+
+    if (controller.rawJsonController.text != _jsonBeforeEditing) {
+      final ok = controller.applyRawJson();
+      if (!ok) {
+        return;
+      }
+    } else {
+      controller.syncRawJsonFromData();
+    }
+
+    setState(() {
+      _jsonEditUnlocked = false;
+      _jsonBeforeEditing = '';
+    });
+  }
+
+  void _handleJsonSave(BuildContext context) {
+    if (_blocksBecauseAnyEntryIsEditing()) {
+      _showEditBlockedMessage(context);
+      return;
+    }
+
+    if (_jsonEditUnlocked) {
+      final ok = controller.applyRawJson();
+      if (!ok) {
+        return;
+      }
+      setState(() {
+        _jsonEditUnlocked = false;
+        _jsonBeforeEditing = '';
+      });
+    }
+
+    controller.sendTimetable();
+  }
+
   void _copyJsonToClipboard(BuildContext context) {
     _copyTextToClipboard(controller.rawJsonController.text);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1617,7 +1786,15 @@ class _TimetableScreenState extends State<TimetableScreen> {
     Clipboard.setData(ClipboardData(text: text));
   }
 
-  void _downloadJsonFile() {
+  void _downloadJsonFile(BuildContext context) {
+    if (_jsonEditUnlocked) {
+      _showJsonEditBlockedMessage(context);
+      return;
+    }
+    if (_blocksBecauseAnyEntryIsEditing()) {
+      _showEditBlockedMessage(context);
+      return;
+    }
     final jsonText = controller.exportJsonString();
     final bytes = utf8.encode(jsonText);
     final blob = html.Blob(<Object>[bytes], 'application/json');
@@ -1633,7 +1810,15 @@ class _TimetableScreenState extends State<TimetableScreen> {
     html.Url.revokeObjectUrl(url);
   }
 
-  void _uploadJsonFile() {
+  void _uploadJsonFile(BuildContext context) {
+    if (_jsonEditUnlocked) {
+      _showJsonEditBlockedMessage(context);
+      return;
+    }
+    if (_blocksBecauseAnyEntryIsEditing()) {
+      _showEditBlockedMessage(context);
+      return;
+    }
     final input = html.FileUploadInputElement()..accept = '.json,application/json';
     input.click();
     input.onChange.listen((_) {
