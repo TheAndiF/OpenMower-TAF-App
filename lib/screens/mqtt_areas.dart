@@ -24,6 +24,8 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
   final RemoteController remoteController = Get.find<RemoteController>();
   bool _jsonExpanded = false;
   bool _renewSent = false;
+  bool _jsonEditUnlocked = false;
+  String _jsonBeforeEditing = '';
 
   @override
   void didChangeDependencies() {
@@ -376,11 +378,52 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
             width: 56,
             child: IconButton(
               tooltip: editing ? 'Mähfläche speichern' : 'Mähfläche ändern',
-              onPressed: id.isEmpty ? null : () => controller.toggleEditArea(id),
+              onPressed: id.isEmpty ? null : () => _handleAreaEditAction(context, id, editing),
               icon: Icon(editing ? Icons.save_outlined : Icons.edit_outlined),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _handleAreaEditAction(BuildContext context, String areaId, bool editing) {
+    if (!editing && _jsonEditUnlocked) {
+      _showJsonEditBlockedMessage(context);
+      return;
+    }
+
+    if (!editing && _blocksBecauseAnotherAreaIsEditing(areaId)) {
+      _showAreaEditBlockedMessage(context);
+      return;
+    }
+
+    controller.toggleEditArea(areaId);
+  }
+
+  bool _blocksBecauseAnotherAreaIsEditing(String requestedAreaId) {
+    if (!controller.hasActiveAreaEdit) {
+      return false;
+    }
+    return !controller.isAreaEditing(requestedAreaId);
+  }
+
+  bool _blocksBecauseAnyAreaIsEditing() => controller.hasActiveAreaEdit;
+
+  void _showAreaEditBlockedMessage(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Bitte zuerst die aktuell geöffnete Mähfläche mit der Diskette speichern.'),
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showJsonEditBlockedMessage(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Bitte zuerst die JSON-Bearbeitung mit Speichern oder JSON sperren abschließen.'),
+        duration: Duration(seconds: 3),
       ),
     );
   }
@@ -651,17 +694,22 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
   Widget _jsonActionButtons(BuildContext context, {required bool isMobile}) {
     final buttons = <Widget>[
       OutlinedButton.icon(
-        onPressed: _downloadJsonFile,
+        onPressed: () => _downloadJsonFile(context),
         icon: const Icon(Icons.download),
         label: Text(isMobile ? 'Herunterladen' : 'Download'),
       ),
       OutlinedButton.icon(
-        onPressed: _uploadJsonFile,
+        onPressed: () => _uploadJsonFile(context),
         icon: const Icon(Icons.upload),
         label: Text(isMobile ? 'Hochladen' : 'Upload'),
       ),
+      OutlinedButton.icon(
+        onPressed: () => _toggleJsonEditLock(context),
+        icon: Icon(_jsonEditUnlocked ? Icons.lock_open : Icons.lock_outline),
+        label: Text(_jsonEditUnlocked ? 'JSON sperren' : 'JSON entsperren'),
+      ),
       ElevatedButton.icon(
-        onPressed: controller.hasData ? controller.sendMap : null,
+        onPressed: controller.hasData ? () => _handleJsonSave(context) : null,
         icon: const Icon(Icons.save_outlined),
         label: const Text('Speichern'),
       ),
@@ -821,6 +869,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
           const SizedBox(height: 12),
           TextField(
             controller: controller.rawJsonController,
+            readOnly: !_jsonEditUnlocked,
             minLines: 10,
             maxLines: 22,
             keyboardType: TextInputType.multiline,
@@ -828,8 +877,12 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
               border: const OutlineInputBorder(),
               labelText: 'map.json',
               alignLabelWithHint: true,
-              helperText: 'Änderungen im Editor werden erst mit „Speichern“ an map/set/json gesendet.',
+              helperText: _jsonEditUnlocked
+                  ? 'JSON-Bearbeitung ist freigegeben. Speichern übernimmt lokal und sendet per MQTT.'
+                  : 'JSON ist gesperrt. Zum Bearbeiten bitte JSON entsperren.',
               helperStyle: TextStyle(color: color.withOpacity(0.9)),
+              filled: !_jsonEditUnlocked,
+              fillColor: !_jsonEditUnlocked ? Colors.grey.withOpacity(0.06) : null,
             ),
             style: const TextStyle(fontFamily: 'monospace'),
           ),
@@ -845,11 +898,60 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
         Text('JSON-Inhalt', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
         const SizedBox(height: 2),
         Text(
-          'Lokale Flächen. Upload übernimmt lokal, Speichern sendet an map/set/json.',
+          'Lokale Flächen. JSON ist gesperrt, bis es explizit entsperrt wird. Speichern sendet an map/set/json.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
     );
+  }
+
+  void _toggleJsonEditLock(BuildContext context) {
+    if (!_jsonEditUnlocked) {
+      if (_blocksBecauseAnyAreaIsEditing()) {
+        _showAreaEditBlockedMessage(context);
+        return;
+      }
+      setState(() {
+        _jsonBeforeEditing = controller.rawJsonController.text;
+        _jsonEditUnlocked = true;
+        _jsonExpanded = true;
+      });
+      return;
+    }
+
+    if (controller.rawJsonController.text != _jsonBeforeEditing) {
+      final ok = controller.applyRawJson();
+      if (!ok) {
+        return;
+      }
+    } else {
+      controller.syncRawJsonFromData();
+    }
+
+    setState(() {
+      _jsonEditUnlocked = false;
+      _jsonBeforeEditing = '';
+    });
+  }
+
+  void _handleJsonSave(BuildContext context) {
+    if (_blocksBecauseAnyAreaIsEditing()) {
+      _showAreaEditBlockedMessage(context);
+      return;
+    }
+
+    if (_jsonEditUnlocked) {
+      final ok = controller.applyRawJson();
+      if (!ok) {
+        return;
+      }
+      setState(() {
+        _jsonEditUnlocked = false;
+        _jsonBeforeEditing = '';
+      });
+    }
+
+    controller.sendMap();
   }
 
   void _copyJsonToClipboard(BuildContext context) {
@@ -864,7 +966,15 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     Clipboard.setData(ClipboardData(text: text));
   }
 
-  void _downloadJsonFile() {
+  void _downloadJsonFile(BuildContext context) {
+    if (_jsonEditUnlocked) {
+      _showJsonEditBlockedMessage(context);
+      return;
+    }
+    if (_blocksBecauseAnyAreaIsEditing()) {
+      _showAreaEditBlockedMessage(context);
+      return;
+    }
     final jsonText = controller.exportJsonString();
     final bytes = utf8.encode(jsonText);
     final blob = html.Blob(<Object>[bytes], 'application/json');
@@ -880,7 +990,15 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     html.Url.revokeObjectUrl(url);
   }
 
-  void _uploadJsonFile() {
+  void _uploadJsonFile(BuildContext context) {
+    if (_jsonEditUnlocked) {
+      _showJsonEditBlockedMessage(context);
+      return;
+    }
+    if (_blocksBecauseAnyAreaIsEditing()) {
+      _showAreaEditBlockedMessage(context);
+      return;
+    }
     final input = html.FileUploadInputElement()..accept = '.json,application/json';
     input.click();
     input.onChange.listen((_) {

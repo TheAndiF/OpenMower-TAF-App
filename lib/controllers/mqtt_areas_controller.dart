@@ -16,6 +16,8 @@ class MqttAreasController extends GetxController {
   final editingAreaIds = <String>{}.obs;
 
   bool get hasData => areaPayload.isNotEmpty;
+  bool get hasActiveAreaEdit => editingAreaIds.isNotEmpty;
+
 
   List<Map<String, dynamic>> get areas {
     final value = areaPayload['areas'];
@@ -166,6 +168,11 @@ class MqttAreasController extends GetxController {
     if (!applyRawJson(setLocalStatus: false)) {
       return;
     }
+    syncAndSendMap('Flächen gesendet. Warte auf Serverantwort ...');
+  }
+
+  void syncAndSendMap(String statusMessage) {
+    syncRawJsonFromData();
     if (!_validateUniqueMowingOrders()) {
       return;
     }
@@ -173,7 +180,7 @@ class MqttAreasController extends GetxController {
     waitingForResponse.value = true;
     lastUpdated.value = DateTime.now();
     lastTopic.value = 'map/set/json';
-    lastStatus.value = 'Flächen gesendet. Warte auf Serverantwort ...';
+    lastStatus.value = statusMessage;
     lastStatusOk.value = null;
   }
 
@@ -234,15 +241,14 @@ class MqttAreasController extends GetxController {
 
   void toggleEditArea(String areaId) {
     if (isAreaEditing(areaId)) {
-      if (!_validateUniqueMowingOrders()) {
-        return;
-      }
       editingAreaIds.remove(areaId);
       editingAreaIds.refresh();
-      syncRawJsonFromData();
-      lastStatus.value = 'Mähfläche gespeichert, noch nicht an den Server gesendet.';
-      lastStatusOk.value = true;
+      syncAndSendMap('Mähfläche gespeichert und gesendet. Warte auf Serverantwort ...');
     } else {
+      if (editingAreaIds.isNotEmpty) {
+        setError('Bitte zuerst die aktuell geöffnete Mähfläche mit der Diskette speichern.', topic: 'local/edit');
+        return;
+      }
       editingAreaIds.add(areaId);
       editingAreaIds.refresh();
     }
@@ -281,7 +287,7 @@ class MqttAreasController extends GetxController {
     _updateAreaProperties(areaId, (properties) {
       properties['mowing_order'] = parsed;
     });
-    lastStatus.value = 'Mähreihenfolge ${formatMowingOrder(parsed)} lokal übernommen. Zum Übertragen bitte Speichern drücken.';
+    lastStatus.value = 'Mähreihenfolge ${formatMowingOrder(parsed)} lokal übernommen. Zum Senden bitte die Diskette drücken.';
     lastStatusOk.value = true;
     lastTopic.value = 'local/edit';
   }
