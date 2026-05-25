@@ -897,31 +897,45 @@ class _TimetableScreenState extends State<TimetableScreen> {
               _entryEndBehaviorDropdown(id, item, enabled: editing),
               _fieldsButton(context, id, item),
               _boolSwitch('Aktiv', item['enabled'] == true, editing ? (value) => controller.updateEntry(id, 'enabled', value) : null),
-              SizedBox(
-                width: 56,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: 'Eintrag löschen',
-                      onPressed: () => _confirmRemoveEntry(context, id),
-                      icon: const Icon(Icons.delete_outline),
-                    ),
-                    IconButton(
-                      tooltip: editing ? 'Eintrag speichern' : 'Eintrag ändern',
-                      onPressed: () => _handleEditEntryAction(context, id, item, editing),
-                      icon: Icon(editing ? Icons.save_outlined : Icons.edit_outlined),
-                    ),
-                    if (editing)
-                      IconButton(
-                        tooltip: 'Änderungen verwerfen',
-                        onPressed: () => _resetEditingEntry(context),
-                        icon: const Icon(Icons.undo),
-                      ),
-                  ],
-                ),
-              ),
+              _entryActionButtons(context, id, item, editing),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _entryActionButtons(
+    BuildContext context,
+    String id,
+    Map<String, dynamic> item,
+    bool editing,
+  ) {
+    return SizedBox(
+      width: 56,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: 'Eintrag löschen',
+            onPressed: () => _confirmRemoveEntry(context, id),
+            icon: const Icon(Icons.delete_outline),
+          ),
+          IconButton(
+            tooltip: editing ? 'Eintrag speichern' : 'Eintrag ändern',
+            onPressed: () => _handleEditEntryAction(context, id, item, editing),
+            icon: Icon(editing ? Icons.save_outlined : Icons.edit_outlined),
+          ),
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: editing
+                ? IconButton(
+                    tooltip: 'Änderungen verwerfen',
+                    onPressed: () => _resetEditingEntry(context),
+                    icon: const Icon(Icons.undo),
+                  )
+                : const SizedBox.shrink(),
           ),
         ],
       ),
@@ -1062,6 +1076,11 @@ class _TimetableScreenState extends State<TimetableScreen> {
     if (id == null || original == null) {
       return;
     }
+
+    // Zuerst die sichtbaren Controller-Werte auf den Ursprungsstand setzen.
+    // Danach wird der lokale Timetable zurückgestellt und der Edit-Modus beendet.
+    _editStartController?.text = (original['start'] ?? '00:00').toString();
+    _editEndController?.text = (original['end'] ?? '23:59').toString();
 
     controller.discardEntryEdit(id, original);
     _disposeEditingEntryControllers();
