@@ -357,6 +357,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     final enabled = controller.mowingEnabledFor(area);
     final order = controller.mowingOrderFor(area);
     final name = controller.areaNameFor(area);
+    final viewRevision = controller.currentAreaViewRevision;
     final isCurrentArea = id.isNotEmpty && id == robotStateController.robotState.value.currentAreaId.trim();
 
     return Container(
@@ -371,8 +372,8 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
         runSpacing: 12,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          _areaNameField(id, name, enabled: editing),
-          _areaOrderField(id, order, enabled: editing),
+          _areaNameField(id, name, enabled: editing, viewRevision: viewRevision),
+          _areaOrderField(id, order, enabled: editing, viewRevision: viewRevision),
           _boolSwitch('Aktiv', enabled, editing ? (value) => controller.updateMowingEnabled(id, value) : null),
           SizedBox(
             width: 56,
@@ -447,11 +448,11 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     );
   }
 
-  Widget _areaNameField(String id, String value, {bool enabled = true}) {
+  Widget _areaNameField(String id, String value, {bool enabled = true, required int viewRevision}) {
     return SizedBox(
       width: 420,
       child: TextFormField(
-        key: ValueKey('area-$id-name'),
+        key: ValueKey('area-$id-name-$viewRevision-${enabled ? 'edit' : 'view'}'),
         initialValue: value,
         decoration: const InputDecoration(labelText: 'Name'),
         enabled: enabled,
@@ -460,12 +461,12 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     );
   }
 
-  Widget _areaOrderField(String id, int? value, {bool enabled = true}) {
+  Widget _areaOrderField(String id, int? value, {bool enabled = true, required int viewRevision}) {
     final text = controller.formatMowingOrder(value);
     return SizedBox(
       width: 160,
       child: TextFormField(
-        key: ValueKey('area-$id-mowing-order'),
+        key: ValueKey('area-$id-mowing-order-$viewRevision-${enabled ? 'edit' : 'view'}'),
         initialValue: text,
         decoration: const InputDecoration(labelText: 'Mähreihenfolge'),
         keyboardType: TextInputType.number,

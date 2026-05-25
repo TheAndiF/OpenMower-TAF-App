@@ -14,10 +14,16 @@ class MqttAreasController extends GetxController {
   final waitingForResponse = false.obs;
   final rawJsonController = TextEditingController();
   final editingAreaIds = <String>{}.obs;
+  final areaViewRevision = 0.obs;
   final _editingAreaSnapshots = <String, Map<String, dynamic>>{};
 
   bool get hasData => areaPayload.isNotEmpty;
   bool get hasActiveAreaEdit => editingAreaIds.isNotEmpty;
+  int get currentAreaViewRevision => areaViewRevision.value;
+
+  void _refreshAreaInputs() {
+    areaViewRevision.value++;
+  }
 
 
   List<Map<String, dynamic>> get areas {
@@ -147,6 +153,7 @@ class MqttAreasController extends GetxController {
 
     editingAreaIds.clear();
     _editingAreaSnapshots.clear();
+    _refreshAreaInputs();
     syncRawJsonFromData();
     lastRemarks.clear();
     lastTopic.value = topic;
@@ -203,6 +210,7 @@ class MqttAreasController extends GetxController {
         ..addAll(_deepCopy(normalized));
       editingAreaIds.clear();
       _editingAreaSnapshots.clear();
+      _refreshAreaInputs();
       syncRawJsonFromData();
       lastUpdated.value = DateTime.now();
       if (setLocalStatus) {
@@ -277,6 +285,7 @@ class MqttAreasController extends GetxController {
     editingAreaIds.remove(areaId);
     _editingAreaSnapshots.remove(areaId);
     editingAreaIds.refresh();
+    _refreshAreaInputs();
     lastStatus.value = 'Änderungen an der Mähfläche verworfen. Es wurde nichts gesendet.';
     lastStatusOk.value = true;
     lastTopic.value = 'local/edit';
