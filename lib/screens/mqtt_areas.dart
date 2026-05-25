@@ -382,6 +382,15 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
               icon: Icon(editing ? Icons.save_outlined : Icons.edit_outlined),
             ),
           ),
+          if (editing)
+            SizedBox(
+              width: 56,
+              child: IconButton(
+                tooltip: 'Änderungen verwerfen',
+                onPressed: id.isEmpty ? null : () => _resetAreaEdit(context, id),
+                icon: const Icon(Icons.undo),
+              ),
+            ),
         ],
       ),
     );
@@ -401,6 +410,16 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     controller.toggleEditArea(areaId);
   }
 
+  void _resetAreaEdit(BuildContext context, String areaId) {
+    controller.resetAreaEdit(areaId);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Änderungen an der Mähfläche wurden verworfen.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   bool _blocksBecauseAnotherAreaIsEditing(String requestedAreaId) {
     if (!controller.hasActiveAreaEdit) {
       return false;
@@ -413,7 +432,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
   void _showAreaEditBlockedMessage(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Bitte zuerst die aktuell geöffnete Mähfläche mit der Diskette speichern.'),
+        content: Text('Bitte zuerst die aktuell geöffnete Mähfläche mit Diskette speichern oder mit Zurücksetzen verwerfen.'),
         duration: Duration(seconds: 3),
       ),
     );
@@ -422,7 +441,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
   void _showJsonEditBlockedMessage(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Bitte zuerst die JSON-Bearbeitung mit Speichern oder JSON sperren abschließen.'),
+        content: Text('Bitte zuerst die JSON-Bearbeitung mit Speichern übernehmen oder mit Zurücksetzen verwerfen.'),
         duration: Duration(seconds: 3),
       ),
     );
@@ -708,6 +727,12 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
         icon: Icon(_jsonEditUnlocked ? Icons.lock_open : Icons.lock_outline),
         label: Text(_jsonEditUnlocked ? 'JSON sperren' : 'JSON entsperren'),
       ),
+      if (_jsonEditUnlocked)
+        OutlinedButton.icon(
+          onPressed: () => _resetJsonEdit(context),
+          icon: const Icon(Icons.undo),
+          label: const Text('Zurücksetzen'),
+        ),
       ElevatedButton.icon(
         onPressed: controller.hasData ? () => _handleJsonSave(context) : null,
         icon: const Icon(Icons.save_outlined),
@@ -932,6 +957,20 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
       _jsonEditUnlocked = false;
       _jsonBeforeEditing = '';
     });
+  }
+
+  void _resetJsonEdit(BuildContext context) {
+    controller.discardRawJsonEdit(_jsonBeforeEditing);
+    setState(() {
+      _jsonEditUnlocked = false;
+      _jsonBeforeEditing = '';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('JSON-Änderungen wurden verworfen.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   void _handleJsonSave(BuildContext context) {

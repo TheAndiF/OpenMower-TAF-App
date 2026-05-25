@@ -14,6 +14,7 @@ class MqttAreasController extends GetxController {
   final waitingForResponse = false.obs;
   final rawJsonController = TextEditingController();
   final editingAreaIds = <String>{}.obs;
+  final _editingAreaSnapshots = <String, Map<String, dynamic>>{};
 
   bool get hasData => areaPayload.isNotEmpty;
   bool get hasActiveAreaEdit => editingAreaIds.isNotEmpty;
@@ -145,6 +146,7 @@ class MqttAreasController extends GetxController {
       ..addAll(_deepCopy(normalized));
 
     editingAreaIds.clear();
+    _editingAreaSnapshots.clear();
     syncRawJsonFromData();
     lastRemarks.clear();
     lastTopic.value = topic;
@@ -200,6 +202,7 @@ class MqttAreasController extends GetxController {
         ..clear()
         ..addAll(_deepCopy(normalized));
       editingAreaIds.clear();
+      _editingAreaSnapshots.clear();
       syncRawJsonFromData();
       lastUpdated.value = DateTime.now();
       if (setLocalStatus) {
@@ -242,6 +245,7 @@ class MqttAreasController extends GetxController {
   void toggleEditArea(String areaId) {
     if (isAreaEditing(areaId)) {
       editingAreaIds.remove(areaId);
+      _editingAreaSnapshots.remove(areaId);
       editingAreaIds.refresh();
       syncAndSendMap('Mähfläche gespeichert und gesendet. Warte auf Serverantwort ...');
     } else {
@@ -249,9 +253,44 @@ class MqttAreasController extends GetxController {
         setError('Bitte zuerst die aktuell geöffnete Mähfläche mit der Diskette speichern.', topic: 'local/edit');
         return;
       }
+      final snapshot = _findAreaByIdInPayload(areaId);
+      if (snapshot != null) {
+        _editingAreaSnapshots[areaId] = _deepCopy(snapshot);
+      }
       editingAreaIds.add(areaId);
       editingAreaIds.refresh();
+      lastStatus.value = 'Mähfläche wird bearbeitet. Diskette speichert und sendet, Zurücksetzen verwirft.';
+      lastStatusOk.value = true;
+      lastTopic.value = 'local/edit';
+      waitingForResponse.value = false;
+      lastUpdated.value = DateTime.now();
     }
+  }
+
+  void resetAreaEdit(String areaId) {
+    final snapshot = _editingAreaSnapshots[areaId];
+    if (snapshot != null) {
+      _replaceAreaInPayload(areaId, snapshot);
+    } else {
+      syncRawJsonFromData();
+    }
+    editingAreaIds.remove(areaId);
+    _editingAreaSnapshots.remove(areaId);
+    editingAreaIds.refresh();
+    lastStatus.value = 'Änderungen an der Mähfläche verworfen. Es wurde nichts gesendet.';
+    lastStatusOk.value = true;
+    lastTopic.value = 'local/edit';
+    waitingForResponse.value = false;
+    lastUpdated.value = DateTime.now();
+  }
+
+  void discardRawJsonEdit(String previousJsonText) {
+    rawJsonController.text = previousJsonText;
+    lastStatus.value = 'JSON-Bearbeitung verworfen. Es wurde nichts gesendet.';
+    lastStatusOk.value = true;
+    lastTopic.value = 'local/json';
+    waitingForResponse.value = false;
+    lastUpdated.value = DateTime.now();
   }
 
   void updateAreaName(String areaId, String value) {
@@ -313,6 +352,42 @@ class MqttAreasController extends GetxController {
       seen[order] = id;
     }
     return true;
+  }
+
+  Map<String, dynamic>? _findAreaByIdInPayload(String areaId) {
+    final source = areaPayload.isEmpty ? <String, dynamic>{'areas': <dynamic>[]} : areaPayload;
+    final listKey = source['areas'] is List ? 'areas' : (source['working_areas'] is List ? 'working_areas' : 'areas');
+    final list = List<dynamic>.from((source[listKey] as List?) ?? const <dynamic>[]);
+    for (final raw in list) {
+      if (raw is! Map) continue;
+      final area = Map<String, dynamic>.from(raw);
+      if (areaIdFor(area) == areaId) {
+        return area;
+      }
+    }
+    return null;
+  }
+
+  void _replaceAreaInPayload(String areaId, Map<String, dynamic> replacement) {
+    final next = _deepCopy(areaPayload.isEmpty ? <String, dynamic>{'areas': <dynamic>[]} : areaPayload);
+    final listKey = next['areas'] is List ? 'areas' : (next['working_areas'] is List ? 'working_areas' : 'areas');
+    final list = List<dynamic>.from((next[listKey] as List?) ?? const <dynamic>[]);
+
+    for (var i = 0; i < list.length; i++) {
+      final raw = list[i];
+      if (raw is! Map) continue;
+      final area = Map<String, dynamic>.from(raw);
+      if (areaIdFor(area) == areaId) {
+        list[i] = _deepCopy(replacement);
+        break;
+      }
+    }
+
+    next[listKey] = list;
+    areaPayload
+      ..clear()
+      ..addAll(next);
+    syncRawJsonFromData();
   }
 
   void _updateAreaProperties(String areaId, void Function(Map<String, dynamic> properties) mutate) {
