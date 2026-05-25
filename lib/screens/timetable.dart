@@ -24,6 +24,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
   final TextEditingController _newEndController = TextEditingController(text: '23:59');
 
   String? _editingEntryId;
+  Map<String, dynamic>? _entryBeforeEditing;
   TextEditingController? _editStartController;
   TextEditingController? _editEndController;
 
@@ -911,6 +912,12 @@ class _TimetableScreenState extends State<TimetableScreen> {
                       onPressed: () => _handleEditEntryAction(context, id, item, editing),
                       icon: Icon(editing ? Icons.save_outlined : Icons.edit_outlined),
                     ),
+                    if (editing)
+                      IconButton(
+                        tooltip: 'Änderungen verwerfen',
+                        onPressed: () => _resetEditingEntry(context),
+                        icon: const Icon(Icons.undo),
+                      ),
                   ],
                 ),
               ),
@@ -968,6 +975,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
 
     _disposeEditingEntryControllers();
     _editingEntryId = id;
+    _entryBeforeEditing = Map<String, dynamic>.from(item);
     _editStartController = TextEditingController(text: (item['start'] ?? '00:00').toString());
     _editEndController = TextEditingController(text: (item['end'] ?? '23:59').toString());
 
@@ -1022,7 +1030,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
   void _showEditBlockedMessage(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Bitte zuerst den aktuell geöffneten Mähzeit-Eintrag mit der Diskette speichern.'),
+        content: Text('Bitte zuerst den aktuell geöffneten Mähzeit-Eintrag mit der Diskette speichern oder zurücksetzen.'),
         duration: Duration(seconds: 3),
       ),
     );
@@ -1031,7 +1039,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
   void _showJsonEditBlockedMessage(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Bitte zuerst die JSON-Bearbeitung mit Speichern oder JSON sperren abschließen.'),
+        content: Text('Bitte zuerst die JSON-Bearbeitung mit Speichern oder Zurücksetzen abschließen.'),
         duration: Duration(seconds: 3),
       ),
     );
@@ -1048,12 +1056,31 @@ class _TimetableScreenState extends State<TimetableScreen> {
     setState(() {});
   }
 
+  void _resetEditingEntry(BuildContext context) {
+    final id = _editingEntryId;
+    final original = _entryBeforeEditing;
+    if (id == null || original == null) {
+      return;
+    }
+
+    controller.discardEntryEdit(id, original);
+    _disposeEditingEntryControllers();
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Änderungen am Mähzeit-Eintrag wurden verworfen.'),
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
   void _disposeEditingEntryControllers() {
     _editStartController?.dispose();
     _editEndController?.dispose();
     _editStartController = null;
     _editEndController = null;
     _editingEntryId = null;
+    _entryBeforeEditing = null;
   }
 
   void _syncNewEntryTimeControllers() {
@@ -1526,6 +1553,12 @@ class _TimetableScreenState extends State<TimetableScreen> {
         icon: Icon(_jsonEditUnlocked ? Icons.lock_open : Icons.lock_outline),
         label: Text(_jsonEditUnlocked ? 'JSON sperren' : 'JSON entsperren'),
       ),
+      if (_jsonEditUnlocked)
+        OutlinedButton.icon(
+          onPressed: () => _resetJsonEditing(context),
+          icon: const Icon(Icons.undo),
+          label: const Text('Zurücksetzen'),
+        ),
       ElevatedButton.icon(
         onPressed: controller.hasData ? () => _handleJsonSave(context) : null,
         icon: const Icon(Icons.save_outlined),
@@ -1752,6 +1785,24 @@ class _TimetableScreenState extends State<TimetableScreen> {
       _jsonEditUnlocked = false;
       _jsonBeforeEditing = '';
     });
+  }
+
+  void _resetJsonEditing(BuildContext context) {
+    if (!_jsonEditUnlocked) {
+      return;
+    }
+
+    controller.rawJsonController.text = _jsonBeforeEditing;
+    setState(() {
+      _jsonEditUnlocked = false;
+      _jsonBeforeEditing = '';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('JSON-Änderungen wurden verworfen.'),
+        duration: Duration(seconds: 3),
+      ),
+    );
   }
 
   void _handleJsonSave(BuildContext context) {

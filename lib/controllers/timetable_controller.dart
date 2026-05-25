@@ -461,6 +461,23 @@ class TimetableController extends GetxController {
     syncRawJsonFromData();
   }
 
+  void discardEntryEdit(String entryId, Map<String, dynamic> originalEntry) {
+    final next = _deepCopy(timetableData.isEmpty ? _emptyTimetableData() : timetableData);
+    final timetable = Map<String, dynamic>.from((next['timetable'] as Map?) ?? <String, dynamic>{});
+    timetable[entryId] = _deepCopy(originalEntry);
+    next['timetable'] = timetable;
+    timetableData
+      ..clear()
+      ..addAll(next);
+    editingEntryIds.remove(entryId);
+    editingEntryIds.refresh();
+    syncRawJsonFromData();
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = 'local/edit';
+    lastStatus.value = 'Mähzeit-Bearbeitung verworfen. Es wurde nichts gesendet.';
+    lastStatusOk.value = true;
+  }
+
   void updateNewEntry(String key, dynamic value) {
     final next = Map<String, dynamic>.from(newEntryDraft);
     next[key] = value;
