@@ -746,10 +746,6 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                     const SizedBox(width: 6),
                     _smallBadge(context, 'Gruppe geändert', Icons.category_outlined, color),
                   ],
-                  if (expertDirty) ...[
-                    const SizedBox(width: 6),
-                    _smallBadge(context, 'Expert geändert', Icons.admin_panel_settings_outlined, color),
-                  ],
                 ],
               ),
               const SizedBox(height: 2),
