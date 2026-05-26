@@ -52,8 +52,10 @@ class LowLevelPowerSettingsController extends GetxController {
   final activeValues = <String, double>{}.obs;
   final draftTexts = <String, String>{}.obs;
   final groupDraftTexts = <String, String>{}.obs;
+  final expertDraftValues = <String, bool>{}.obs;
   final dirtyKeys = <String>{}.obs;
   final dirtyGroupKeys = <String>{}.obs;
+  final dirtyExpertKeys = <String>{}.obs;
   final editorRevision = 0.obs;
 
   final lastStatus = ''.obs;
@@ -65,9 +67,18 @@ class LowLevelPowerSettingsController extends GetxController {
 
   Timer? _responseTimeout;
   int _responseWaitGeneration = 0;
+  Set<String> _pendingValueKeys = <String>{};
+  Set<String> _pendingGroupKeys = <String>{};
+  Set<String> _pendingExpertKeys = <String>{};
 
   bool get hasData => activeValues.isNotEmpty;
-  int get dirtyCount => {...dirtyKeys, ...dirtyGroupKeys}.length;
+  int get dirtyCount => {...dirtyKeys, ...dirtyGroupKeys, ...dirtyExpertKeys}.length;
+  int get sessionDirtyCount => dirtyKeys.length;
+
+  List<String> visibleKeys({required bool expertModeEnabled}) => orderedKeys
+      .where((key) => activeValues.containsKey(key))
+      .where((key) => expertModeEnabled || !expertOriginalBool(key))
+      .toList(growable: false);
 
   String get rawStatusJson {
     if (statusPayload.isEmpty) {
@@ -101,7 +112,7 @@ class LowLevelPowerSettingsController extends GetxController {
         if (setting is Map) {
           final normalized = Map<String, dynamic>.from(setting);
           nextSettings[key] = normalized;
-          final active = _double(normalized['active'] ?? normalized['persistent'] ?? normalized['default']);
+          final active = _double(normalized['value'] ?? normalized['active'] ?? normalized['persistent'] ?? normalized['default']);
           if (active != null) {
             parsed[key] = active;
           }
@@ -113,7 +124,7 @@ class LowLevelPowerSettingsController extends GetxController {
         final value = _double(root[key]);
         if (value != null) {
           parsed[key] = value;
-          nextSettings[key] = <String, dynamic>{'active': value, 'group': 'll_board'};
+          nextSettings[key] = <String, dynamic>{'value': value, 'active': value, 'group': 'll_board', 'expert': false};
         }
       }
     }
@@ -150,11 +161,16 @@ class LowLevelPowerSettingsController extends GetxController {
       if (!dirtyGroupKeys.contains(key)) {
         groupDraftTexts[key] = groupOriginalText(key);
       }
+      if (!dirtyExpertKeys.contains(key)) {
+        expertDraftValues[key] = expertOriginalBool(key);
+      }
     }
     draftTexts.removeWhere((key, value) => !orderedKeys.contains(key));
     groupDraftTexts.removeWhere((key, value) => !orderedKeys.contains(key));
+    expertDraftValues.removeWhere((key, value) => !orderedKeys.contains(key));
     dirtyKeys.removeWhere((key) => !orderedKeys.contains(key));
     dirtyGroupKeys.removeWhere((key) => !orderedKeys.contains(key));
+    dirtyExpertKeys.removeWhere((key) => !orderedKeys.contains(key));
     editorRevision.value++;
 
     _clearResponseTimeout();
@@ -171,7 +187,7 @@ class LowLevelPowerSettingsController extends GetxController {
     final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
     final valid = _boolOrNull(root['valid']);
     final mode = root['mode']?.toString() ?? root['scope']?.toString() ?? '';
-    final accepted = _acceptedKeys(root['accepted'] ?? root['applied']);
+    final accepted = _acceptedFields(root['accepted'] ?? root['applied']);
     final remarks = <String>[
       ..._stringList(root['remarks']),
       ..._rejectedRemarks(root['rejected']),
@@ -184,14 +200,28 @@ class LowLevelPowerSettingsController extends GetxController {
     _clearResponseTimeout();
     waitingForResponse.value = false;
 
-    for (final key in accepted) {
-      dirtyKeys.remove(key);
-      dirtyGroupKeys.remove(key);
+    if (accepted.isNotEmpty) {
+      accepted.forEach(_clearAcceptedFields);
+    } else if (valid == true) {
+      for (final key in _pendingValueKeys) {
+        dirtyKeys.remove(key);
+      }
+      for (final key in _pendingGroupKeys) {
+        dirtyGroupKeys.remove(key);
+      }
+      for (final key in _pendingExpertKeys) {
+        dirtyExpertKeys.remove(key);
+      }
+    }
+    if (valid == true || valid == false) {
+      _pendingValueKeys = <String>{};
+      _pendingGroupKeys = <String>{};
+      _pendingExpertKeys = <String>{};
     }
 
     if (valid == true) {
       if (mode == 'persistent') {
-        lastStatus.value = 'Low-Level-Board-Werte wurden dauerhaft gespeichert.';
+        lastStatus.value = 'Low-Level-Board-Werte und Metadaten wurden dauerhaft gespeichert.';
       } else if (mode == 'session') {
         lastStatus.value = 'Low-Level-Board-Werte wurden für die aktuelle Session angewendet.';
       } else {
@@ -229,6 +259,8 @@ class LowLevelPowerSettingsController extends GetxController {
       ? settings[key]!['group'].toString().trim()
       : 'll_board';
   String groupDraftText(String key) => groupDraftTexts[key] ?? groupOriginalText(key);
+  bool expertOriginalBool(String key) => settings[key]?['expert'] is bool ? settings[key]!['expert'] as bool : false;
+  bool expertDraftBool(String key) => expertDraftValues[key] ?? expertOriginalBool(key);
   String rangeText(String key) {
     final setting = settings[key];
     final min = setting?['min'];
@@ -257,13 +289,22 @@ class LowLevelPowerSettingsController extends GetxController {
   }
 
   void updateDraftGroup(String key, String rawValue) {
-    groupDraftTexts[key] = rawValue.trim();
+    groupDraftTexts[key] = rawValue;
     final normalized = _normalizedGroupDraftValue(key);
     final original = groupOriginalText(key);
     if (normalized == null || normalized != original) {
       dirtyGroupKeys.add(key);
     } else {
       dirtyGroupKeys.remove(key);
+    }
+  }
+
+  void updateDraftExpert(String key, bool value) {
+    expertDraftValues[key] = value;
+    if (value != expertOriginalBool(key)) {
+      dirtyExpertKeys.add(key);
+    } else {
+      dirtyExpertKeys.remove(key);
     }
   }
 
@@ -274,8 +315,10 @@ class LowLevelPowerSettingsController extends GetxController {
         draftTexts[key] = _displayNumber(active);
       }
       groupDraftTexts[key] = groupOriginalText(key);
+      expertDraftValues[key] = expertOriginalBool(key);
       dirtyKeys.remove(key);
       dirtyGroupKeys.remove(key);
+      dirtyExpertKeys.remove(key);
     }
     editorRevision.value++;
     setInfo('Low-Level-Board-Entwürfe wurden zurückgesetzt.', topic: 'local/reset');
@@ -286,13 +329,15 @@ class LowLevelPowerSettingsController extends GetxController {
     for (final key in orderedKeys) {
       final valueDirty = dirtyKeys.contains(key);
       final groupDirty = dirtyGroupKeys.contains(key);
-      if (!valueDirty && (!groupDirty || sessionOnly)) {
+      final expertDirty = dirtyExpertKeys.contains(key);
+      if (!valueDirty && (!groupDirty || sessionOnly) && (!expertDirty || sessionOnly)) {
         continue;
       }
 
-      double? parsed;
+      final fields = <String, dynamic>{};
+
       if (valueDirty) {
-        parsed = _double(draftTexts[key]);
+        final parsed = _double(draftTexts[key]);
         if (parsed == null) {
           setError('Der Wert für „${labelFor(key)}“ ist keine gültige JSON-Zahl.', topic: 'local/validation');
           return null;
@@ -303,43 +348,33 @@ class LowLevelPowerSettingsController extends GetxController {
           setError('Der Wert für „${labelFor(key)}“ liegt außerhalb des erlaubten Bereichs.', topic: 'local/validation');
           return null;
         }
+        fields['value'] = parsed;
       }
 
       if (groupDirty && !sessionOnly) {
         final groupValue = _normalizedGroupDraftValue(key);
         if (groupValue == null) {
-          setError('Die Gruppe für „${labelFor(key)}“ darf nicht leer sein.', topic: 'local/validation');
+          setError('Die Gruppe für „${labelFor(key)}“ darf nicht leer sein, maximal 80 Zeichen haben und keine Steuerzeichen enthalten.', topic: 'local/validation');
           return null;
         }
+        fields['group'] = groupValue;
+      }
 
-        // Metadata writes are sent as full setting updates so the backend can
-        // validate the unchanged value together with the changed group.
-        final valueForMetadata = parsed ?? activeValues[key] ?? _double(settings[key]?['persistent']) ?? _double(settings[key]?['active']);
-        if (valueForMetadata == null) {
-          setError('Der aktuelle Wert für „${labelFor(key)}“ kann nicht gültig gespeichert werden.', topic: 'local/validation');
-          return null;
-        }
+      if (expertDirty && !sessionOnly) {
+        fields['expert'] = expertDraftBool(key);
+      }
 
-        payload[key] = <String, dynamic>{
-          'value': valueForMetadata,
-          'group': groupValue,
-        };
-      } else if (valueDirty) {
-        payload[key] = parsed;
+      if (fields.isNotEmpty) {
+        payload[key] = fields;
       }
     }
     if (payload.isEmpty) {
       setInfo(sessionOnly
-          ? 'Es gibt keine live anwendbaren Low-Level-Board-Werte.'
-          : 'Es gibt keine geänderten Low-Level-Board-Werte.', topic: 'local/info');
+          ? 'Es gibt keine live anwendbaren Low-Level-Board-Werte. Metadaten werden nur dauerhaft gespeichert.'
+          : 'Es gibt keine geänderten Low-Level-Board-Werte oder Metadaten.', topic: 'local/info');
       return null;
     }
     return payload;
-  }
-
-  String? _normalizedGroupDraftValue(String key) {
-    final value = (groupDraftTexts[key] ?? groupOriginalText(key)).trim();
-    return value.isEmpty ? null : value;
   }
 
   void applySessionChanges() {
@@ -355,6 +390,7 @@ class LowLevelPowerSettingsController extends GetxController {
     _armResponseTimeout(
       'Keine Backend-Bestätigung für die Low-Level-Board-Sessionänderung empfangen.',
     );
+    _rememberPendingAction(payload, sessionOnly: true);
     Get.find<MqttConnection>().publishLowLevelPowerSessionSettings(payload);
   }
 
@@ -365,14 +401,96 @@ class LowLevelPowerSettingsController extends GetxController {
     }
     waitingForResponse.value = true;
     lastStatusOk.value = null;
-    lastStatus.value = 'Low-Level-Board-Werte werden dauerhaft gespeichert ...';
+    lastStatus.value = 'Low-Level-Board-Werte und Metadaten werden dauerhaft gespeichert ...';
     lastTopic.value = 'settings/ll_board/set/persistent/json';
     lastUpdated.value = DateTime.now();
     _armResponseTimeout(
       'Keine Backend-Bestätigung für das dauerhafte Speichern der Low-Level-Board-Werte empfangen.',
     );
+    _rememberPendingAction(payload, sessionOnly: false);
     Get.find<MqttConnection>().publishLowLevelPowerPersistentSettings(payload);
   }
+
+  void _rememberPendingAction(Map<String, dynamic> payload, {required bool sessionOnly}) {
+    final valueKeys = <String>{};
+    final groupKeys = <String>{};
+    final expertKeys = <String>{};
+    payload.forEach((key, value) {
+      final settingKey = key.toString();
+      if (value is Map) {
+        if (value.containsKey('value')) {
+          valueKeys.add(settingKey);
+        }
+        if (!sessionOnly && value.containsKey('group')) {
+          groupKeys.add(settingKey);
+        }
+        if (!sessionOnly && value.containsKey('expert')) {
+          expertKeys.add(settingKey);
+        }
+      } else {
+        valueKeys.add(settingKey);
+      }
+    });
+    _pendingValueKeys = valueKeys;
+    _pendingGroupKeys = groupKeys;
+    _pendingExpertKeys = expertKeys;
+  }
+
+  Map<String, Set<String>> _acceptedFields(dynamic raw) {
+    final result = <String, Set<String>>{};
+    void add(String key, Iterable<String> fields) {
+      final normalizedKey = key.trim();
+      if (normalizedKey.isEmpty) return;
+      result.putIfAbsent(normalizedKey, () => <String>{}).addAll(fields);
+    }
+
+    if (raw is Map) {
+      raw.forEach((key, value) {
+        if (value is Map && value['fields'] is List) {
+          add(key.toString(), (value['fields'] as List).map((field) => field.toString()));
+        } else if (value is List) {
+          add(key.toString(), value.map((field) => field.toString()));
+        } else {
+          add(key.toString(), const ['value', 'group', 'expert']);
+        }
+      });
+    } else if (raw is List) {
+      for (final item in raw) {
+        if (item is Map) {
+          final key = item['key']?.toString() ?? '';
+          final fields = item['fields'] is List
+              ? (item['fields'] as List).map((field) => field.toString())
+              : const ['value', 'group', 'expert'];
+          add(key, fields);
+        } else {
+          add(item.toString(), const ['value', 'group', 'expert']);
+        }
+      }
+    }
+    return result;
+  }
+
+  void _clearAcceptedFields(String key, Set<String> fields) {
+    if (fields.contains('value')) {
+      dirtyKeys.remove(key);
+    }
+    if (fields.contains('group')) {
+      dirtyGroupKeys.remove(key);
+    }
+    if (fields.contains('expert')) {
+      dirtyExpertKeys.remove(key);
+    }
+  }
+
+  String? _normalizedGroupDraftValue(String key) {
+    final value = (groupDraftTexts[key] ?? groupOriginalText(key)).trim();
+    if (value.isEmpty || value.length > 80 || _containsControlCharacters(value)) {
+      return null;
+    }
+    return value;
+  }
+
+  bool _containsControlCharacters(String value) => value.runes.any((char) => char < 0x20 || char == 0x7f);
 
   void _armResponseTimeout(String timeoutMessage) {
     _responseTimeout?.cancel();
@@ -419,16 +537,6 @@ class LowLevelPowerSettingsController extends GetxController {
     return null;
   }
 
-  List<String> _acceptedKeys(dynamic raw) {
-    if (raw is Map) {
-      return raw.keys.map((key) => key.toString()).toList();
-    }
-    if (raw is List) {
-      return raw.map((key) => key.toString()).toList();
-    }
-    return const <String>[];
-  }
-
   List<String> _stringList(dynamic raw) {
     if (raw is List) {
       return raw.map((item) => item.toString()).toList();
@@ -450,8 +558,9 @@ class LowLevelPowerSettingsController extends GetxController {
     for (final item in raw) {
       if (item is Map) {
         final key = item['key']?.toString() ?? 'unbekannt';
+        final field = item['field']?.toString();
         final reason = item['reason']?.toString() ?? 'abgelehnt';
-        remarks.add('$key: $reason');
+        remarks.add(field == null || field.isEmpty ? '$key: $reason' : '$key / $field: $reason');
       } else {
         remarks.add(item.toString());
       }

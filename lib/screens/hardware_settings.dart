@@ -121,7 +121,7 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
                   spacing: 12,
                   runSpacing: 12,
                   children: [
-                    _overviewMetric(context, label: 'Parameter', value: LowLevelPowerSettingsController.orderedKeys.length.toString(), icon: Icons.list_alt),
+                    _overviewMetric(context, label: 'Parameter', value: controller.visibleKeys(expertModeEnabled: settingsController.expertModeEnabled.value).length.toString(), icon: Icons.list_alt),
                     _overviewMetric(context, label: 'Entwürfe', value: controller.dirtyCount.toString(), icon: Icons.edit_note),
                   ],
                 ),
@@ -136,7 +136,7 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    '„Jetzt anwenden“ verändert nur die laufende Session. „Dauerhaft speichern“ setzt persistent und active und schreibt die persistente Settings-Datei.',
+                    '„Jetzt anwenden“ sendet nur value über session. „Dauerhaft speichern“ sendet value, group und/oder expert objektbasiert über persistent.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -189,7 +189,7 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      'Die Hardwarewerte werden über settings/ll_board/set/session/json live getestet oder über settings/ll_board/set/persistent/json dauerhaft gespeichert.',
+                      'Die Hardwarewerte werden über settings/ll_board/set/session/json als {key:{value:...}} live getestet. Metadaten group/expert werden ausschließlich über settings/ll_board/set/persistent/json gespeichert.',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
@@ -204,9 +204,9 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
                       ),
                     )
                   else
-                    for (var i = 0; i < LowLevelPowerSettingsController.orderedKeys.length; i++) ...[
+                    for (var i = 0; i < controller.visibleKeys(expertModeEnabled: settingsController.expertModeEnabled.value).length; i++) ...[
                       if (i > 0) const SizedBox(height: 12),
-                      _buildValueCard(context, LowLevelPowerSettingsController.orderedKeys[i]),
+                      _buildValueCard(context, controller.visibleKeys(expertModeEnabled: settingsController.expertModeEnabled.value)[i]),
                     ],
                   const SizedBox(height: 14),
                   LayoutBuilder(
@@ -279,7 +279,8 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
     final color = Theme.of(context).primaryColor;
     final valueDirty = controller.dirtyKeys.contains(key);
     final groupDirty = controller.dirtyGroupKeys.contains(key);
-    final dirty = valueDirty || groupDirty;
+    final expertDirty = controller.dirtyExpertKeys.contains(key);
+    final dirty = valueDirty || groupDirty || expertDirty;
     final unit = controller.unitFor(key);
     return Container(
       padding: const EdgeInsets.all(14),
@@ -307,6 +308,10 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
                     const SizedBox(width: 6),
                     _smallBadge(context, 'Gruppe geändert', Icons.category_outlined, color),
                   ],
+                  if (expertDirty) ...[
+                    const SizedBox(width: 6),
+                    _smallBadge(context, 'Expert geändert', Icons.admin_panel_settings_outlined, color),
+                  ],
                 ],
               ),
               const SizedBox(height: 2),
@@ -314,7 +319,7 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
               if (settingsController.expertModeEnabled.value) ...[
                 const SizedBox(height: 4),
                 Text(
-                  'JSON group: ${controller.groupOriginalText(key)}',
+                  'JSON group: ${controller.groupOriginalText(key)} · expert: ${controller.expertOriginalBool(key)}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
                 ),
               ],
@@ -347,6 +352,8 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
               if (settingsController.expertModeEnabled.value) ...[
                 const SizedBox(height: 10),
                 _buildGroupMetadataEditor(context, key),
+                const SizedBox(height: 10),
+                _buildExpertMetadataEditor(context, key),
               ],
             ],
           );
@@ -375,6 +382,27 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
         prefixIcon: const Icon(Icons.category_outlined),
       ),
       onChanged: (value) => controller.updateDraftGroup(key, value),
+    );
+  }
+
+  Widget _buildExpertMetadataEditor(BuildContext context, String key) {
+    final expertDirty = controller.dirtyExpertKeys.contains(key);
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: SwitchListTile(
+        value: controller.expertDraftBool(key),
+        onChanged: (value) => controller.updateDraftExpert(key, value),
+        title: const Text('JSON-Feld „expert“'),
+        subtitle: Text(
+          expertDirty
+              ? 'Wird erst beim dauerhaften Speichern ans Backend gesendet'
+              : 'Bei aktivem expert wird der Parameter im Normalmodus ausgeblendet',
+        ),
+        secondary: const Icon(Icons.admin_panel_settings_outlined),
+      ),
     );
   }
 
