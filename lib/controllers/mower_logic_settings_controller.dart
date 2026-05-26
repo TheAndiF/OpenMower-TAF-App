@@ -10,8 +10,10 @@ class MowerLogicSettingsController extends GetxController {
   final settings = <String, Map<String, dynamic>>{}.obs;
   final draftValues = <String, dynamic>{}.obs;
   final groupDraftValues = <String, String>{}.obs;
+  final expertDraftValues = <String, bool>{}.obs;
   final dirtyKeys = <String>{}.obs;
   final dirtyGroupKeys = <String>{}.obs;
+  final dirtyExpertKeys = <String>{}.obs;
   final editorRevision = 0.obs;
 
   final lastRemarks = <String>[].obs;
@@ -27,6 +29,7 @@ class MowerLogicSettingsController extends GetxController {
   Timer? _actionResponseTimeout;
   Set<String> _pendingValueKeys = <String>{};
   Set<String> _pendingGroupKeys = <String>{};
+  Set<String> _pendingExpertKeys = <String>{};
   int _statusResponseWaitGeneration = 0;
   int _actionResponseWaitGeneration = 0;
 
@@ -34,7 +37,7 @@ class MowerLogicSettingsController extends GetxController {
   int get settingCount => settings.length;
   int get differenceCount => settings.values.where((setting) => _bool(setting['different'])).length;
   int get restartRequiredCount => settings.values.where((setting) => _bool(setting['restart_required'])).length;
-  int get dirtyCount => {...dirtyKeys, ...dirtyGroupKeys}.length;
+  int get dirtyCount => {...dirtyKeys, ...dirtyGroupKeys, ...dirtyExpertKeys}.length;
 
   String get rawStatusJson {
     if (statusPayload.isEmpty) {
@@ -43,14 +46,23 @@ class MowerLogicSettingsController extends GetxController {
     return const JsonEncoder.withIndent('  ').convert(statusPayload);
   }
 
-  List<String> get groups {
-    final groupNames = settings.values.map((setting) => _text(setting['group'], fallback: 'general')).toSet().toList();
+  List<String> groupsForMode({required bool expertModeEnabled}) {
+    final groupNames = settings.values
+        .where((setting) => expertModeEnabled || !_settingIsExpert(setting))
+        .map((setting) => _text(setting['group'], fallback: 'general'))
+        .toSet()
+        .toList();
     groupNames.sort((a, b) => _groupOrder(a).compareTo(_groupOrder(b)));
     return groupNames;
   }
 
-  List<MapEntry<String, Map<String, dynamic>>> settingsForGroup(String group) {
-    final entries = settings.entries.where((entry) => _text(entry.value['group'], fallback: 'general') == group).toList();
+  List<String> get groups => groupsForMode(expertModeEnabled: true);
+
+  List<MapEntry<String, Map<String, dynamic>>> settingsForGroup(String group, {bool expertModeEnabled = true}) {
+    final entries = settings.entries
+        .where((entry) => _text(entry.value['group'], fallback: 'general') == group)
+        .where((entry) => expertModeEnabled || !_settingIsExpert(entry.value))
+        .toList();
     entries.sort((a, b) {
       final orderA = _int(a.value['order']) ?? 999999;
       final orderB = _int(b.value['order']) ?? 999999;
@@ -60,18 +72,21 @@ class MowerLogicSettingsController extends GetxController {
     return entries;
   }
 
-  int dirtyCountForGroup(String group) => settingsForGroup(group)
-      .where((entry) => dirtyKeys.contains(entry.key) || dirtyGroupKeys.contains(entry.key))
+  int dirtyCountForGroup(String group, {bool expertModeEnabled = true}) => settingsForGroup(group, expertModeEnabled: expertModeEnabled)
+      .where((entry) => dirtyKeys.contains(entry.key) || dirtyGroupKeys.contains(entry.key) || dirtyExpertKeys.contains(entry.key))
       .length;
 
-  int differenceCountForGroup(String group) => settingsForGroup(group).where((entry) => _bool(entry.value['different'])).length;
+  int differenceCountForGroup(String group, {bool expertModeEnabled = true}) =>
+      settingsForGroup(group, expertModeEnabled: expertModeEnabled).where((entry) => _bool(entry.value['different'])).length;
 
-  int sessionSupportedDirtyCountForGroup(String group) => settingsForGroup(group)
+  int sessionSupportedDirtyCountForGroup(String group, {bool expertModeEnabled = true}) => settingsForGroup(group, expertModeEnabled: expertModeEnabled)
       .where((entry) => dirtyKeys.contains(entry.key) && _bool(entry.value['session_apply_supported']))
       .length;
 
-  int metadataDirtyCountForGroup(String group) =>
-      settingsForGroup(group).where((entry) => dirtyGroupKeys.contains(entry.key)).length;
+  int metadataDirtyCountForGroup(String group, {bool expertModeEnabled = true}) =>
+      settingsForGroup(group, expertModeEnabled: expertModeEnabled)
+          .where((entry) => dirtyGroupKeys.contains(entry.key) || dirtyExpertKeys.contains(entry.key))
+          .length;
 
   String groupLabel(String group) {
     switch (group) {
@@ -189,6 +204,7 @@ class MowerLogicSettingsController extends GetxController {
 
   String _inferredScalarType(Map<String, dynamic> setting) {
     final evidence = <dynamic>[
+      setting['value'],
       setting['active'],
       setting['persistent'],
       setting['min'],
@@ -244,8 +260,13 @@ class MowerLogicSettingsController extends GetxController {
 
   String draftText(String key, Map<String, dynamic> setting) => _valueText(draftValues[key] ?? _seedValue(setting));
 
-  String activeText(Map<String, dynamic> setting) => _valueText(setting['active']);
+  String activeText(Map<String, dynamic> setting) => _valueText(_seedValue(setting));
   String persistentText(Map<String, dynamic> setting) => _valueText(setting['persistent']);
+
+  bool expertDraftBool(String key, Map<String, dynamic> setting) =>
+      expertDraftValues[key] ?? _expertSeed(setting);
+
+  bool expertOriginalBool(Map<String, dynamic> setting) => _expertSeed(setting);
 
   String rangeText(Map<String, dynamic> setting) {
     final min = setting['min'];
@@ -311,11 +332,16 @@ class MowerLogicSettingsController extends GetxController {
       if (!dirtyGroupKeys.contains(entry.key)) {
         groupDraftValues[entry.key] = _groupSeed(entry.value);
       }
+      if (!dirtyExpertKeys.contains(entry.key)) {
+        expertDraftValues[entry.key] = _expertSeed(entry.value);
+      }
     }
     draftValues.removeWhere((key, value) => !settings.containsKey(key));
     groupDraftValues.removeWhere((key, value) => !settings.containsKey(key));
+    expertDraftValues.removeWhere((key, value) => !settings.containsKey(key));
     dirtyKeys.removeWhere((key) => !settings.containsKey(key));
     dirtyGroupKeys.removeWhere((key) => !settings.containsKey(key));
+    dirtyExpertKeys.removeWhere((key) => !settings.containsKey(key));
     // TextFormFields receive a fresh initial value only after backend refreshes.
     // The revision deliberately does not change while the user is typing.
     editorRevision.value++;
@@ -339,7 +365,7 @@ class MowerLogicSettingsController extends GetxController {
       ..._stringList(root['remarks']),
       ..._rejectedRemarks(root['rejected']),
     ];
-    final accepted = _acceptedKeys(root['accepted'] ?? root['applied']);
+    final accepted = _acceptedFields(root['accepted'] ?? root['applied']);
 
     lastRemarks.assignAll(remarks);
     lastStatusOk.value = valid;
@@ -349,14 +375,23 @@ class MowerLogicSettingsController extends GetxController {
     actionInProgress.value = false;
     _syncWaitingState();
 
-    final keysToClear = accepted.isNotEmpty || valid != true ? accepted : {..._pendingValueKeys, ..._pendingGroupKeys}.toList();
-    for (final key in keysToClear) {
-      dirtyKeys.remove(key);
-      dirtyGroupKeys.remove(key);
+    if (accepted.isNotEmpty) {
+      accepted.forEach(_clearAcceptedFields);
+    } else if (valid == true) {
+      for (final key in _pendingValueKeys) {
+        dirtyKeys.remove(key);
+      }
+      for (final key in _pendingGroupKeys) {
+        dirtyGroupKeys.remove(key);
+      }
+      for (final key in _pendingExpertKeys) {
+        dirtyExpertKeys.remove(key);
+      }
     }
     if (valid == true || valid == false) {
       _pendingValueKeys = <String>{};
       _pendingGroupKeys = <String>{};
+      _pendingExpertKeys = <String>{};
     }
 
     if (valid == true) {
@@ -374,14 +409,50 @@ class MowerLogicSettingsController extends GetxController {
     }
   }
 
-  List<String> _acceptedKeys(dynamic raw) {
+  Map<String, Set<String>> _acceptedFields(dynamic raw) {
+    final result = <String, Set<String>>{};
+    void add(String key, Iterable<String> fields) {
+      final normalizedKey = key.trim();
+      if (normalizedKey.isEmpty) return;
+      result.putIfAbsent(normalizedKey, () => <String>{}).addAll(fields);
+    }
+
     if (raw is Map) {
-      return raw.keys.map((key) => key.toString()).toList();
+      raw.forEach((key, value) {
+        if (value is Map && value['fields'] is List) {
+          add(key.toString(), (value['fields'] as List).map((field) => field.toString()));
+        } else if (value is List) {
+          add(key.toString(), value.map((field) => field.toString()));
+        } else {
+          add(key.toString(), const ['value', 'group', 'expert']);
+        }
+      });
+    } else if (raw is List) {
+      for (final item in raw) {
+        if (item is Map) {
+          final key = item['key']?.toString() ?? '';
+          final fields = item['fields'] is List
+              ? (item['fields'] as List).map((field) => field.toString())
+              : const ['value', 'group', 'expert'];
+          add(key, fields);
+        } else {
+          add(item.toString(), const ['value', 'group', 'expert']);
+        }
+      }
     }
-    if (raw is List) {
-      return raw.map((key) => key.toString()).toList();
+    return result;
+  }
+
+  void _clearAcceptedFields(String key, Set<String> fields) {
+    if (fields.contains('value')) {
+      dirtyKeys.remove(key);
     }
-    return const <String>[];
+    if (fields.contains('group')) {
+      dirtyGroupKeys.remove(key);
+    }
+    if (fields.contains('expert')) {
+      dirtyExpertKeys.remove(key);
+    }
   }
 
   List<String> _rejectedRemarks(dynamic raw) {
@@ -395,8 +466,9 @@ class MowerLogicSettingsController extends GetxController {
     for (final item in raw) {
       if (item is Map) {
         final key = item['key']?.toString() ?? 'unbekannt';
+        final field = item['field']?.toString();
         final reason = item['reason']?.toString() ?? 'abgelehnt';
-        remarks.add('$key: $reason');
+        remarks.add(field == null || field.isEmpty ? '$key: $reason' : '$key / $field: $reason');
       } else {
         remarks.add(item.toString());
       }
@@ -439,8 +511,13 @@ class MowerLogicSettingsController extends GetxController {
   }
 
   void updateDraftGroup(String key, Map<String, dynamic> setting, String rawValue) {
-    groupDraftValues[key] = rawValue.trim();
+    groupDraftValues[key] = rawValue;
     _updateGroupDirtyState(key, setting);
+  }
+
+  void updateDraftExpert(String key, Map<String, dynamic> setting, bool value) {
+    expertDraftValues[key] = value;
+    _updateExpertDirtyState(key, setting);
   }
 
   String groupDraftText(String key, Map<String, dynamic> setting) =>
@@ -450,19 +527,21 @@ class MowerLogicSettingsController extends GetxController {
 
   bool isString(Map<String, dynamic> setting) => typeFor(setting) == 'string';
 
-  void resetGroupDrafts(String group) {
-    for (final entry in settingsForGroup(group)) {
+  void resetGroupDrafts(String group, {bool expertModeEnabled = true}) {
+    for (final entry in settingsForGroup(group, expertModeEnabled: expertModeEnabled)) {
       draftValues[entry.key] = _seedValue(entry.value);
       groupDraftValues[entry.key] = _groupSeed(entry.value);
+      expertDraftValues[entry.key] = _expertSeed(entry.value);
       dirtyKeys.remove(entry.key);
       dirtyGroupKeys.remove(entry.key);
+      dirtyExpertKeys.remove(entry.key);
     }
     editorRevision.value++;
     setInfo('Entwürfe in „${groupLabel(group)}“ wurden zurückgesetzt.', topic: 'local/reset');
   }
 
-  void applySessionForGroup(String group) {
-    final payload = _payloadForGroup(group, sessionOnly: true);
+  void applySessionForGroup(String group, {bool expertModeEnabled = true}) {
+    final payload = _payloadForGroup(group, sessionOnly: true, expertModeEnabled: expertModeEnabled);
     if (payload == null) {
       return;
     }
@@ -479,8 +558,8 @@ class MowerLogicSettingsController extends GetxController {
     Get.find<MqttConnection>().publishMowerLogicSessionSettings(payload);
   }
 
-  void savePersistentForGroup(String group) {
-    final payload = _payloadForGroup(group, sessionOnly: false);
+  void savePersistentForGroup(String group, {bool expertModeEnabled = true}) {
+    final payload = _payloadForGroup(group, sessionOnly: false, expertModeEnabled: expertModeEnabled);
     if (payload == null) {
       return;
     }
@@ -500,6 +579,7 @@ class MowerLogicSettingsController extends GetxController {
   void _rememberPendingAction(Map<String, dynamic> payload, {required bool sessionOnly}) {
     final valueKeys = <String>{};
     final groupKeys = <String>{};
+    final expertKeys = <String>{};
     payload.forEach((key, value) {
       final settingKey = key.toString();
       if (value is Map) {
@@ -509,62 +589,59 @@ class MowerLogicSettingsController extends GetxController {
         if (!sessionOnly && value.containsKey('group')) {
           groupKeys.add(settingKey);
         }
+        if (!sessionOnly && value.containsKey('expert')) {
+          expertKeys.add(settingKey);
+        }
       } else {
         valueKeys.add(settingKey);
       }
     });
     _pendingValueKeys = valueKeys;
     _pendingGroupKeys = groupKeys;
+    _pendingExpertKeys = expertKeys;
   }
 
-  Map<String, dynamic>? _payloadForGroup(String group, {required bool sessionOnly}) {
+  Map<String, dynamic>? _payloadForGroup(String group, {required bool sessionOnly, bool expertModeEnabled = true}) {
     final payload = <String, dynamic>{};
-    for (final entry in settingsForGroup(group)) {
+    for (final entry in settingsForGroup(group, expertModeEnabled: expertModeEnabled)) {
       final key = entry.key;
       final setting = entry.value;
       final valueDirty = dirtyKeys.contains(key);
       final groupDirty = dirtyGroupKeys.contains(key);
-      if (!valueDirty && (!groupDirty || sessionOnly)) {
+      final expertDirty = dirtyExpertKeys.contains(key);
+      if (!valueDirty && (!groupDirty || sessionOnly) && (!expertDirty || sessionOnly)) {
         continue;
       }
       if (sessionOnly && !_bool(setting['session_apply_supported'])) {
         continue;
       }
 
-      dynamic value;
+      final fields = <String, dynamic>{};
+
       if (valueDirty) {
-        value = _normalizedDraftValue(key, setting);
+        final value = _normalizedDraftValue(key, setting);
         if (value == _invalidValue) {
           setError('Der Wert für „${labelFor(key, setting)}“ ist nicht gültig.', topic: 'local/validation');
           return null;
         }
+        fields['value'] = value;
       }
 
       if (groupDirty && !sessionOnly) {
         final groupValue = _normalizedGroupDraftValue(key, setting);
         if (groupValue == null) {
-          setError('Die Gruppe für „${labelFor(key, setting)}“ darf nicht leer sein.', topic: 'local/validation');
+          setError('Die Gruppe für „${labelFor(key, setting)}“ darf nicht leer sein, maximal 80 Zeichen haben und keine Steuerzeichen enthalten.', topic: 'local/validation');
           return null;
         }
+        fields['group'] = groupValue;
+      }
 
-        // The backend validates metadata writes with the same schema as value
-        // writes. Therefore a group-only edit must still carry the current
-        // value in its real JSON type; otherwise validators reject entries like
-        // undock_distance/fixed_angle because `value` is missing or typed as
-        // text. The frontend still does not mark the value dirty or reorder the
-        // UI while the group is edited.
-        final valueForMetadata = valueDirty ? value : _normalizedSettingValue(_seedValue(setting), setting);
-        if (valueForMetadata == _invalidValue) {
-          setError('Der aktuelle Wert für „${labelFor(key, setting)}“ kann nicht gültig gespeichert werden.', topic: 'local/validation');
-          return null;
-        }
+      if (expertDirty && !sessionOnly) {
+        fields['expert'] = expertDraftBool(key, setting);
+      }
 
-        payload[key] = <String, dynamic>{
-          'value': valueForMetadata,
-          'group': groupValue,
-        };
-      } else if (valueDirty) {
-        payload[key] = value;
+      if (fields.isNotEmpty) {
+        payload[key] = fields;
       }
     }
 
@@ -601,7 +678,8 @@ class MowerLogicSettingsController extends GetxController {
         if (value == null) return _invalidValue;
         break;
       case 'string':
-        value = raw?.toString() ?? '';
+        if (raw is! String) return _invalidValue;
+        value = raw;
         break;
       default:
         value = raw;
@@ -636,14 +714,37 @@ class MowerLogicSettingsController extends GetxController {
     }
   }
 
+  void _updateExpertDirtyState(String key, Map<String, dynamic> setting) {
+    final normalized = expertDraftBool(key, setting);
+    final seed = _expertSeed(setting);
+    if (normalized != seed) {
+      dirtyExpertKeys.add(key);
+    } else {
+      dirtyExpertKeys.remove(key);
+    }
+  }
+
   String? _normalizedGroupDraftValue(String key, Map<String, dynamic> setting) {
-    final value = (groupDraftValues[key] ?? _groupSeed(setting)).trim();
-    return value.isEmpty ? null : value;
+    final raw = groupDraftValues[key] ?? _groupSeed(setting);
+    final value = raw.trim();
+    if (value.isEmpty || value.length > 80 || _containsControlCharacters(value)) {
+      return null;
+    }
+    return value;
   }
 
   String _groupSeed(Map<String, dynamic> setting) => _text(setting['group'], fallback: 'general');
 
+  bool _expertSeed(Map<String, dynamic> setting) => setting['expert'] is bool ? setting['expert'] as bool : false;
+
+  bool _settingIsExpert(Map<String, dynamic> setting) => _expertSeed(setting);
+
+  bool _containsControlCharacters(String value) => value.runes.any((char) => char < 0x20 || char == 0x7f);
+
   dynamic _seedValue(Map<String, dynamic> setting) {
+    if (setting.containsKey('value')) {
+      return setting['value'];
+    }
     if (setting.containsKey('active')) {
       return setting['active'];
     }

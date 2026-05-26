@@ -52,7 +52,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                 if (!controller.hasData)
                   _buildEmptySettingsCard(context)
                 else
-                  ...controller.groups.expand((group) sync* {
+                  ...controller.groupsForMode(expertModeEnabled: settingsController.expertModeEnabled.value).expand((group) sync* {
                     yield _buildGroupSection(context, group);
                     yield const SizedBox(height: 16);
                   }),
@@ -222,11 +222,12 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
 
   Widget _buildGroupSection(BuildContext context, String group) {
     final color = Theme.of(context).primaryColor;
-    final groupEntries = controller.settingsForGroup(group);
-    final dirty = controller.dirtyCountForGroup(group);
-    final differences = controller.differenceCountForGroup(group);
-    final liveDirty = controller.sessionSupportedDirtyCountForGroup(group);
-    final metadataDirty = controller.metadataDirtyCountForGroup(group);
+    final expertMode = settingsController.expertModeEnabled.value;
+    final groupEntries = controller.settingsForGroup(group, expertModeEnabled: expertMode);
+    final dirty = controller.dirtyCountForGroup(group, expertModeEnabled: expertMode);
+    final differences = controller.differenceCountForGroup(group, expertModeEnabled: expertMode);
+    final liveDirty = controller.sessionSupportedDirtyCountForGroup(group, expertModeEnabled: expertMode);
+    final metadataDirty = controller.metadataDirtyCountForGroup(group, expertModeEnabled: expertMode);
     return Card(
       margin: EdgeInsets.zero,
       child: Theme(
@@ -248,7 +249,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
               Text('${groupEntries.length} Werte', style: Theme.of(context).textTheme.bodyMedium),
               if (differences > 0) Text('$differences aktiv/gespeichert unterschiedlich', style: Theme.of(context).textTheme.bodyMedium),
               if (dirty > 0) Text('$dirty lokale Änderung(en)', style: Theme.of(context).textTheme.bodyMedium),
-              if (metadataDirty > 0) Text('$metadataDirty Gruppen-Metadaten', style: Theme.of(context).textTheme.bodyMedium),
+              if (metadataDirty > 0) Text('$metadataDirty Metadaten', style: Theme.of(context).textTheme.bodyMedium),
             ],
           ),
           children: [
@@ -279,7 +280,8 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     final different = _bool(setting['different']);
     final valueDirty = controller.dirtyKeys.contains(key);
     final groupDirty = controller.dirtyGroupKeys.contains(key);
-    final dirty = valueDirty || groupDirty;
+    final expertDirty = controller.dirtyExpertKeys.contains(key);
+    final dirty = valueDirty || groupDirty || expertDirty;
     final sessionSupported = _bool(setting['session_apply_supported']);
     final restartRequired = _bool(setting['restart_required']);
     final description = controller.descriptionFor(setting);
@@ -313,6 +315,10 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                     const SizedBox(width: 6),
                     _smallBadge(context, 'Gruppe geändert', Icons.category_outlined, color),
                   ],
+                  if (expertDirty) ...[
+                    const SizedBox(width: 6),
+                    _smallBadge(context, 'Expert geändert', Icons.admin_panel_settings_outlined, color),
+                  ],
                 ],
               ),
               const SizedBox(height: 2),
@@ -320,7 +326,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
               if (settingsController.expertModeEnabled.value) ...[
                 const SizedBox(height: 4),
                 Text(
-                  'JSON group: ${controller.groupOriginalText(setting)}',
+                  'JSON group: ${controller.groupOriginalText(setting)} · expert: ${controller.expertOriginalBool(setting)}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
                 ),
               ],
@@ -352,7 +358,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
               _buildEditor(context, key, setting, unit: unit),
               if (settingsController.expertModeEnabled.value) ...[
                 const SizedBox(height: 10),
-                _buildGroupMetadataEditor(context, key, setting),
+                _buildMetadataEditors(context, key, setting),
               ],
             ],
           );
@@ -379,21 +385,42 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     );
   }
 
-  Widget _buildGroupMetadataEditor(BuildContext context, String key, Map<String, dynamic> setting) {
+  Widget _buildMetadataEditors(BuildContext context, String key, Map<String, dynamic> setting) {
     final groupDirty = controller.dirtyGroupKeys.contains(key);
-    return TextFormField(
-      key: ValueKey('mower-setting-group-$key-${controller.editorRevision.value}'),
-      initialValue: controller.groupDraftText(key, setting),
-      textInputAction: TextInputAction.done,
-      decoration: InputDecoration(
-        border: const OutlineInputBorder(),
-        labelText: 'JSON-Feld „group“',
-        helperText: groupDirty
-            ? 'Wird erst beim dauerhaften Speichern ans Backend gesendet'
-            : 'Expertenmodus: Backend-Metadatum, keine lokale Neusortierung während der Eingabe',
-        prefixIcon: const Icon(Icons.category_outlined),
-      ),
-      onChanged: (value) => controller.updateDraftGroup(key, setting, value),
+    final expertDirty = controller.dirtyExpertKeys.contains(key);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextFormField(
+          key: ValueKey('mower-setting-group-$key-${controller.editorRevision.value}'),
+          initialValue: controller.groupDraftText(key, setting),
+          textInputAction: TextInputAction.done,
+          decoration: InputDecoration(
+            border: const OutlineInputBorder(),
+            labelText: 'JSON-Feld „group“',
+            helperText: groupDirty
+                ? 'Wird erst beim dauerhaften Speichern als group gesendet'
+                : 'String, nicht leer, maximal 80 Zeichen, keine Steuerzeichen',
+            prefixIcon: const Icon(Icons.category_outlined),
+          ),
+          onChanged: (value) => controller.updateDraftGroup(key, setting, value),
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          key: ValueKey('mower-setting-expert-$key-${controller.editorRevision.value}'),
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          secondary: const Icon(Icons.admin_panel_settings_outlined),
+          title: const Text('JSON-Feld „expert“'),
+          subtitle: Text(
+            expertDirty
+                ? 'Wird erst beim dauerhaften Speichern als Boolean gesendet'
+                : 'true blendet den Wert im Normalmodus aus',
+          ),
+          value: controller.expertDraftBool(key, setting),
+          onChanged: (value) => controller.updateDraftExpert(key, setting, value),
+        ),
+      ],
     );
   }
 
@@ -456,17 +483,32 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     final waiting = controller.actionInProgress.value;
     final isMobile = MediaQuery.of(context).size.width < 720;
     final resetButton = OutlinedButton.icon(
-      onPressed: dirty == 0 || waiting ? null : () => controller.resetGroupDrafts(group),
+      onPressed: dirty == 0 || waiting
+          ? null
+          : () => controller.resetGroupDrafts(
+                group,
+                expertModeEnabled: settingsController.expertModeEnabled.value,
+              ),
       icon: const Icon(Icons.undo),
       label: const Text('Entwürfe zurücksetzen'),
     );
     final liveButton = ElevatedButton.icon(
-      onPressed: liveDirty == 0 || waiting ? null : () => controller.applySessionForGroup(group),
+      onPressed: liveDirty == 0 || waiting
+          ? null
+          : () => controller.applySessionForGroup(
+                group,
+                expertModeEnabled: settingsController.expertModeEnabled.value,
+              ),
       icon: const Icon(Icons.flash_on_outlined),
       label: Text(liveDirty > 0 ? 'Jetzt anwenden ($liveDirty)' : 'Jetzt anwenden'),
     );
     final persistentButton = ElevatedButton.icon(
-      onPressed: dirty == 0 || waiting ? null : () => controller.savePersistentForGroup(group),
+      onPressed: dirty == 0 || waiting
+          ? null
+          : () => controller.savePersistentForGroup(
+                group,
+                expertModeEnabled: settingsController.expertModeEnabled.value,
+              ),
       icon: const Icon(Icons.save_outlined),
       label: Text(dirty > 0 ? 'Dauerhaft speichern ($dirty)' : 'Dauerhaft speichern'),
     );
@@ -703,6 +745,10 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                   if (groupDirty) ...[
                     const SizedBox(width: 6),
                     _smallBadge(context, 'Gruppe geändert', Icons.category_outlined, color),
+                  ],
+                  if (expertDirty) ...[
+                    const SizedBox(width: 6),
+                    _smallBadge(context, 'Expert geändert', Icons.admin_panel_settings_outlined, color),
                   ],
                 ],
               ),
