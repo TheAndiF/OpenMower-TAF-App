@@ -14,7 +14,7 @@ on:
           - debug
           - release
 
-  # Optional automatisch bei Push auslösen, wenn die Commit-Nachricht mit APK_ beginnt.
+  # Optional automatisch bei Push auslösen, wenn die Commit-Nachricht mit APK_, BS_ oder BL_ beginnt.
   push:
     branches:
       - main
@@ -29,11 +29,13 @@ jobs:
   build-apk:
     name: Build Android APK
 
-    # Bei normalem Push nur bauen, wenn die Commit-Nachricht mit APK_ beginnt.
+    # Bei normalem Push nur bauen, wenn die Commit-Nachricht mit APK_, BS_ oder BL_ beginnt.
     # Manuell läuft der Workflow immer.
     if: |
       github.event_name == 'workflow_dispatch' ||
-      startsWith(github.event.head_commit.message, 'APK_')
+      startsWith(github.event.head_commit.message, 'APK_') ||
+      startsWith(github.event.head_commit.message, 'BS_') ||
+      startsWith(github.event.head_commit.message, 'BL_')
 
     runs-on: ubuntu-latest
 
