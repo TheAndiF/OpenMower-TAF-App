@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:open_mower_app/services/platform_text_file.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/mower_logic_settings_controller.dart';
 import 'package:open_mower_app/controllers/robot_state_controller.dart';
@@ -1118,20 +1118,15 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     Clipboard.setData(ClipboardData(text: text));
   }
 
-  void _downloadJsonFile() {
+  Future<void> _downloadJsonFile() async {
     final jsonText = controller.rawStatusJson;
-    final bytes = utf8.encode(jsonText);
-    final blob = html.Blob(<Object>[bytes], 'application/json');
-    final url = html.Url.createObjectUrlFromBlob(blob);
     final now = DateTime.now();
     final filename = 'openmower_mower_logic_settings_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}.json';
-    final anchor = html.AnchorElement(href: url)
-      ..download = filename
-      ..style.display = 'none';
-    html.document.body?.children.add(anchor);
-    anchor.click();
-    anchor.remove();
-    html.Url.revokeObjectUrl(url);
+    await saveTextFile(
+      fileName: filename,
+      content: jsonText,
+      mimeType: 'application/json',
+    );
   }
 
   String _formatTime(DateTime time) {

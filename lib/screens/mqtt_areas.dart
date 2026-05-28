@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:open_mower_app/services/platform_text_file.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/mqtt_areas_controller.dart';
 import 'package:open_mower_app/controllers/map_editor_controller.dart';
@@ -1006,7 +1006,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     Clipboard.setData(ClipboardData(text: text));
   }
 
-  void _downloadJsonFile(BuildContext context) {
+  Future<void> _downloadJsonFile(BuildContext context) async {
     if (_jsonEditUnlocked) {
       _showJsonEditBlockedMessage(context);
       return;
@@ -1016,21 +1016,16 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
       return;
     }
     final jsonText = controller.exportJsonString();
-    final bytes = utf8.encode(jsonText);
-    final blob = html.Blob(<Object>[bytes], 'application/json');
-    final url = html.Url.createObjectUrlFromBlob(blob);
     final now = DateTime.now();
     final filename = 'openmower_map_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}.json';
-    final anchor = html.AnchorElement(href: url)
-      ..download = filename
-      ..style.display = 'none';
-    html.document.body?.children.add(anchor);
-    anchor.click();
-    anchor.remove();
-    html.Url.revokeObjectUrl(url);
+    await saveTextFile(
+      fileName: filename,
+      content: jsonText,
+      mimeType: 'application/json',
+    );
   }
 
-  void _uploadJsonFile(BuildContext context) {
+  Future<void> _uploadJsonFile(BuildContext context) async {
     if (_jsonEditUnlocked) {
       _showJsonEditBlockedMessage(context);
       return;
@@ -1039,25 +1034,15 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
       _showAreaEditBlockedMessage(context);
       return;
     }
-    final input = html.FileUploadInputElement()..accept = '.json,application/json';
-    input.click();
-    input.onChange.listen((_) {
-      final files = input.files;
-      if (files == null || files.isEmpty) {
+    try {
+      final file = await pickTextFile(allowedExtensions: const <String>['json']);
+      if (file == null) {
         return;
       }
-      final file = files.first;
-      final reader = html.FileReader();
-      reader.onLoadEnd.listen((_) {
-        final result = reader.result;
-        if (result is String) {
-          controller.importJsonString(result, filename: file.name);
-        } else {
-          controller.setError('Datei konnte nicht als Text gelesen werden.', topic: 'local/upload');
-        }
-      });
-      reader.readAsText(file);
-    });
+      controller.importJsonString(file.content, filename: file.name);
+    } catch (_) {
+      controller.setError('Datei konnte nicht als Text gelesen werden.', topic: 'local/upload');
+    }
   }
 
   String _formatTime(DateTime time) {
