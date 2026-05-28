@@ -1,0 +1,82 @@
+name: Build Android APK
+
+on:
+  # Manuell über GitHub starten:
+  # Actions → Build Android APK → Run workflow
+  workflow_dispatch:
+    inputs:
+      build_mode:
+        description: "Welche APK soll gebaut werden? debug braucht keine Signierung, release nur mit passender Android-Konfiguration."
+        required: true
+        default: debug
+        type: choice
+        options:
+          - debug
+          - release
+
+  # Optional automatisch bei Push auslösen, wenn die Commit-Nachricht mit APK_ beginnt.
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_CHANNEL: stable
+
+jobs:
+  build-apk:
+    name: Build Android APK
+
+    # Bei normalem Push nur bauen, wenn die Commit-Nachricht mit APK_ beginnt.
+    # Manuell läuft der Workflow immer.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.event.head_commit.message, 'APK_')
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Show Flutter doctor
+        run: flutter doctor -v
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Select build mode
+        id: mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ github.event.inputs.build_mode }}"
+          else
+            MODE="debug"
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "Building APK in $MODE mode"
+
+      - name: Build APK
+        run: flutter build apk --${{ steps.mode.outputs.mode }}
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openmowerapp-${{ steps.mode.outputs.mode }}-apk
+          path: build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error

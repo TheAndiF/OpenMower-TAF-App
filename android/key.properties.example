@@ -1,0 +1,8 @@
+# Vorlage für eine signierte Android-Release-Version.
+# Kopiere diese Datei nach android/key.properties und passe die Werte an.
+# Die Datei android/key.properties darf NICHT in Git eingecheckt werden.
+
+storePassword=DEIN_KEYSTORE_PASSWORT
+keyPassword=DEIN_KEY_PASSWORT
+keyAlias=openmower
+storeFile=../app/openmower-release-key.jks
