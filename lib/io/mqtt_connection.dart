@@ -1513,7 +1513,7 @@ class MqttConnection  {
     } else {
       // Connect according to settings
       if(mqttclient.isWebSocket()) {
-        client.server = "ws://${settingsController.hostname}/";
+        client.server = "ws://${settingsController.hostname.value}/";
       } else{
         client.server = settingsController.hostname.value;
       }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:niku/namespace.dart' as n;
@@ -10,25 +11,26 @@ class Settings extends GetView<SettingsController> {
   @override
   Widget build(BuildContext context) {
     return n.Column([
-      GetBuilder<SettingsController>(
-          builder: (val) => Card(
-            elevation: 3,
-                  child: n.Column([
-                Text("MQTT Settings", style: Theme.of(context).textTheme.headlineMedium).niku..mb = 8,
-                n.TextFormField(
-                    label: "Host".n, controller: controller.hostnameController),
-                n.TextFormField(
-                    label: "Username".n,
-                    controller: controller.mqttUsernameController),
-                n.TextFormField(
-                    label: "Password".n,
-                    controller: controller.mqttPasswordController)
-                    ..asPassword,
-                n.TextFormField(
-                    label: "Port".n, controller: controller.mqttPortController),
-              ])
-                    ..m = 16
-                    ..crossAxisAlignment = CrossAxisAlignment.start)),
+      if (!kIsWeb)
+        GetBuilder<SettingsController>(
+            builder: (val) => Card(
+              elevation: 3,
+                    child: n.Column([
+                  Text("MQTT Settings", style: Theme.of(context).textTheme.headlineMedium).niku..mb = 8,
+                  n.TextFormField(
+                      label: "Host".n, controller: controller.hostnameController),
+                  n.TextFormField(
+                      label: "Username".n,
+                      controller: controller.mqttUsernameController),
+                  n.TextFormField(
+                      label: "Password".n,
+                      controller: controller.mqttPasswordController)
+                      ..asPassword,
+                  n.TextFormField(
+                      label: "Port".n, controller: controller.mqttPortController),
+                ])
+                      ..m = 16
+                      ..crossAxisAlignment = CrossAxisAlignment.start)),
       Expanded(child: Container()),
       n.Row([
         n.Button.elevatedIcon("Save Settings".n, n.Icon(Icons.check),

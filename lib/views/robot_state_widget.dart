@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_material_design_icons/flutter_material_design_icons.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/robot_state_controller.dart';
+import 'package:open_mower_app/controllers/settings_controller.dart';
 import 'package:open_mower_app/views/emergency_widget.dart';
 import 'package:niku/namespace.dart' as n;
 
@@ -70,10 +72,133 @@ class RobotStateWidget extends GetView<RobotStateController> {
     );
   }
 
-  Icon getMqttIcon(bool isConnected) {
-    return isConnected
+  Widget getMqttIcon(BuildContext context, bool isConnected) {
+    final icon = isConnected
         ? const Icon(Icons.link, color: Colors.black54)
         : Icon(Icons.link_off, color: Colors.red[200]);
+
+    if (kIsWeb) {
+      return Tooltip(message: 'MQTT-Verbindung', child: icon);
+    }
+
+    return Tooltip(
+      message: 'MQTT-Verbindung einstellen',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _showMqttSettingsDialog(context),
+        child: Padding(
+          padding: const EdgeInsets.all(2),
+          child: icon,
+        ),
+      ),
+    );
+  }
+
+  void _showMqttSettingsDialog(BuildContext context) {
+    final settingsController = Get.find<SettingsController>();
+
+    // Ensure the text fields show the currently persisted MQTT values.
+    settingsController.hostnameController.text = settingsController.hostname.value;
+    settingsController.mqttUsernameController.text = settingsController.mqttUsername.value;
+    settingsController.mqttPasswordController.text = settingsController.mqttPassword.value;
+    settingsController.mqttPortController.text = settingsController.mqttPort.value.toString();
+
+    String? portError;
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('MQTT-Verbindung'),
+              content: SizedBox(
+                width: 420,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: settingsController.hostnameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Host / IP-Adresse',
+                          hintText: 'z. B. 192.168.178.50',
+                        ),
+                        textInputAction: TextInputAction.next,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: settingsController.mqttPortController,
+                        decoration: InputDecoration(
+                          labelText: 'Port',
+                          hintText: '1883',
+                          errorText: portError,
+                        ),
+                        keyboardType: TextInputType.number,
+                        textInputAction: TextInputAction.next,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: settingsController.mqttUsernameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Benutzername (optional)',
+                        ),
+                        textInputAction: TextInputAction.next,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: settingsController.mqttPasswordController,
+                        decoration: const InputDecoration(
+                          labelText: 'Passwort (optional)',
+                        ),
+                        obscureText: true,
+                      ),
+                      const SizedBox(height: 12),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Hinweis: Auf Android darf hier nicht localhost stehen, sondern die IP-Adresse des MQTT-Brokers.',
+                          style: TextStyle(fontSize: 12, color: Colors.black54),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    settingsController.hostnameController.text = settingsController.hostname.value;
+                    settingsController.mqttUsernameController.text = settingsController.mqttUsername.value;
+                    settingsController.mqttPasswordController.text = settingsController.mqttPassword.value;
+                    settingsController.mqttPortController.text = settingsController.mqttPort.value.toString();
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: const Text('Abbrechen'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    final port = int.tryParse(settingsController.mqttPortController.text.trim());
+                    if (port == null || port < 1 || port > 65535) {
+                      setState(() => portError = 'Port muss zwischen 1 und 65535 liegen');
+                      return;
+                    }
+                    portError = null;
+                    settingsController.save();
+                    Navigator.of(dialogContext).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('MQTT-Einstellungen gespeichert. Verbindung wird neu aufgebaut.')),
+                    );
+                  },
+                  icon: const Icon(Icons.check),
+                  label: const Text('Speichern'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Icon getGpsIcon(percent) {
@@ -107,7 +232,7 @@ class RobotStateWidget extends GetView<RobotStateController> {
                   children: [
                 const TextSpan(text: "MQTT: "),
                 WidgetSpan(
-                    child: getMqttIcon(controller.robotState.value.isConnected),
+                    child: getMqttIcon(context, controller.robotState.value.isConnected),
                     alignment: PlaceholderAlignment.middle),
               ])),
           RichText(
