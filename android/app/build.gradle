@@ -25,7 +25,9 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace "de.openmower.open_mower_app"
+    // Android namespace for generated Android classes.
+    // Keep this aligned with the applicationId for the TAF fork.
+    namespace "de.theandif.openmower.taf"
     compileSdk flutter.compileSdkVersion
     ndkVersion flutter.ndkVersion
 
@@ -43,7 +45,9 @@ android {
     }
 
     defaultConfig {
-        applicationId "de.openmower.open_mower_app"
+        // Final Google Play package name / Android applicationId for the TAF fork.
+        // This ID is permanent once published in Google Play.
+        applicationId "de.theandif.openmower.taf"
         minSdk flutter.minSdkVersion
         targetSdk flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()

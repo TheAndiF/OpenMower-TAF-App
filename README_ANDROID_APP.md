@@ -77,3 +77,13 @@ Android-App -> WLAN/WireGuard -> MQTT-Broker/OpenMower
 ```
 
 Der MQTT-Port `1883` sollte nicht direkt ins Internet freigegeben werden. Für Zugriff von unterwegs ist WireGuard/Tailscale die sinnvollere Variante.
+
+## Android applicationId
+
+Die feste Android App-ID / der Google-Play-Paketname der TAF-App lautet:
+
+```text
+de.theandif.openmower.taf
+```
+
+Diese ID ist die dauerhafte technische Identität der App im Play Store und sollte nach der Veröffentlichung nicht mehr geändert werden.

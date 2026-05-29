@@ -1,4 +1,4 @@
-package de.openmower.open_mower_app
+package de.theandif.openmower.taf
 
 import io.flutter.embedding.android.FlutterActivity
 
