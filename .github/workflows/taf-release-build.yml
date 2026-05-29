@@ -1,4 +1,4 @@
-﻿name: TAF Release Build App
+name: TAF Release Build App
 
 on:
   workflow_dispatch:
@@ -29,8 +29,8 @@ env:
   FLUTTER_CHANNEL: stable
 
 jobs:
-  build_web_image:
-    name: Build and push Web Docker image
+  build_web_app_image:
+    name: Build and push Web App Docker image
     runs-on: ubuntu-latest
 
     steps:
@@ -39,12 +39,12 @@ jobs:
         with:
           ref: ${{ inputs.source_ref }}
 
-      - name: Show build info
+      - name: Show Web App build info
         run: |
           echo "Release version: ${{ inputs.release_version }}"
           echo "Source ref:      ${{ inputs.source_ref }}"
-          echo "Web image latest:    ghcr.io/theandif/openmower-taf-app-web:taf_latest"
-          echo "Web image versioned: ghcr.io/theandif/openmower-taf-app-web:${{ inputs.release_version }}"
+          echo "Web App image latest:    ghcr.io/theandif/openmower-taf-app-web:taf_latest"
+          echo "Web App image versioned: ghcr.io/theandif/openmower-taf-app-web:${{ inputs.release_version }}"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -59,7 +59,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Web Docker image
+      # The Web App is published as a container image.
+      # taf_latest is the rolling robot/update tag.
+      # release_version is the immutable tag for reproducible deployments.
+      - name: Build and push Web App Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -72,8 +75,8 @@ jobs:
             ghcr.io/theandif/openmower-taf-app-web:taf_latest
             ghcr.io/theandif/openmower-taf-app-web:${{ inputs.release_version }}
 
-  build_android_apk:
-    name: Build Android APK
+  build_apk:
+    name: Build APK
     runs-on: ubuntu-latest
 
     steps:
@@ -100,12 +103,14 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build Android APK
+      # APK is kept as a GitHub Actions artifact.
+      # AAB/store signing can be added later as a separate job.
+      - name: Build APK
         run: flutter build apk --${{ inputs.android_build_mode }}
 
-      - name: Upload Android APK artifact
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenMower-TAF-App-${{ inputs.release_version }}-${{ inputs.android_build_mode }}-apk
+          name: OpenMower-TAF-App-${{ inputs.release_version }}-apk-${{ inputs.android_build_mode }}
           path: build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error
