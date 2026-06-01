@@ -1,4 +1,4 @@
-name: TAF Release Build App
+﻿name: TAF Release Build App
 
 on:
   workflow_dispatch:
@@ -39,7 +39,7 @@ jobs:
         with:
           ref: ${{ inputs.source_ref }}
 
-      - name: Show Web App build info
+      - name: Show build info
         run: |
           echo "Release version: ${{ inputs.release_version }}"
           echo "Source ref:      ${{ inputs.source_ref }}"
@@ -59,9 +59,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The Web App is published as a container image.
-      # taf_latest is the rolling robot/update tag.
-      # release_version is the immutable tag for reproducible deployments.
       - name: Build and push Web App Docker image
         uses: docker/build-push-action@v6
         with:
@@ -75,8 +72,8 @@ jobs:
             ghcr.io/theandif/openmower-taf-app-web:taf_latest
             ghcr.io/theandif/openmower-taf-app-web:${{ inputs.release_version }}
 
-  build_apk:
-    name: Build APK
+  build_android_artifacts:
+    name: Build Android APK/AAB
     runs-on: ubuntu-latest
 
     steps:
@@ -103,14 +100,42 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # APK is kept as a GitHub Actions artifact.
-      # AAB/store signing can be added later as a separate job.
-      - name: Build APK
+      - name: Restore Android upload keystore
+        if: ${{ inputs.android_build_mode == 'release' }}
+        shell: bash
+        run: |
+          mkdir -p android/keystore
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/keystore/upload-keystore.jks
+
+      - name: Create Android key.properties
+        if: ${{ inputs.android_build_mode == 'release' }}
+        shell: bash
+        run: |
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          storeFile=keystore/upload-keystore.jks
+          EOF
+
+      - name: Build Android APK
         run: flutter build apk --${{ inputs.android_build_mode }}
 
-      - name: Upload APK artifact
+      - name: Upload Android APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenMower-TAF-App-${{ inputs.release_version }}-apk-${{ inputs.android_build_mode }}
+          name: OpenMower-TAF-App-${{ inputs.release_version }}-${{ inputs.android_build_mode }}-apk
           path: build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
+
+      - name: Build Android AAB
+        if: ${{ inputs.android_build_mode == 'release' }}
+        run: flutter build appbundle --release
+
+      - name: Upload Android AAB artifact
+        if: ${{ inputs.android_build_mode == 'release' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenMower-TAF-App-${{ inputs.release_version }}-release-aab
+          path: build/app/outputs/bundle/release/*.aab
           if-no-files-found: error
