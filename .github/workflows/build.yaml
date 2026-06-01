@@ -65,11 +65,7 @@ jobs:
           BUILD_DATE="$(date -u +'%Y-%m-%d-%H%M')"
 
           # Gemeinsame Tags für Docker Compose und nachvollziehbare Versionen.
-<<<<<<< HEAD
-          # docker-compose kann ghcr.io/<owner>/open_mower_web:taf_latest verwenden.
-=======
           # docker-compose kann ghcr.io/<owner>/openmower_taf_app:taf_latest verwenden.
->>>>>>> 2084aeb (Update GitHub Actions workflows)
           # Zusätzlich bleiben die bisherigen Tags ohne taf_-Präfix erhalten.
           BASE_TAGS="sha-${SHORT} taf_sha-${SHORT} ${BRANCH_SAFE} taf_${BRANCH_SAFE} ${BUILD_DATE} taf_${BUILD_DATE} test taf_test AF_latest taf_AF_latest AF_test taf_AF_test AF_${BUILD_DATE} taf_AF_${BUILD_DATE}"
           if [ "$BRANCH_SAFE" = "main" ]; then
@@ -129,11 +125,7 @@ jobs:
         id: tags
         run: |
           OWNER_LC="${GITHUB_REPOSITORY_OWNER,,}"
-<<<<<<< HEAD
-          IMAGE_BASE="ghcr.io/$OWNER_LC/open_mower_web"
-=======
           IMAGE_BASE="ghcr.io/$OWNER_LC/openmower_taf_app"
->>>>>>> 2084aeb (Update GitHub Actions workflows)
           if [ "${{ needs.meta.outputs.build_both }}" = "true" ]; then
             # Multi-arch: use a single ephemeral CI tag (per arch) just for the pushed image
             TAGS="$IMAGE_BASE:ci-${GITHUB_RUN_ID}-amd64"
@@ -194,11 +186,7 @@ jobs:
         id: tags
         run: |
           OWNER_LC="${GITHUB_REPOSITORY_OWNER,,}"
-<<<<<<< HEAD
-          IMAGE_BASE="ghcr.io/$OWNER_LC/open_mower_web"
-=======
           IMAGE_BASE="ghcr.io/$OWNER_LC/openmower_taf_app"
->>>>>>> 2084aeb (Update GitHub Actions workflows)
           if [ "${{ needs.meta.outputs.build_both }}" = "true" ]; then
             TAGS="$IMAGE_BASE:ci-${GITHUB_RUN_ID}-arm64"
           else
@@ -246,11 +234,7 @@ jobs:
       - name: Create & Push multi-arch manifests
         run: |
           OWNER_LC="${GITHUB_REPOSITORY_OWNER,,}"
-<<<<<<< HEAD
-          IMAGE_BASE="ghcr.io/$OWNER_LC/open_mower_web"
-=======
           IMAGE_BASE="ghcr.io/$OWNER_LC/openmower_taf_app"
->>>>>>> 2084aeb (Update GitHub Actions workflows)
           AMD64_DIGEST="${{ needs.build_amd64.outputs.digest }}"
           ARM64_DIGEST="${{ needs.build_arm64.outputs.digest }}"
           echo "amd64 digest: $AMD64_DIGEST" >> $GITHUB_STEP_SUMMARY

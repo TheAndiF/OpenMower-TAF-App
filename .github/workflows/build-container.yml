@@ -64,11 +64,7 @@ jobs:
       # Erstellt einen Zeitstempel, der später als zusätzlicher Image-Tag genutzt wird.
       #
       # Beispiel:
-<<<<<<< HEAD
-      # ghcr.io/theandif/open_mower_web:2026-05-09-1245
-=======
       # ghcr.io/theandif/openmower_taf_app:2026-05-09-1245
->>>>>>> 2084aeb (Update GitHub Actions workflows)
       #
       # Vorteil:
       # taf_latest und taf_test werden immer überschrieben,
@@ -155,15 +151,9 @@ jobs:
           # BUILD_DATE:
           #   Fester nachvollziehbarer Versions-Tag.
           tags: |
-<<<<<<< HEAD
-            ghcr.io/theandif/open_mower_web:taf_latest
-            ghcr.io/theandif/open_mower_web:taf_test
-            ghcr.io/theandif/open_mower_web:taf_${{ env.BUILD_DATE }}
-=======
             ghcr.io/theandif/openmower_taf_app:taf_latest
             ghcr.io/theandif/openmower_taf_app:taf_test
             ghcr.io/theandif/openmower_taf_app:taf_${{ env.BUILD_DATE }}
->>>>>>> 2084aeb (Update GitHub Actions workflows)
 
       # Dieser Schritt läuft bei:
       #
@@ -199,12 +189,6 @@ jobs:
 
           # Dieselben drei Tags wie beim schnellen Build.
           tags: |
-<<<<<<< HEAD
-            ghcr.io/theandif/open_mower_web:taf_latest
-            ghcr.io/theandif/open_mower_web:taf_test
-            ghcr.io/theandif/open_mower_web:taf_${{ env.BUILD_DATE }}
-=======
             ghcr.io/theandif/openmower_taf_app:taf_latest
             ghcr.io/theandif/openmower_taf_app:taf_test
             ghcr.io/theandif/openmower_taf_app:taf_${{ env.BUILD_DATE }}
->>>>>>> 2084aeb (Update GitHub Actions workflows)
