@@ -115,7 +115,7 @@ jobs:
           storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
           keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
-          storeFile=keystore/upload-keystore.jks
+          storeFile=../keystore/upload-keystore.jks
           EOF
 
       - name: Build Android APK
@@ -139,3 +139,4 @@ jobs:
           name: OpenMower-TAF-App-${{ inputs.release_version }}-release-aab
           path: build/app/outputs/bundle/release/*.aab
           if-no-files-found: error
+
