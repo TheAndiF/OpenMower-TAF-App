@@ -90,7 +90,7 @@ jobs:
             fi
           fi
 
-          IMAGE_BASE="ghcr.io/theandif/openmower-taf-app-web"
+          IMAGE_BASE="ghcr.io/theandif/open_mower_web"
           IMAGE_TAGS="$(printf '%s\n%s\n' "$IMAGE_BASE:taf_latest" "$IMAGE_BASE:$RELEASE_VERSION")"
 
           echo "Build kind:         $BUILD_KIND"

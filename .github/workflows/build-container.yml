@@ -64,10 +64,10 @@ jobs:
       # Erstellt einen Zeitstempel, der später als zusätzlicher Image-Tag genutzt wird.
       #
       # Beispiel:
-      # ghcr.io/theandif/openmowerapp:2026-05-09-1245
+      # ghcr.io/theandif/open_mower_web:2026-05-09-1245
       #
       # Vorteil:
-      # latest und test werden immer überschrieben,
+      # taf_latest und taf_test werden immer überschrieben,
       # der Datums-Tag bleibt aber als feste Version erhalten.
       - name: Set build date
         shell: bash
@@ -151,9 +151,9 @@ jobs:
           # BUILD_DATE:
           #   Fester nachvollziehbarer Versions-Tag.
           tags: |
-            ghcr.io/theandif/openmowerapp:taf_latest
-            ghcr.io/theandif/openmowerapp:taf_test
-            ghcr.io/theandif/openmowerapp:taf_${{ env.BUILD_DATE }}
+            ghcr.io/theandif/open_mower_web:taf_latest
+            ghcr.io/theandif/open_mower_web:taf_test
+            ghcr.io/theandif/open_mower_web:taf_${{ env.BUILD_DATE }}
 
       # Dieser Schritt läuft bei:
       #
@@ -189,6 +189,6 @@ jobs:
 
           # Dieselben drei Tags wie beim schnellen Build.
           tags: |
-            ghcr.io/theandif/openmowerapp:taf_latest
-            ghcr.io/theandif/openmowerapp:taf_test
-            ghcr.io/theandif/openmowerapp:taf_${{ env.BUILD_DATE }}
+            ghcr.io/theandif/open_mower_web:taf_latest
+            ghcr.io/theandif/open_mower_web:taf_test
+            ghcr.io/theandif/open_mower_web:taf_${{ env.BUILD_DATE }}
