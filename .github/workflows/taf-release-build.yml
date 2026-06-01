@@ -90,7 +90,11 @@ jobs:
             fi
           fi
 
+<<<<<<< HEAD
           IMAGE_BASE="ghcr.io/theandif/open_mower_web"
+=======
+          IMAGE_BASE="ghcr.io/theandif/openmower_taf_app"
+>>>>>>> 2084aeb (Update GitHub Actions workflows)
           IMAGE_TAGS="$(printf '%s\n%s\n' "$IMAGE_BASE:taf_latest" "$IMAGE_BASE:$RELEASE_VERSION")"
 
           echo "Build kind:         $BUILD_KIND"
