@@ -1,4 +1,4 @@
-﻿name: TAF Release Build App
+name: TAF Release Build App
 
 on:
   workflow_dispatch:
@@ -21,6 +21,13 @@ on:
           - debug
           - release
 
+  # Direkter App-Build im App-Repo:
+  # BS_ = schneller Build mit Docker-Cache
+  # BL_ = kompletter Docker-Neubuild ohne Cache
+  push:
+    branches:
+      - main
+
 permissions:
   contents: read
   packages: write
@@ -29,22 +36,97 @@ env:
   FLUTTER_CHANNEL: stable
 
 jobs:
+  meta:
+    name: Determine build settings
+    runs-on: ubuntu-latest
+
+    # Manuell immer laufen. Bei Push nur BS_ oder BL_.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.event.head_commit.message, 'BS_') ||
+      startsWith(github.event.head_commit.message, 'BL_')
+
+    outputs:
+      release_version: ${{ steps.vars.outputs.release_version }}
+      source_ref: ${{ steps.vars.outputs.source_ref }}
+      android_build_mode: ${{ steps.vars.outputs.android_build_mode }}
+      use_cache: ${{ steps.vars.outputs.use_cache }}
+      image_tags: ${{ steps.vars.outputs.image_tags }}
+
+    steps:
+      - name: Create build variables
+        id: vars
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          INPUT_RELEASE_VERSION: ${{ inputs.release_version }}
+          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
+          INPUT_ANDROID_BUILD_MODE: ${{ inputs.android_build_mode }}
+        run: |
+          set -euo pipefail
+
+          SHORT_SHA="${GITHUB_SHA::7}"
+          BUILD_DATE="$(date -u +'%Y-%m-%d-%H%M')"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            RELEASE_VERSION="$INPUT_RELEASE_VERSION"
+            SOURCE_REF="$INPUT_SOURCE_REF"
+            ANDROID_BUILD_MODE="$INPUT_ANDROID_BUILD_MODE"
+            USE_CACHE="true"
+            BUILD_KIND="orchestrator-or-manual"
+          else
+            SOURCE_REF="$GITHUB_SHA"
+            ANDROID_BUILD_MODE="release"
+
+            if [[ "$COMMIT_MESSAGE" == BL_* ]]; then
+              RELEASE_VERSION="bl-${BUILD_DATE}-${SHORT_SHA}"
+              USE_CACHE="false"
+              BUILD_KIND="BL direct app build"
+            else
+              RELEASE_VERSION="bs-${BUILD_DATE}-${SHORT_SHA}"
+              USE_CACHE="true"
+              BUILD_KIND="BS direct app build"
+            fi
+          fi
+
+          IMAGE_BASE="ghcr.io/theandif/openmower-taf-app-web"
+          IMAGE_TAGS="$(printf '%s\n%s\n' "$IMAGE_BASE:taf_latest" "$IMAGE_BASE:$RELEASE_VERSION")"
+
+          echo "Build kind:         $BUILD_KIND"
+          echo "Release version:    $RELEASE_VERSION"
+          echo "Source ref:         $SOURCE_REF"
+          echo "Android build mode: $ANDROID_BUILD_MODE"
+          echo "Use Docker cache:   $USE_CACHE"
+
+          echo "release_version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "source_ref=$SOURCE_REF" >> "$GITHUB_OUTPUT"
+          echo "android_build_mode=$ANDROID_BUILD_MODE" >> "$GITHUB_OUTPUT"
+          echo "use_cache=$USE_CACHE" >> "$GITHUB_OUTPUT"
+          {
+            echo 'image_tags<<EOF'
+            printf '%s\n' "$IMAGE_TAGS"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
   build_web_app_image:
     name: Build and push Web App Docker image
+    needs: meta
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout selected ref
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ needs.meta.outputs.source_ref }}
 
       - name: Show build info
         run: |
-          echo "Release version: ${{ inputs.release_version }}"
-          echo "Source ref:      ${{ inputs.source_ref }}"
-          echo "Web App image latest:    ghcr.io/theandif/openmower-taf-app-web:taf_latest"
-          echo "Web App image versioned: ghcr.io/theandif/openmower-taf-app-web:${{ inputs.release_version }}"
+          echo "Release version: ${{ needs.meta.outputs.release_version }}"
+          echo "Source ref:      ${{ needs.meta.outputs.source_ref }}"
+          echo "Use cache:       ${{ needs.meta.outputs.use_cache }}"
+          echo "Image tags:"
+          echo "${{ needs.meta.outputs.image_tags }}"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -66,21 +148,21 @@ jobs:
           file: ./Dockerfile
           platforms: linux/arm64
           push: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          tags: |
-            ghcr.io/theandif/openmower-taf-app-web:taf_latest
-            ghcr.io/theandif/openmower-taf-app-web:${{ inputs.release_version }}
+          no-cache: ${{ needs.meta.outputs.use_cache != 'true' }}
+          cache-from: ${{ needs.meta.outputs.use_cache == 'true' && 'type=gha' || '' }}
+          cache-to: ${{ needs.meta.outputs.use_cache == 'true' && 'type=gha,mode=max' || '' }}
+          tags: ${{ needs.meta.outputs.image_tags }}
 
   build_android_artifacts:
     name: Build Android APK/AAB
+    needs: meta
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout selected ref
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ needs.meta.outputs.source_ref }}
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -101,42 +183,41 @@ jobs:
         run: flutter pub get
 
       - name: Restore Android upload keystore
-        if: ${{ inputs.android_build_mode == 'release' }}
+        if: ${{ needs.meta.outputs.android_build_mode == 'release' }}
         shell: bash
         run: |
           mkdir -p android/keystore
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/keystore/upload-keystore.jks
 
       - name: Create Android key.properties
-        if: ${{ inputs.android_build_mode == 'release' }}
+        if: ${{ needs.meta.outputs.android_build_mode == 'release' }}
         shell: bash
         run: |
-          cat > android/key.properties <<EOF
-          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
-          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
-          storeFile=../keystore/upload-keystore.jks
-          EOF
+          {
+            echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+            echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}"
+            echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}"
+            echo "storeFile=../keystore/upload-keystore.jks"
+          } > android/key.properties
 
       - name: Build Android APK
-        run: flutter build apk --${{ inputs.android_build_mode }}
+        run: flutter build apk --${{ needs.meta.outputs.android_build_mode }}
 
       - name: Upload Android APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenMower-TAF-App-${{ inputs.release_version }}-${{ inputs.android_build_mode }}-apk
+          name: OpenMower-TAF-App-${{ needs.meta.outputs.release_version }}-${{ needs.meta.outputs.android_build_mode }}-apk
           path: build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error
 
       - name: Build Android AAB
-        if: ${{ inputs.android_build_mode == 'release' }}
+        if: ${{ needs.meta.outputs.android_build_mode == 'release' }}
         run: flutter build appbundle --release
 
       - name: Upload Android AAB artifact
-        if: ${{ inputs.android_build_mode == 'release' }}
+        if: ${{ needs.meta.outputs.android_build_mode == 'release' }}
         uses: actions/upload-artifact@v4
         with:
-          name: OpenMower-TAF-App-${{ inputs.release_version }}-release-aab
+          name: OpenMower-TAF-App-${{ needs.meta.outputs.release_version }}-release-aab
           path: build/app/outputs/bundle/release/*.aab
           if-no-files-found: error
-
