@@ -252,13 +252,15 @@ class MapPainter extends CustomPainter {
     // mowing paths pass through the label position.
     for (final area in mapModel.mowingAreas) {
       if (area.mowingOrder != null) {
-        final isActiveArea = currentAreaId.isNotEmpty && area.id == currentAreaId;
+        final realCurrentAreaId = robotState.currentAreaId.trim();
+        final isActivelyMowingArea =
+            realCurrentAreaId.isNotEmpty && area.id == realCurrentAreaId;
         _drawMowingOverlayLabel(
           canvas,
           area.labelPosition,
           area.mowingOrder!,
           area.mowingEnabled,
-          isActiveArea ? activeProgress?.percent : null,
+          isActivelyMowingArea ? mowingProgressModel.areaById(realCurrentAreaId)?.percent : null,
         );
       }
     }
@@ -442,6 +444,8 @@ class MapPainter extends CustomPainter {
     )..layout();
 
     if (!hasProgress) {
+      // No active mowing progress on this area: show only the mowing order
+      // exactly in the center of the same circle.
       _paintTextCentered(canvas, orderPainter, center);
       return;
     }
