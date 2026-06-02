@@ -425,7 +425,8 @@ class MapPainter extends CustomPainter {
       center,
       radius,
       Paint()
-        ..color = const Color.fromRGBO(255, 255, 255, 0.86)
+        // Nearly transparent grey background so content behind the marker remains visible.
+        ..color = Colors.grey.withOpacity(0.12)
         ..style = PaintingStyle.fill,
     );
 
@@ -491,7 +492,10 @@ class MapPainter extends CustomPainter {
   void _paintTextCentered(Canvas canvas, TextPainter textPainter, Offset center) {
     textPainter.paint(
       canvas,
-      center - Offset(textPainter.width / 2.0, textPainter.height / 2.0),
+      Offset(
+        center.dx - textPainter.width / 2.0,
+        center.dy + textPainter.height / 2.0,
+      ),
     );
   }
 
