@@ -229,15 +229,31 @@ class MapPainter extends CustomPainter {
       canvas.drawPath(area, _mowOutlinePaint);
     }
 
+    final currentAreaId = robotState.currentAreaId.trim();
+    final activeProgress = currentAreaId.isEmpty
+        ? null
+        : mowingProgressModel.areaById(currentAreaId);
+
     for (final area in mapModel.mowingAreas) {
       final fillPaint = area.mowingEnabled ? _mowFillPaint : _mowDisabledFillPaint;
       final outlinePaint = area.mowingEnabled ? _mowOutlinePaint : _mowDisabledOutlinePaint;
 
       canvas.drawPath(area.outline, fillPaint);
       canvas.drawPath(area.outline, outlinePaint);
+
+      if (area.mowingOrder != null) {
+        final isActiveArea = currentAreaId.isNotEmpty && area.id == currentAreaId;
+        _drawMowingOverlayLabel(
+          canvas,
+          area.labelPosition,
+          area.mowingOrder!,
+          area.mowingEnabled,
+          isActiveArea ? activeProgress?.percent : null,
+        );
+      }
     }
 
-    _drawCurrentAreaOverlay(canvas);
+    _drawCurrentAreaOverlay(canvas, activeProgress);
 
     for (final path in mapModel.obstacles) {
       canvas.drawPath(path, _obstaclePaint);
@@ -277,13 +293,11 @@ class MapPainter extends CustomPainter {
     canvas.restore();
   }
 
-  void _drawCurrentAreaOverlay(Canvas canvas) {
+  void _drawCurrentAreaOverlay(Canvas canvas, AreaMowingProgress? progress) {
     final currentAreaId = robotState.currentAreaId.trim();
     if (currentAreaId.isEmpty) {
       return;
     }
-
-    final progress = mowingProgressModel.areaById(currentAreaId);
 
     for (final area in mapModel.mowingAreas) {
       if (area.id != currentAreaId) {
@@ -296,15 +310,6 @@ class MapPainter extends CustomPainter {
         _drawPlannedPaths(canvas, progress);
       }
 
-      if (area.mowingOrder != null) {
-        _drawMowingOverlayLabel(
-          canvas,
-          area.labelPosition,
-          area.mowingOrder!,
-          area.mowingEnabled,
-          progress?.percent,
-        );
-      }
       return;
     }
   }
@@ -384,10 +389,14 @@ class MapPainter extends CustomPainter {
         ? const Color.fromRGBO(46, 125, 50, 1.0)
         : const Color.fromRGBO(129, 199, 132, 0.85);
 
-    final double radius = hasProgress ? 0.58 : 0.38;
+    // One stable overlay circle for all mowing areas.
+    // Inactive areas show only the mowing order centered in this circle.
+    // Active areas use the same circle and split it into order / progress.
+    const double radius = 0.58;
+    final center = position;
 
     canvas.drawCircle(
-      position,
+      center,
       radius,
       Paint()
         ..color = const Color.fromRGBO(255, 255, 255, 0.92)
@@ -395,7 +404,7 @@ class MapPainter extends CustomPainter {
     );
 
     canvas.drawCircle(
-      position,
+      center,
       radius,
       Paint()
         ..color = borderColor
@@ -417,27 +426,22 @@ class MapPainter extends CustomPainter {
     )..layout();
 
     if (!hasProgress) {
-      orderPainter.paint(
-        canvas,
-        position - Offset(orderPainter.width / 2, orderPainter.height / 2),
-      );
+      _paintTextCentered(canvas, orderPainter, center);
       return;
     }
 
-    final dividerY = position.dy - 0.01;
-    orderPainter.paint(
-      canvas,
-      Offset(position.dx - orderPainter.width / 2, position.dy - 0.29),
-    );
-
+    final dividerY = center.dy;
     canvas.drawLine(
-      Offset(position.dx - 0.34, dividerY),
-      Offset(position.dx + 0.34, dividerY),
+      Offset(center.dx - radius * 0.60, dividerY),
+      Offset(center.dx + radius * 0.60, dividerY),
       Paint()
         ..color = textColor.withOpacity(0.75)
         ..strokeWidth = 0.025
         ..style = PaintingStyle.stroke,
     );
+
+    final orderCenter = Offset(center.dx, center.dy - radius / 2.0);
+    _paintTextCentered(canvas, orderPainter, orderCenter);
 
     final percentPainter = TextPainter(
       text: TextSpan(
@@ -450,11 +454,16 @@ class MapPainter extends CustomPainter {
       ),
       textAlign: TextAlign.center,
       textDirection: TextDirection.ltr,
-    )..layout(maxWidth: 0.92);
+    )..layout(maxWidth: radius * 1.55);
 
-    percentPainter.paint(
+    final percentCenter = Offset(center.dx, center.dy + radius / 2.0);
+    _paintTextCentered(canvas, percentPainter, percentCenter);
+  }
+
+  void _paintTextCentered(Canvas canvas, TextPainter textPainter, Offset center) {
+    textPainter.paint(
       canvas,
-      Offset(position.dx - percentPainter.width / 2, position.dy + 0.09),
+      center - Offset(textPainter.width / 2.0, textPainter.height / 2.0),
     );
   }
 
