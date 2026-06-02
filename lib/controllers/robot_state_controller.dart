@@ -10,6 +10,12 @@ class RobotStateController extends GetxController {
   final map = MapModel().obs;
   final mapOverlay = MapOverlayModel().obs;
   final mowingProgress = MowingProgressModel().obs;
+
+  /// Keeps the last non-empty mowing area id.
+  /// This prevents the mowing-progress overlay from disappearing during short
+  /// loading/transition phases between begin/end messages of the same area.
+  final lastActiveMowingAreaId = "".obs;
+
   final softwareVersion = "".obs;
 
   var availableActions = <String>{}.obs;
@@ -33,6 +39,14 @@ class RobotStateController extends GetxController {
 
     robotState.value.isConnected = isConnected;
     robotState.refresh();
+  }
+
+  void rememberActiveMowingArea(String areaId) {
+    final normalizedAreaId = areaId.trim();
+    if (normalizedAreaId.isEmpty) {
+      return;
+    }
+    lastActiveMowingAreaId.value = normalizedAreaId;
   }
 
   bool hasAction(String action) {

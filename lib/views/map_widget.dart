@@ -32,6 +32,7 @@ class MapWidget extends GetView<RobotStateController> {
                 controller.mapOverlay.value,
                 controller.mowingProgress.value,
                 controller.robotState.value,
+                controller.lastActiveMowingAreaId.value,
                 centerOnRobot,
               ),
             ),
@@ -48,6 +49,7 @@ class MapPainter extends CustomPainter {
     this.mapOverlayModel,
     this.mowingProgressModel,
     this.robotState,
+    this.lastActiveMowingAreaId,
     this.centerOnRobot,
   ) {
     // "robot" arrow
@@ -90,6 +92,7 @@ class MapPainter extends CustomPainter {
   final MapOverlayModel mapOverlayModel;
   final MowingProgressModel mowingProgressModel;
   final RobotState robotState;
+  final String lastActiveMowingAreaId;
   final bool centerOnRobot;
 
   final _backgroundPaint = Paint()
@@ -128,7 +131,7 @@ class MapPainter extends CustomPainter {
     ..strokeJoin = StrokeJoin.round
     ..strokeCap = StrokeCap.round;
   final _completedPathPaint = Paint()
-    ..strokeWidth = 0.032
+    ..strokeWidth = 0.024
     ..color = Colors.black
     ..style = PaintingStyle.stroke
     ..strokeJoin = StrokeJoin.round
@@ -229,7 +232,7 @@ class MapPainter extends CustomPainter {
       canvas.drawPath(area, _mowOutlinePaint);
     }
 
-    final currentAreaId = robotState.currentAreaId.trim();
+    final currentAreaId = _effectiveCurrentAreaId;
     final activeProgress = currentAreaId.isEmpty
         ? null
         : mowingProgressModel.areaById(currentAreaId);
@@ -240,7 +243,14 @@ class MapPainter extends CustomPainter {
 
       canvas.drawPath(area.outline, fillPaint);
       canvas.drawPath(area.outline, outlinePaint);
+    }
 
+    _drawCurrentAreaOverlay(canvas, activeProgress);
+
+    // Draw the circular order/progress labels after paths and outlines.
+    // This keeps the text and white background readable even when planned
+    // mowing paths pass through the label position.
+    for (final area in mapModel.mowingAreas) {
       if (area.mowingOrder != null) {
         final isActiveArea = currentAreaId.isNotEmpty && area.id == currentAreaId;
         _drawMowingOverlayLabel(
@@ -252,8 +262,6 @@ class MapPainter extends CustomPainter {
         );
       }
     }
-
-    _drawCurrentAreaOverlay(canvas, activeProgress);
 
     for (final path in mapModel.obstacles) {
       canvas.drawPath(path, _obstaclePaint);
@@ -294,7 +302,7 @@ class MapPainter extends CustomPainter {
   }
 
   void _drawCurrentAreaOverlay(Canvas canvas, AreaMowingProgress? progress) {
-    final currentAreaId = robotState.currentAreaId.trim();
+    final currentAreaId = _effectiveCurrentAreaId;
     if (currentAreaId.isEmpty) {
       return;
     }
@@ -337,7 +345,7 @@ class MapPainter extends CustomPainter {
       if (isCurrent) {
         _drawDashedPath(canvas, pathShape, _currentPathPaint, 0.18, 0.10);
       } else if (isCompleted) {
-        _drawDashedPath(canvas, pathShape, _completedPathPaint, 0.02, 0.08);
+        _drawDashedPath(canvas, pathShape, _completedPathPaint, 0.014, 0.10);
       } else {
         canvas.drawPath(pathShape, _plannedPathPaint);
       }
@@ -399,7 +407,7 @@ class MapPainter extends CustomPainter {
       center,
       radius,
       Paint()
-        ..color = const Color.fromRGBO(255, 255, 255, 0.92)
+        ..color = const Color.fromRGBO(255, 255, 255, 0.86)
         ..style = PaintingStyle.fill,
     );
 
@@ -408,7 +416,7 @@ class MapPainter extends CustomPainter {
       radius,
       Paint()
         ..color = borderColor
-        ..strokeWidth = 0.05
+        ..strokeWidth = 0.065
         ..style = PaintingStyle.stroke,
     );
 
@@ -417,7 +425,7 @@ class MapPainter extends CustomPainter {
         text: order.toString(),
         style: TextStyle(
           color: textColor,
-          fontSize: hasProgress ? 0.30 : 0.42,
+          fontSize: hasProgress ? 0.34 : 0.46,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -436,7 +444,7 @@ class MapPainter extends CustomPainter {
       Offset(center.dx + radius * 0.60, dividerY),
       Paint()
         ..color = textColor.withOpacity(0.75)
-        ..strokeWidth = 0.025
+        ..strokeWidth = 0.035
         ..style = PaintingStyle.stroke,
     );
 
@@ -448,13 +456,13 @@ class MapPainter extends CustomPainter {
         text: _formatPercent(percent),
         style: TextStyle(
           color: textColor,
-          fontSize: 0.19,
-          fontWeight: FontWeight.w600,
+          fontSize: 0.22,
+          fontWeight: FontWeight.bold,
         ),
       ),
       textAlign: TextAlign.center,
       textDirection: TextDirection.ltr,
-    )..layout(maxWidth: radius * 1.55);
+    )..layout(maxWidth: radius * 1.65);
 
     final percentCenter = Offset(center.dx, center.dy + radius / 2.0);
     _paintTextCentered(canvas, percentPainter, percentCenter);
@@ -499,7 +507,8 @@ class MapPainter extends CustomPainter {
       if (oldDelegate.robotState != robotState ||
           oldDelegate.mapModel != mapModel ||
           oldDelegate.mapOverlayModel != mapOverlayModel ||
-          oldDelegate.mowingProgressModel != mowingProgressModel) {
+          oldDelegate.mowingProgressModel != mowingProgressModel ||
+          oldDelegate.lastActiveMowingAreaId != lastActiveMowingAreaId) {
         return true;
       }
     }

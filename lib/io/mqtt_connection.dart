@@ -397,6 +397,7 @@ class MqttConnection  {
     }
     if (raw.containsKey("current_area_id")) {
       state.currentAreaId = raw["current_area_id"]?.toString() ?? "";
+      robotStateController.rememberActiveMowingArea(state.currentAreaId);
     }
     if (raw.containsKey("current_area")) {
       state.currentArea = _readIntValue(raw["current_area"], fallback: state.currentArea);
@@ -1275,6 +1276,7 @@ class MqttConnection  {
     }
     state.currentArea       = obj["d"]["current_area"];
     state.currentAreaId     = obj["d"]["current_area_id"]?.toString() ?? "";
+    robotStateController.rememberActiveMowingArea(state.currentAreaId);
     state.currentPath       = obj["d"]["current_path"];
     state.currentPathIndex  = obj["d"]["current_path_index"];
     robotStateController.robotState.value = state;
