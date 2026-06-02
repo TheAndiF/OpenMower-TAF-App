@@ -301,6 +301,14 @@ class MapPainter extends CustomPainter {
     canvas.restore();
   }
 
+  String get _effectiveCurrentAreaId {
+    final currentAreaId = robotState.currentAreaId.trim();
+    if (currentAreaId.isNotEmpty) {
+      return currentAreaId;
+    }
+    return lastActiveMowingAreaId.trim();
+  }
+
   void _drawCurrentAreaOverlay(Canvas canvas, AreaMowingProgress? progress) {
     final currentAreaId = _effectiveCurrentAreaId;
     if (currentAreaId.isEmpty) {
