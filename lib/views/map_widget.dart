@@ -128,7 +128,7 @@ class MapPainter extends CustomPainter {
     ..strokeJoin = StrokeJoin.round
     ..strokeCap = StrokeCap.round;
   final _completedPathPaint = Paint()
-    ..strokeWidth = 0.04
+    ..strokeWidth = 0.032
     ..color = Colors.black
     ..style = PaintingStyle.stroke
     ..strokeJoin = StrokeJoin.round
@@ -384,7 +384,7 @@ class MapPainter extends CustomPainter {
         ? const Color.fromRGBO(46, 125, 50, 1.0)
         : const Color.fromRGBO(129, 199, 132, 0.85);
 
-    final double radius = hasProgress ? 0.56 : 0.38;
+    final double radius = hasProgress ? 0.58 : 0.38;
 
     canvas.drawCircle(
       position,
@@ -408,7 +408,7 @@ class MapPainter extends CustomPainter {
         text: order.toString(),
         style: TextStyle(
           color: textColor,
-          fontSize: hasProgress ? 0.36 : 0.42,
+          fontSize: hasProgress ? 0.30 : 0.42,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -424,15 +424,15 @@ class MapPainter extends CustomPainter {
       return;
     }
 
-    final dividerY = position.dy - 0.02;
+    final dividerY = position.dy - 0.01;
     orderPainter.paint(
       canvas,
-      Offset(position.dx - orderPainter.width / 2, position.dy - 0.40),
+      Offset(position.dx - orderPainter.width / 2, position.dy - 0.29),
     );
 
     canvas.drawLine(
-      Offset(position.dx - 0.32, dividerY),
-      Offset(position.dx + 0.32, dividerY),
+      Offset(position.dx - 0.34, dividerY),
+      Offset(position.dx + 0.34, dividerY),
       Paint()
         ..color = textColor.withOpacity(0.75)
         ..strokeWidth = 0.025
@@ -444,7 +444,7 @@ class MapPainter extends CustomPainter {
         text: _formatPercent(percent),
         style: TextStyle(
           color: textColor,
-          fontSize: 0.20,
+          fontSize: 0.19,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -454,7 +454,7 @@ class MapPainter extends CustomPainter {
 
     percentPainter.paint(
       canvas,
-      Offset(position.dx - percentPainter.width / 2, position.dy + 0.10),
+      Offset(position.dx - percentPainter.width / 2, position.dy + 0.09),
     );
   }
 
