@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show rootBundle;
 
 import 'package:open_mower_app/models/map_model.dart';
 import 'package:open_mower_app/models/map_overlay_model.dart';
+import 'package:open_mower_app/models/mowing_progress_model.dart';
 import 'package:open_mower_app/models/robot_state.dart';
 
 class MapWidget extends GetView<RobotStateController> {
@@ -36,6 +37,7 @@ class MapWidget extends GetView<RobotStateController> {
                       painter: MapPainter(
                           controller.map.value,
                           controller.mapOverlay.value,
+                          controller.mowingProgress.value,
                           controller.robotState.value,
                           centerOnRobot),
                     )))));
@@ -43,8 +45,8 @@ class MapWidget extends GetView<RobotStateController> {
 }
 
 class MapPainter extends CustomPainter {
-  MapPainter(this.mapModel, this.mapOverlayModel, this.robotState,
-      this.centerOnRobot) {
+  MapPainter(this.mapModel, this.mapOverlayModel, this.mowingProgressModel,
+      this.robotState, this.centerOnRobot) {
     // "robot" arrow
     path_0.reset();
     path_0.moveTo(0.1979167, 0.8750000);
@@ -85,6 +87,7 @@ class MapPainter extends CustomPainter {
 
   final MapModel mapModel;
   final MapOverlayModel mapOverlayModel;
+  final MowingProgressModel mowingProgressModel;
   final RobotState robotState;
   final bool centerOnRobot;
 
@@ -107,7 +110,19 @@ class MapPainter extends CustomPainter {
     ..color = Colors.green.withOpacity(0.6)
     ..style = PaintingStyle.stroke;
   final _currentAreaOverlayPaint = Paint()
-    ..strokeWidth = 0.12
+    ..strokeWidth = 0.08
+    ..color = Colors.black
+    ..style = PaintingStyle.stroke
+    ..strokeJoin = StrokeJoin.round
+    ..strokeCap = StrokeCap.round;
+  final _plannedPathPaint = Paint()
+    ..strokeWidth = 0.025
+    ..color = Colors.black
+    ..style = PaintingStyle.stroke
+    ..strokeJoin = StrokeJoin.round
+    ..strokeCap = StrokeCap.round;
+  final _pathDashPaint = Paint()
+    ..strokeWidth = 0.035
     ..color = Colors.black
     ..style = PaintingStyle.stroke
     ..strokeJoin = StrokeJoin.round
@@ -314,15 +329,6 @@ class MapPainter extends CustomPainter {
       canvas.drawPath(area.outline, fillPaint);
       // grassPattern.paintOnPath(canvas, Size(mapWidth, mapHeight), area.outline);
       canvas.drawPath(area.outline, outlinePaint);
-
-      if (area.mowingOrder != null) {
-        _drawMowingOrderLabel(
-          canvas,
-          area.labelPosition,
-          area.mowingOrder!,
-          area.mowingEnabled,
-        );
-      }
     }
 
     _drawCurrentAreaOverlay(canvas);
@@ -372,14 +378,89 @@ class MapPainter extends CustomPainter {
   }
 
   void _drawCurrentAreaOverlay(Canvas canvas) {
-    if (robotState.currentArea == -1 || robotState.currentAreaId.isEmpty) {
+    final currentAreaId = robotState.currentAreaId.trim();
+    if (currentAreaId.isEmpty) {
       return;
     }
 
+    final progress = mowingProgressModel.areaById(currentAreaId);
+
     for (final area in mapModel.mowingAreas) {
-      if (area.id == robotState.currentAreaId) {
+      if (area.id == currentAreaId) {
         canvas.drawPath(area.outline, _currentAreaOverlayPaint);
+        if (progress != null) {
+          _drawPlannedPaths(canvas, progress);
+        }
+        if (area.mowingOrder != null) {
+          _drawMowingOrderLabel(
+            canvas,
+            area.labelPosition,
+            area.mowingOrder!,
+            area.mowingEnabled,
+            progress?.percent,
+          );
+        }
         return;
+      }
+    }
+  }
+
+  void _drawPlannedPaths(Canvas canvas, AreaMowingProgress progress) {
+    final currentPathId = progress.currentPathId.trim();
+    final mowedPathIds = progress.mowedPaths
+        .map((path) => path.pathId.trim())
+        .where((pathId) => pathId.isNotEmpty)
+        .toSet();
+
+    for (final path in progress.plannedPaths) {
+      final pathShape = _pathFromPoints(path.points);
+      if (pathShape == null) {
+        continue;
+      }
+
+      final isCurrent = currentPathId.isNotEmpty
+          ? path.pathId == currentPathId
+          : path.index == progress.currentPath;
+      final isMowed = !isCurrent &&
+          (mowedPathIds.contains(path.pathId) ||
+              progress.mowedPaths.any((mowed) => mowed.index == path.index));
+
+      if (isCurrent) {
+        _drawDashedPath(canvas, pathShape, _pathDashPaint, 0.02, 0.08);
+      } else if (isMowed) {
+        _drawDashedPath(canvas, pathShape, _pathDashPaint, 0.18, 0.10);
+      } else {
+        canvas.drawPath(pathShape, _plannedPathPaint);
+      }
+    }
+  }
+
+  Path? _pathFromPoints(List<Offset> points) {
+    if (points.isEmpty) {
+      return null;
+    }
+    final path = Path()..moveTo(points.first.dx, points.first.dy);
+    for (final point in points.skip(1)) {
+      path.lineTo(point.dx, point.dy);
+    }
+    return path;
+  }
+
+  void _drawDashedPath(
+    Canvas canvas,
+    Path source,
+    Paint paint,
+    double dashLength,
+    double gapLength,
+  ) {
+    for (final metric in source.computeMetrics()) {
+      double distance = 0.0;
+      while (distance < metric.length) {
+        final next = min(distance + dashLength, metric.length);
+        if (next > distance) {
+          canvas.drawPath(metric.extractPath(distance, next), paint);
+        }
+        distance = next + gapLength;
       }
     }
   }
@@ -389,14 +470,16 @@ class MapPainter extends CustomPainter {
     Offset position,
     int order,
     bool enabled,
+    double? percent,
   ) {
-    const double radius = 0.35;
+    final hasProgress = percent != null;
+    final double radius = hasProgress ? 0.48 : 0.35;
 
     canvas.drawCircle(
       position,
       radius,
       Paint()
-        ..color = const Color.fromRGBO(255, 255, 255, 0.90)
+        ..color = const Color.fromRGBO(255, 255, 255, 0.92)
         ..style = PaintingStyle.fill,
     );
 
@@ -411,14 +494,16 @@ class MapPainter extends CustomPainter {
         ..style = PaintingStyle.stroke,
     );
 
-    final textPainter = TextPainter(
+    final textColor = enabled
+        ? const Color.fromRGBO(27, 94, 32, 1.0)
+        : const Color.fromRGBO(129, 199, 132, 1.0);
+
+    final orderPainter = TextPainter(
       text: TextSpan(
         text: order.toString(),
         style: TextStyle(
-          color: enabled
-              ? const Color.fromRGBO(27, 94, 32, 1.0)
-              : const Color.fromRGBO(129, 199, 132, 1.0),
-          fontSize: 0.42,
+          color: textColor,
+          fontSize: hasProgress ? 0.34 : 0.42,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -426,10 +511,51 @@ class MapPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
 
-    textPainter.paint(
+    if (!hasProgress) {
+      orderPainter.paint(
+        canvas,
+        position - Offset(orderPainter.width / 2, orderPainter.height / 2),
+      );
+      return;
+    }
+
+    orderPainter.paint(
       canvas,
-      position - Offset(textPainter.width / 2, textPainter.height / 2),
+      Offset(position.dx - orderPainter.width / 2, position.dy - 0.36),
     );
+
+    canvas.drawLine(
+      Offset(position.dx - 0.28, position.dy),
+      Offset(position.dx + 0.28, position.dy),
+      Paint()
+        ..color = textColor.withOpacity(0.75)
+        ..strokeWidth = 0.025
+        ..style = PaintingStyle.stroke,
+    );
+
+    final percentPainter = TextPainter(
+      text: TextSpan(
+        text: _formatPercent(percent),
+        style: TextStyle(
+          color: textColor,
+          fontSize: 0.20,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: 0.86);
+
+    percentPainter.paint(
+      canvas,
+      Offset(position.dx - percentPainter.width / 2, position.dy + 0.08),
+    );
+  }
+
+  String _formatPercent(double percent) {
+    final clamped = percent.clamp(0.0, 100.0).toDouble();
+    final decimals = clamped == clamped.roundToDouble() ? 0 : 1;
+    return '${clamped.toStringAsFixed(decimals)} %';
   }
 
   Paint getOverlayPaint(OverlayPolygon overlay) {
@@ -457,7 +583,8 @@ class MapPainter extends CustomPainter {
     if (oldDelegate is MapPainter) {
       if (oldDelegate.robotState != robotState ||
           oldDelegate.mapModel != mapModel ||
-          oldDelegate.mapOverlayModel != mapOverlayModel) {
+          oldDelegate.mapOverlayModel != mapOverlayModel ||
+          oldDelegate.mowingProgressModel != mowingProgressModel) {
         // print("new map model, should repaint!");
         return true;
       } else {

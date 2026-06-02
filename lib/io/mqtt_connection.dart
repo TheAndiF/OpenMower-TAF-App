@@ -14,6 +14,7 @@ import 'package:open_mower_app/models/map_model.dart';
 import 'package:open_mower_app/models/robot_state.dart';
 import 'package:open_mower_app/models/sensor_state.dart';
 import 'package:open_mower_app/models/map_overlay_model.dart';
+import 'package:open_mower_app/models/mowing_progress_model.dart';
 
 import 'server.dart' if (dart.library.html) 'browser.dart' as mqttclient;
 import 'package:get/get.dart';
@@ -122,6 +123,7 @@ class MqttConnection  {
   static const String lowLevelPowerRenewJsonTopic = "settings/ll_board/set/renew/json";
 
   static const String mapOverlayJsonTopic = "map/overlay/json";
+  static const String mapMowingProgressJsonTopic = "map/mowing_progress/json";
   static const String mapOverlayBsonTopic = "map/overlay/bson";
   static const String mapOverlayLegacyJsonTopic = "map_overlay/json";
   static const String mapOverlayLegacyBsonTopic = "map_overlay/bson";
@@ -1162,6 +1164,83 @@ class MqttConnection  {
     robotStateController.mapOverlay.refresh();
   }
 
+
+  void parseMowingProgressMessage(MqttPublishMessage payload, {required String topic}) {
+    try {
+      final decoded = _decodeJsonValue(_payloadBytes(payload));
+      if (decoded is! Map) {
+        debugPrint("Leere oder ungültige Mähfortschritt-Nachricht auf $topic empfangen.");
+        return;
+      }
+      final root = decoded["d"] is Map ? decoded : <String, dynamic>{"d": decoded};
+      parseMowingProgress(root);
+    } catch (e) {
+      debugPrint("Mähfortschritt konnte nicht gelesen werden ($topic): $e");
+    }
+  }
+
+  void parseMowingProgress(obj) {
+    final progressModel = MowingProgressModel();
+    final areas = obj["d"]?["areas"];
+    if (areas is Map) {
+      areas.forEach((key, value) {
+        if (value is Map) {
+          final areaMap = Map<String, dynamic>.from(value);
+          final areaId = (areaMap["area_id"] ?? key).toString();
+          final plannedPaths = _parseMowingPathList(areaMap["planned_paths"]);
+          final mowedPaths = _parseMowingPathList(areaMap["mowed_paths"]);
+          progressModel.areas[areaId] = AreaMowingProgress(
+            areaId: areaId,
+            percent: _readDoubleValue(areaMap["percent"], fallback: 0.0),
+            currentPath: _readIntValue(areaMap["current_path"], fallback: -1),
+            currentPathId: areaMap["current_path_id"]?.toString() ?? "",
+            currentPathIndex: _readIntValue(areaMap["current_path_index"], fallback: 0),
+            plannedPaths: plannedPaths,
+            mowedPaths: mowedPaths,
+          );
+        }
+      });
+    }
+
+    robotStateController.mowingProgress.value = progressModel;
+    robotStateController.mowingProgress.refresh();
+  }
+
+  List<MowingPathProgress> _parseMowingPathList(dynamic rawPaths) {
+    final result = <MowingPathProgress>[];
+    if (rawPaths is! Iterable) {
+      return result;
+    }
+
+    for (final rawPath in rawPaths) {
+      if (rawPath is! Map) {
+        continue;
+      }
+      final pathMap = Map<String, dynamic>.from(rawPath);
+      final points = <Offset>[];
+      final rawPoints = pathMap["points"];
+      if (rawPoints is Iterable) {
+        for (final rawPoint in rawPoints) {
+          if (rawPoint is Map) {
+            final pointMap = Map<String, dynamic>.from(rawPoint);
+            points.add(Offset(
+              _readDoubleValue(pointMap["x"], fallback: 0.0),
+              -_readDoubleValue(pointMap["y"], fallback: 0.0),
+            ));
+          }
+        }
+      }
+
+      result.add(MowingPathProgress(
+        index: _readIntValue(pathMap["index"], fallback: result.length),
+        pathId: pathMap["path_id"]?.toString() ?? "",
+        points: points,
+        completedPercent: _readDoubleValue(pathMap["completed_percent"], fallback: 0.0),
+      ));
+    }
+    return result;
+  }
+
   void parseRobotState(obj) {
     final raw = obj is Map && obj["d"] is Map ? Map<String, dynamic>.from(obj["d"] as Map) : <String, dynamic>{};
     if (raw.isNotEmpty) {
@@ -1382,6 +1461,10 @@ class MqttConnection  {
               parseMapOverlayMessage(payload, topic: msg.topic!);
             }
             break;
+            case mapMowingProgressJsonTopic: {
+              parseMowingProgressMessage(payload, topic: msg.topic!);
+            }
+            break;
             case mapOverlayBsonTopic:
             case mapOverlayLegacyBsonTopic: {
               parseMapOverlayMessage(payload, bson: true, topic: msg.topic!);
@@ -1459,6 +1542,7 @@ class MqttConnection  {
     client.subscribe(lowLevelPowerJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(lowLevelPowerValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mapOverlayJsonTopic, MqttQos.atMostOnce);
+    client.subscribe(mapMowingProgressJsonTopic, MqttQos.atMostOnce);
     client.subscribe(mapOverlayBsonTopic, MqttQos.atMostOnce);
     client.subscribe(mapOverlayLegacyJsonTopic, MqttQos.atMostOnce);
     client.subscribe(mapOverlayLegacyBsonTopic, MqttQos.atMostOnce);

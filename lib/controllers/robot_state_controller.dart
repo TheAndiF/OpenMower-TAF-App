@@ -1,6 +1,7 @@
 import 'package:get/get.dart';
 import 'package:open_mower_app/models/map_model.dart';
 import 'package:open_mower_app/models/map_overlay_model.dart';
+import 'package:open_mower_app/models/mowing_progress_model.dart';
 import 'package:open_mower_app/models/robot_state.dart';
 
 class RobotStateController extends GetxController {
@@ -8,6 +9,7 @@ class RobotStateController extends GetxController {
 
   final map = MapModel().obs;
   final mapOverlay = MapOverlayModel().obs;
+  final mowingProgress = MowingProgressModel().obs;
   final softwareVersion = "".obs;
 
   var availableActions = <String>{}.obs;
