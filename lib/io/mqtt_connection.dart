@@ -892,19 +892,74 @@ class MqttConnection  {
   }
 
   Offset getPolygonCenter(path) {
+    return getOverlayPosition(path);
+  }
+
+  Offset getOverlayPosition(path) {
     if (path == null || path.isEmpty) {
       return Offset.zero;
     }
 
+    final polygon = convertJsonPolygon(path);
+    final bounds = polygon.getBounds();
+    if (bounds.isEmpty) {
+      return Offset.zero;
+    }
+
+    final boundsCenter = bounds.center;
+    if (polygon.contains(boundsCenter)) {
+      return boundsCenter;
+    }
+
+    // Use the same calculated overlay position for active and inactive areas.
+    // Prefer a point inside the polygon that is close to the bounds center.
+    // This avoids labels being placed near a vertex-heavy edge for long or
+    // irregular areas.
+    Offset bestPoint = Offset.zero;
+    double bestScore = double.infinity;
+    bool found = false;
+
+    const int steps = 24;
+    for (int ix = 0; ix <= steps; ix++) {
+      final x = bounds.left + bounds.width * ix / steps;
+      for (int iy = 0; iy <= steps; iy++) {
+        final y = bounds.top + bounds.height * iy / steps;
+        final candidate = Offset(x, y);
+        if (!polygon.contains(candidate)) {
+          continue;
+        }
+
+        final dx = candidate.dx - boundsCenter.dx;
+        final dy = candidate.dy - boundsCenter.dy;
+        final score = dx * dx + dy * dy;
+        if (!found || score < bestScore) {
+          found = true;
+          bestScore = score;
+          bestPoint = candidate;
+        }
+      }
+    }
+
+    if (found) {
+      return bestPoint;
+    }
+
+    // Fallback to the previous vertex-average behavior if no sample point
+    // was found. This should only happen for very small or malformed polygons.
     double sumX = 0;
     double sumY = 0;
+    int count = 0;
 
     for (final pt in path) {
       sumX += (pt["x"] as num).toDouble();
       sumY += -((pt["y"] as num).toDouble());
+      count++;
     }
 
-    return Offset(sumX / path.length, sumY / path.length);
+    if (count == 0) {
+      return Offset.zero;
+    }
+    return Offset(sumX / count, sumY / count);
   }
 
   int? parseIntProperty(dynamic value) {
@@ -1063,7 +1118,7 @@ class MqttConnection  {
       if (type == "mow") {
         mapModel.mowingAreas.add(MapArea(
           outline: convertJsonPolygon(area["outline"]),
-          labelPosition: getPolygonCenter(area["outline"]),
+          labelPosition: getOverlayPosition(area["outline"]),
           id: area["id"]?.toString() ?? "",
           mowingEnabled: parseMowingEnabled(properties["mowing_enabled"]),
           mowingOrder: parseIntProperty(properties["mowing_order"]),
@@ -1099,7 +1154,7 @@ class MqttConnection  {
       for(final area in wa) {
         mapModel.mowingAreas.add(MapArea(
           outline: convertJsonPolygon(area["outline"]),
-          labelPosition: getPolygonCenter(area["outline"]),
+          labelPosition: getOverlayPosition(area["outline"]),
         ));
         for (final obstacle in area["obstacles"] ?? []) {
           mapModel.obstacles.add(convertJsonPolygon(obstacle));
