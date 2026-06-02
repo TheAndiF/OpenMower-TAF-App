@@ -1337,11 +1337,11 @@ class MqttConnection  {
     final root = obj is Map && obj["d"] is Map
         ? Map<String, dynamic>.from(obj["d"] as Map)
         : <String, dynamic>{};
-    final currentAreaId = (root["current_area_id"] ?? currentModel.currentAreaId).toString();
-    final progressModel = MowingProgressModel(
-      currentAreaId: currentAreaId,
-      areas: Map<String, AreaMowingProgress>.from(currentModel.areas),
-    );
+    final rawCurrentAreaId = root["current_area_id"];
+    var currentAreaId = rawCurrentAreaId == null
+        ? currentModel.currentAreaId.trim()
+        : rawCurrentAreaId.toString().trim();
+    final progressAreas = Map<String, AreaMowingProgress>.from(currentModel.areas);
 
     final areas = root["areas"];
     if (areas is Map) {
@@ -1359,7 +1359,7 @@ class MqttConnection  {
               ? _parseMowingPathList(areaMap["mowed_paths"])
               : (previous?.mowedPaths ?? <MowingPathProgress>[]);
 
-          progressModel.areas[areaId] = AreaMowingProgress(
+          progressAreas[areaId] = AreaMowingProgress(
             areaId: areaId,
             percent: _readDoubleValue(areaMap["percent"], fallback: previous?.percent ?? 0.0),
             state: areaMap["state"]?.toString() ?? previous?.state ?? "",
@@ -1372,6 +1372,15 @@ class MqttConnection  {
         }
       });
     }
+
+    if (currentAreaId.isEmpty && progressAreas.length == 1) {
+      currentAreaId = progressAreas.keys.first;
+    }
+
+    final progressModel = MowingProgressModel(
+      currentAreaId: currentAreaId,
+      areas: progressAreas,
+    );
 
     robotStateController.rememberActiveMowingArea(currentAreaId);
     robotStateController.mowingProgress.value = progressModel;
