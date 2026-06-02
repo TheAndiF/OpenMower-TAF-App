@@ -906,20 +906,27 @@ class MqttConnection  {
       return Offset.zero;
     }
 
-    final boundsCenter = bounds.center;
-    if (polygon.contains(boundsCenter)) {
-      return boundsCenter;
+    final outlinePoints = _jsonPolygonToOffsets(path);
+    if (outlinePoints.isEmpty) {
+      return Offset.zero;
     }
 
-    // Use the same calculated overlay position for active and inactive areas.
-    // Prefer a point inside the polygon that is close to the bounds center.
-    // This avoids labels being placed near a vertex-heavy edge for long or
-    // irregular areas.
-    Offset bestPoint = Offset.zero;
-    double bestScore = double.infinity;
-    bool found = false;
+    final boundsCenter = bounds.center;
 
-    const int steps = 24;
+    // Same circle size as the map overlay painter. This is used only for
+    // placement, so the label is preferably positioned where the whole circle
+    // fits inside the area.
+    const double overlayRadius = 0.58;
+
+    Offset? bestFullyInsidePoint;
+    double bestFullyInsideScore = double.infinity;
+
+    Offset? bestInsidePoint;
+    double bestInsideScore = double.negativeInfinity;
+
+    // A finer grid keeps the behavior stable for long/narrow and irregular
+    // mowing areas without relying on vertex averages near edges.
+    const int steps = 48;
     for (int ix = 0; ix <= steps; ix++) {
       final x = bounds.left + bounds.width * ix / steps;
       for (int iy = 0; iy <= steps; iy++) {
@@ -929,23 +936,41 @@ class MqttConnection  {
           continue;
         }
 
+        final clearance = _distanceToOutline(candidate, outlinePoints);
         final dx = candidate.dx - boundsCenter.dx;
         final dy = candidate.dy - boundsCenter.dy;
-        final score = dx * dx + dy * dy;
-        if (!found || score < bestScore) {
-          found = true;
-          bestScore = score;
-          bestPoint = candidate;
+        final centerDistanceSquared = dx * dx + dy * dy;
+
+        // Fallback candidate: stay inside and prefer the widest available
+        // part of the area. This helps when the area is too narrow for the
+        // complete circle.
+        final insideScore = clearance * 1000000.0 - centerDistanceSquared;
+        if (insideScore > bestInsideScore) {
+          bestInsideScore = insideScore;
+          bestInsidePoint = candidate;
+        }
+
+        // Preferred candidate: the circle around the label also stays inside.
+        if (clearance >= overlayRadius &&
+            _circleSamplesInside(polygon, candidate, overlayRadius)) {
+          if (centerDistanceSquared < bestFullyInsideScore) {
+            bestFullyInsideScore = centerDistanceSquared;
+            bestFullyInsidePoint = candidate;
+          }
         }
       }
     }
 
-    if (found) {
-      return bestPoint;
+    if (bestFullyInsidePoint != null) {
+      return bestFullyInsidePoint;
     }
 
-    // Fallback to the previous vertex-average behavior if no sample point
-    // was found. This should only happen for very small or malformed polygons.
+    if (bestInsidePoint != null) {
+      return bestInsidePoint;
+    }
+
+    // Fallback to the old vertex-average behavior if no sampled point was
+    // found. This should only happen for very small or malformed polygons.
     double sumX = 0;
     double sumY = 0;
     int count = 0;
@@ -960,6 +985,77 @@ class MqttConnection  {
       return Offset.zero;
     }
     return Offset(sumX / count, sumY / count);
+  }
+
+  List<Offset> _jsonPolygonToOffsets(path) {
+    final points = <Offset>[];
+    if (path == null) {
+      return points;
+    }
+
+    for (final pt in path) {
+      if (pt is Map && pt["x"] is num && pt["y"] is num) {
+        points.add(Offset(
+          (pt["x"] as num).toDouble(),
+          -((pt["y"] as num).toDouble()),
+        ));
+      }
+    }
+    return points;
+  }
+
+  bool _circleSamplesInside(Path polygon, Offset center, double radius) {
+    if (!polygon.contains(center)) {
+      return false;
+    }
+
+    const int samples = 24;
+    for (int i = 0; i < samples; i++) {
+      final angle = 2.0 * pi * i / samples;
+      final sample = Offset(
+        center.dx + cos(angle) * radius,
+        center.dy + sin(angle) * radius,
+      );
+      if (!polygon.contains(sample)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  double _distanceToOutline(Offset point, List<Offset> outlinePoints) {
+    if (outlinePoints.length < 2) {
+      return 0.0;
+    }
+
+    double best = double.infinity;
+    for (int i = 0; i < outlinePoints.length; i++) {
+      final a = outlinePoints[i];
+      final b = outlinePoints[(i + 1) % outlinePoints.length];
+      best = min(best, _distanceToSegment(point, a, b));
+    }
+    return best;
+  }
+
+  double _distanceToSegment(Offset point, Offset a, Offset b) {
+    final dx = b.dx - a.dx;
+    final dy = b.dy - a.dy;
+    final lengthSquared = dx * dx + dy * dy;
+    if (lengthSquared == 0) {
+      final px = point.dx - a.dx;
+      final py = point.dy - a.dy;
+      return sqrt(px * px + py * py);
+    }
+
+    final t = (((point.dx - a.dx) * dx + (point.dy - a.dy) * dy) /
+            lengthSquared)
+        .clamp(0.0, 1.0)
+        .toDouble();
+
+    final projection = Offset(a.dx + t * dx, a.dy + t * dy);
+    final px = point.dx - projection.dx;
+    final py = point.dy - projection.dy;
+    return sqrt(px * px + py * py);
   }
 
   int? parseIntProperty(dynamic value) {
