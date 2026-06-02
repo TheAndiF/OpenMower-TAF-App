@@ -252,7 +252,10 @@ class MapPainter extends CustomPainter {
     // mowing paths pass through the label position.
     for (final area in mapModel.mowingAreas) {
       if (area.mowingOrder != null) {
-        final realCurrentAreaId = robotState.currentAreaId.trim();
+        final progressCurrentAreaId = mowingProgressModel.currentAreaId.trim();
+        final realCurrentAreaId = progressCurrentAreaId.isNotEmpty
+            ? progressCurrentAreaId
+            : robotState.currentAreaId.trim();
         final isActivelyMowingArea =
             realCurrentAreaId.isNotEmpty && area.id == realCurrentAreaId;
         _drawMowingOverlayLabel(
@@ -304,6 +307,11 @@ class MapPainter extends CustomPainter {
   }
 
   String get _effectiveCurrentAreaId {
+    final progressAreaId = mowingProgressModel.currentAreaId.trim();
+    if (progressAreaId.isNotEmpty) {
+      return progressAreaId;
+    }
+
     final currentAreaId = robotState.currentAreaId.trim();
     if (currentAreaId.isNotEmpty) {
       return currentAreaId;
