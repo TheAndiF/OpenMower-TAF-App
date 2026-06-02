@@ -425,8 +425,8 @@ class MapPainter extends CustomPainter {
       center,
       radius,
       Paint()
-        // Light grey background with 30% opacity so content behind the marker remains visible.
-        ..color = Colors.grey.shade300.withOpacity(0.30)
+        // Light grey background with 10% opacity so content behind the marker remains visible.
+        ..color = Colors.grey.shade300.withOpacity(0.10)
         ..style = PaintingStyle.fill,
     );
 
