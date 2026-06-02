@@ -425,8 +425,8 @@ class MapPainter extends CustomPainter {
       center,
       radius,
       Paint()
-        // Nearly transparent grey background so content behind the marker remains visible.
-        ..color = Colors.grey.withOpacity(0.12)
+        // Light grey background with 30% opacity so content behind the marker remains visible.
+        ..color = Colors.grey.shade300.withOpacity(0.30)
         ..style = PaintingStyle.fill,
     );
 
@@ -494,7 +494,7 @@ class MapPainter extends CustomPainter {
       canvas,
       Offset(
         center.dx - textPainter.width / 2.0,
-        center.dy + textPainter.height / 2.0,
+        center.dy + textPainter.height / 3.0,
       ),
     );
   }
