@@ -103,8 +103,8 @@ class MainScreen extends GetView<RobotStateController> {
 
         return Column(
           children: [
-            Expanded(child: widgetList[effectiveIndex]),
-            _buildCurrentPageStrip(pageTitles[effectiveIndex]),
+            Expanded(child: _buildSwipeablePage(effectiveIndex)),
+            _buildCurrentPageStrip(effectiveIndex),
           ],
         );
       }),
@@ -126,7 +126,71 @@ class MainScreen extends GetView<RobotStateController> {
     );
   }
 
-  Widget _buildCurrentPageStrip(String pageTitle) {
+  Widget _buildSwipeablePage(int effectiveIndex) {
+    final page = widgetList[effectiveIndex];
+
+    if (!_isSwipeEnabledOnPage(effectiveIndex)) {
+      return page;
+    }
+
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragEnd: (details) {
+        final velocity = details.primaryVelocity;
+        if (velocity == null || velocity.abs() < 250) return;
+
+        if (velocity < 0) {
+          _goToNextPage(effectiveIndex);
+        } else {
+          _goToPreviousPage(effectiveIndex);
+        }
+      },
+      child: page,
+    );
+  }
+
+  bool _isSwipeEnabledOnPage(int index) {
+    // Die Flaechen-Seite nutzt eigene Gesten fuer Karte, Zoom und Editor.
+    // Deshalb wird das Seiten-Swiping dort bewusst deaktiviert.
+    return index != 4;
+  }
+
+  List<int> _availablePageIndexes() {
+    return List<int>.generate(widgetList.length, (index) => index)
+        .where(_isPageAvailable)
+        .toList(growable: false);
+  }
+
+  bool _isPageAvailable(int index) {
+    if (index == 1 && !settingsController.expertModeEnabled.value) {
+      return false;
+    }
+
+    if (index == 8 && kReleaseMode && kIsWeb) {
+      return false;
+    }
+
+    return true;
+  }
+
+  void _goToNextPage(int currentIndex) {
+    final pages = _availablePageIndexes();
+    final currentPosition = pages.indexOf(currentIndex);
+    if (currentPosition < 0 || currentPosition >= pages.length - 1) return;
+    _index.value = pages[currentPosition + 1];
+  }
+
+  void _goToPreviousPage(int currentIndex) {
+    final pages = _availablePageIndexes();
+    final currentPosition = pages.indexOf(currentIndex);
+    if (currentPosition <= 0) return;
+    _index.value = pages[currentPosition - 1];
+  }
+
+  Widget _buildCurrentPageStrip(int effectiveIndex) {
+    final pages = _availablePageIndexes();
+    final pageTitle = pageTitles[effectiveIndex];
+
     return Material(
       color: Colors.white,
       elevation: 6,
@@ -149,28 +213,63 @@ class MainScreen extends GetView<RobotStateController> {
             ),
           ),
           Container(
-            height: 18,
+            height: 22,
             width: double.infinity,
             color: _kUiBlue,
-            child: Center(
-              child: Text(
-                pageTitle,
-                textAlign: TextAlign.center,
-                textHeightBehavior: const TextHeightBehavior(
-                  applyHeightToFirstAscent: false,
-                  applyHeightToLastDescent: false,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Positioned.fill(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 14, right: 14),
+                      child: Text(
+                        pageTitle,
+                        textAlign: TextAlign.left,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textHeightBehavior: const TextHeightBehavior(
+                          applyHeightToFirstAscent: false,
+                          applyHeightToLastDescent: false,
+                        ),
+                        style: GoogleFonts.dmSans(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          height: 1.0,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                style: GoogleFonts.dmSans(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  height: 1.0,
-                ),
-              ),
+                _buildPageDots(pages, effectiveIndex),
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPageDots(List<int> pages, int effectiveIndex) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: pages.map((pageIndex) {
+        final isActive = pageIndex == effectiveIndex;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          width: isActive ? 13 : 5,
+          height: 5,
+          margin: const EdgeInsets.symmetric(horizontal: 2.5),
+          decoration: BoxDecoration(
+            color: isActive ? Colors.white : Colors.white.withOpacity(0.45),
+            borderRadius: BorderRadius.circular(99),
+          ),
+        );
+      }).toList(growable: false),
     );
   }
 
