@@ -8,7 +8,7 @@ import 'package:open_mower_app/models/joystick_command.dart';
 import 'package:open_mower_app/views/map_widget.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 
-const Color _kDashboardActionBlue = Color(0xFF567493);
+const Color _kDashboardActionBlue = Color(0xFF617C98);
 
 n.ButtonStyle _primaryActionButtonStyle() => n.ButtonStyle(
       backgroundColor: _kDashboardActionBlue,
