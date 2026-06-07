@@ -167,7 +167,7 @@ class MainScreen extends GetView<RobotStateController> {
   List<int> _swipePageIndexes() {
     // Nur diese Hauptseiten werden in der Android-App per Swipe durchlaufen:
     // Dashboard -> Advanced Options -> Sensor Values -> Timetable -> Flächen -> Protokoll.
-    // Der Flächeneditor bleibt eine eigene Unterseite und ist nur über die Taste erreichbar.
+    // Der Flächeneditor bleibt eine eigene Unterseite und wird nicht per Swipe durchlaufen.
     return const <int>[0, 1, 2, 3, 4, 5]
         .where(_isPageAvailable)
         .toList(growable: false);
@@ -342,6 +342,11 @@ class MainScreen extends GetView<RobotStateController> {
         leading: const _SoftwareSettingsDrawerIcon(),
         title: 'Einstellungen Software',
         index: 7,
+      ),
+      _buildDrawerTile(
+        leading: n.Icon(Icons.edit_location_alt_outlined),
+        title: 'Flächeneditor',
+        index: 9,
       ),
     ];
 
