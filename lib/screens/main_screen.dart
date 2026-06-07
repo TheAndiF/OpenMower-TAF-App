@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:niku/namespace.dart' as n;
 import 'package:open_mower_app/controllers/robot_state_controller.dart';
 import 'package:open_mower_app/controllers/settings_controller.dart';
@@ -150,14 +151,21 @@ class MainScreen extends GetView<RobotStateController> {
           Container(
             height: 18,
             width: double.infinity,
-            alignment: Alignment.center,
             color: _kUiBlue,
-            child: Text(
-              pageTitle,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
+            child: Center(
+              child: Text(
+                pageTitle,
+                textAlign: TextAlign.center,
+                textHeightBehavior: const TextHeightBehavior(
+                  applyHeightToFirstAscent: false,
+                  applyHeightToLastDescent: false,
+                ),
+                style: GoogleFonts.dmSans(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  height: 1.0,
+                ),
               ),
             ),
           ),
