@@ -4,14 +4,14 @@ import 'package:flutter/services.dart';
 import 'package:open_mower_app/services/platform_text_file.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/mqtt_areas_controller.dart';
-import 'package:open_mower_app/controllers/map_editor_controller.dart';
 import 'package:open_mower_app/controllers/remote_controller.dart';
 import 'package:open_mower_app/controllers/robot_state_controller.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
-import 'package:open_mower_app/views/map_editor_widget.dart';
 
 class MqttAreasScreen extends StatefulWidget {
-  const MqttAreasScreen({super.key});
+  const MqttAreasScreen({super.key, this.onOpenEditor});
+
+  final VoidCallback? onOpenEditor;
 
   @override
   State<MqttAreasScreen> createState() => _MqttAreasScreenState();
@@ -19,7 +19,6 @@ class MqttAreasScreen extends StatefulWidget {
 
 class _MqttAreasScreenState extends State<MqttAreasScreen> {
   final MqttAreasController controller = Get.find<MqttAreasController>();
-  final MapEditorController mapEditorController = Get.find<MapEditorController>();
   final RobotStateController robotStateController = Get.find<RobotStateController>();
   final RemoteController remoteController = Get.find<RemoteController>();
   bool _jsonExpanded = false;
@@ -61,14 +60,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
                   child: _buildMowAreasSection(context, mowAreas),
                 ),
                 const SizedBox(height: 16),
-                _buildSection(
-                  context,
-                  icon: Icons.edit_location_alt_outlined,
-                  title: 'Karteneditor',
-                  subtitle: 'Polygone separat bearbeiten – ohne die bisherigen Kartenansichten zu verändern',
-                  initiallyExpanded: false,
-                  child: _buildMapEditorSection(context),
-                ),
+                _buildEditorLinkSection(context),
                 const SizedBox(height: 16),
                 _buildJsonSection(context),
               ],
@@ -498,145 +490,63 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     );
   }
 
-  Widget _buildMapEditorSection(BuildContext context) {
-    return Obx(() {
-      final selectedArea = mapEditorController.selectedArea;
-      final selectedPoint = mapEditorController.selectedPoint;
-      final selectedPointCount = mapEditorController.selectedPointCount;
-      final status = mapEditorController.editorStatus.value;
-      final editMode = mapEditorController.editMode.value;
-      final hasChanges = mapEditorController.hasUnsavedChanges.value;
-      final selectedType = selectedArea?.type ?? '-';
-      final selectedName = selectedArea?.displayName ?? 'Keine Fläche ausgewählt';
-      final selectedPointText = selectedPointCount == 0
-          ? '-'
-          : selectedPointCount == 1 && selectedPoint != null
-              ? 'x ${selectedPoint.x.toStringAsFixed(3)} / y ${selectedPoint.y.toStringAsFixed(3)}'
-              : '$selectedPointCount Punkte ausgewählt';
-      final editableAreas = mapEditorController.editableAreas.toList(growable: false);
-      final selectedAreaIndex = mapEditorController.selectedAreaIndex.value;
+  Widget _buildEditorLinkSection(BuildContext context) {
+    final color = Theme.of(context).primaryColor;
 
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 560;
+        final title = Row(
           children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: controller.hasData ? mapEditorController.toggleEditMode : null,
-                  icon: Icon(editMode ? Icons.pause_circle_outline : Icons.edit_outlined),
-                  label: Text(editMode ? 'Bearbeitung pausieren' : 'Bearbeiten'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: mapEditorController.canUndo ? mapEditorController.undo : null,
-                  icon: const Icon(Icons.undo),
-                  label: const Text('Rückgängig'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: hasChanges ? mapEditorController.discardChanges : null,
-                  icon: const Icon(Icons.restore),
-                  label: const Text('Verwerfen'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: hasChanges ? mapEditorController.writeBackAndSend : null,
-                  icon: const Icon(Icons.save_outlined),
-                  label: const Text('Speichern'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: editMode ? mapEditorController.toggleMultiPointSelectionMode : null,
-                  icon: Icon(mapEditorController.multiPointSelectionMode.value ? Icons.check_box : Icons.check_box_outline_blank),
-                  label: Text(mapEditorController.multiPointSelectionMode.value ? 'Mehrfachauswahl an' : 'Mehrfachauswahl'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: selectedPointCount == 0 ? null : mapEditorController.clearPointSelection,
-                  icon: const Icon(Icons.deselect),
-                  label: const Text('Punkte abwählen'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: selectedPointCount == 0 ? null : () => mapEditorController.deleteSelectedPoint(),
-                  icon: const Icon(Icons.delete_outline),
-                  label: Text(selectedPointCount > 1 ? 'Punkte löschen' : 'Punkt löschen'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<int?>(
-              value: selectedAreaIndex,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Fläche zur Bearbeitung',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.layers_outlined),
-              ),
-              items: <DropdownMenuItem<int?>>[
-                const DropdownMenuItem<int?>(
-                  value: null,
-                  child: Text('Keine Fläche ausgewählt'),
-                ),
-                for (var i = 0; i < editableAreas.length; i++)
-                  DropdownMenuItem<int?>(
-                    value: i,
-                    child: Text(
-                      '${editableAreas[i].displayName} · ${editableAreas[i].type} · ${editableAreas[i].outline.length} Punkte',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-              ],
-              onChanged: editableAreas.isEmpty ? null : mapEditorController.selectAreaByIndex,
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withOpacity(0.05),
-                border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.18)),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Wrap(
-                spacing: 18,
-                runSpacing: 8,
+            Icon(Icons.edit_location_alt_outlined, color: color, size: 32),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _editorMetaText(context, 'Status', hasChanges ? 'Lokal geändert' : 'Synchron'),
-                  _editorMetaText(context, 'Fläche', selectedName),
-                  _editorMetaText(context, 'Typ', selectedType),
-                  _editorMetaText(context, 'Punkte', '${selectedArea?.outline.length ?? 0}'),
-                  _editorMetaText(context, 'Auswahl', selectedPointText),
-                  _editorMetaText(context, 'Mehrfachauswahl', mapEditorController.multiPointSelectionMode.value ? 'An' : 'Aus'),
-                  _editorMetaText(context, 'Raster', mapEditorController.showGrid.value ? 'An' : 'Aus'),
+                  Text(
+                    'Flächeneditor',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Polygone separat in einer eigenen Unterseite bearbeiten.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
                 ],
               ),
             ),
-            if (status.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(status, style: Theme.of(context).textTheme.bodyMedium),
-            ],
-            const SizedBox(height: 12),
-            const MapEditorWidget(),
-            const SizedBox(height: 10),
-            Text(
-              editMode
-                  ? 'Fläche bevorzugt über das Dropdown wählen. Punkte ziehen: Grenze verschieben. Plus-Marker antippen: Punkt einfügen. Mehrfachauswahl aktivieren: mehrere Punkte antippen, gemeinsam ziehen oder gemeinsam löschen. Der Zoom reicht jetzt bis 80×.'
-                  : 'Der Editor ist getrennt von Dashboard- und Steuerkarten. Bearbeiten aktiviert ausschließlich diesen Bereich.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
           ],
-        ),
-      );
-    });
-  }
+        );
+        final button = ElevatedButton.icon(
+          onPressed: widget.onOpenEditor,
+          icon: const Icon(Icons.open_in_new),
+          label: const Text('Öffnen'),
+        );
 
-  Widget _editorMetaText(BuildContext context, String label, String value) {
-    return RichText(
-      text: TextSpan(
-        style: Theme.of(context).textTheme.bodyMedium,
-        children: [
-          TextSpan(text: '$label: ', style: const TextStyle(fontWeight: FontWeight.w600)),
-          TextSpan(text: value),
-        ],
-      ),
+        return Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: isMobile
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      title,
+                      const SizedBox(height: 12),
+                      button,
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Expanded(child: title),
+                      const SizedBox(width: 12),
+                      button,
+                    ],
+                  ),
+          ),
+        );
+      },
     );
   }
 

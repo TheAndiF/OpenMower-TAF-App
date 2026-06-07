@@ -11,6 +11,7 @@ import 'package:open_mower_app/screens/sensor_values.dart';
 import 'package:open_mower_app/screens/timetable.dart';
 import 'package:open_mower_app/screens/mqtt_areas.dart';
 import 'package:open_mower_app/screens/status_transition_log.dart';
+import 'package:open_mower_app/screens/area_editor.dart';
 import 'package:open_mower_app/screens/mower_logic_settings.dart';
 import 'package:open_mower_app/screens/hardware_settings.dart';
 import 'package:open_mower_app/screens/settings.dart';
@@ -21,21 +22,24 @@ const Color _kUiBlue = Color(0xFF36618E);
 const Color _kUiBlueEdge = Color(0xFF274B70);
 
 class MainScreen extends GetView<RobotStateController> {
-  MainScreen({super.key});
-
-  final widgetList = <Widget>[
-    Dashboard(),
-    AdvancedOptions(),
-    const SensorValues(),
-    const TimetableScreen(),
-    const MqttAreasScreen(),
-    const StatusTransitionLogScreen(),
-    const HardwareSettingsScreen(),
-    const MowerLogicSettingsScreen(),
-    const Settings(),
-  ];
+  MainScreen({super.key}) {
+    widgetList = <Widget>[
+      Dashboard(),
+      AdvancedOptions(),
+      const SensorValues(),
+      const TimetableScreen(),
+      MqttAreasScreen(onOpenEditor: () => _index.value = 9),
+      const StatusTransitionLogScreen(),
+      const HardwareSettingsScreen(),
+      const MowerLogicSettingsScreen(),
+      const Settings(),
+      const AreaEditorScreen(),
+    ];
+  }
 
   final _index = 0.obs;
+
+  late final List<Widget> widgetList;
 
   final pageTitles = const <String>[
     'Dashboard',
@@ -47,6 +51,7 @@ class MainScreen extends GetView<RobotStateController> {
     'Einstellungen Hardware',
     'Einstellungen Software',
     'Settings',
+    'Flächeneditor',
   ];
 
   final RobotStateController robotStateController = Get.find();
@@ -156,13 +161,14 @@ class MainScreen extends GetView<RobotStateController> {
   }
 
   bool _isSwipeEnabledOnPage(int index) {
-    // Die Flaechen-Seite nutzt eigene Gesten fuer Karte, Zoom und Editor.
-    // Deshalb wird das Seiten-Swiping dort bewusst deaktiviert.
-    return index != 4;
+    return _swipePageIndexes().contains(index);
   }
 
-  List<int> _availablePageIndexes() {
-    return List<int>.generate(widgetList.length, (index) => index)
+  List<int> _swipePageIndexes() {
+    // Nur diese Hauptseiten werden in der Android-App per Swipe durchlaufen:
+    // Dashboard -> Advanced Options -> Sensor Values -> Timetable -> Flächen -> Protokoll.
+    // Der Flächeneditor bleibt eine eigene Unterseite und ist nur über die Taste erreichbar.
+    return const <int>[0, 1, 2, 3, 4, 5]
         .where(_isPageAvailable)
         .toList(growable: false);
   }
@@ -180,21 +186,21 @@ class MainScreen extends GetView<RobotStateController> {
   }
 
   void _goToNextPage(int currentIndex) {
-    final pages = _availablePageIndexes();
+    final pages = _swipePageIndexes();
     final currentPosition = pages.indexOf(currentIndex);
     if (currentPosition < 0 || currentPosition >= pages.length - 1) return;
     _index.value = pages[currentPosition + 1];
   }
 
   void _goToPreviousPage(int currentIndex) {
-    final pages = _availablePageIndexes();
+    final pages = _swipePageIndexes();
     final currentPosition = pages.indexOf(currentIndex);
     if (currentPosition <= 0) return;
     _index.value = pages[currentPosition - 1];
   }
 
   Widget _buildCurrentPageStrip(int effectiveIndex) {
-    final pages = _availablePageIndexes();
+    final pages = _swipePageIndexes();
     final pageTitle = pageTitles[effectiveIndex];
 
     return Material(
@@ -249,7 +255,7 @@ class MainScreen extends GetView<RobotStateController> {
                     ),
                   ),
                 ),
-                if (_isAndroidApp) _buildPageDots(pages, effectiveIndex),
+                if (_isAndroidApp && pages.contains(effectiveIndex)) _buildPageDots(pages, effectiveIndex),
               ],
             ),
           ),
