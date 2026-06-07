@@ -16,6 +16,9 @@ import 'package:open_mower_app/screens/settings.dart';
 import 'package:open_mower_app/views/logo_widget.dart';
 import 'package:open_mower_app/views/logo_widget_drawer.dart';
 
+const Color _kUiBlue = Color(0xFF36618E);
+const Color _kUiBlueEdge = Color(0xFF274B70);
+
 class MainScreen extends GetView<RobotStateController> {
   MainScreen({super.key});
 
@@ -33,6 +36,18 @@ class MainScreen extends GetView<RobotStateController> {
 
   final _index = 0.obs;
 
+  final pageTitles = const <String>[
+    'Dashboard',
+    'Advanced Options',
+    'Sensor Values',
+    'Timetable',
+    'Flächen',
+    'Protokoll',
+    'Einstellungen Hardware',
+    'Einstellungen Software',
+    'Settings',
+  ];
+
   final RobotStateController robotStateController = Get.find();
   final SettingsController settingsController = Get.find();
 
@@ -40,10 +55,30 @@ class MainScreen extends GetView<RobotStateController> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: _kUiBlue,
+        surfaceTintColor: Colors.transparent,
         title: const LogoWidget(size: 200),
         titleSpacing: 0,
-        elevation: 10,
-        shadowColor: Colors.black,
+        elevation: 0,
+        shadowColor: Colors.transparent,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(6),
+          child: Container(
+            height: 6,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  _kUiBlueEdge,
+                  Color(0x88FFFFFF),
+                  Colors.white,
+                ],
+                stops: [0.0, 0.45, 1.0],
+              ),
+            ),
+          ),
+        ),
       ),
       drawer: Drawer(
         child: Column(
@@ -60,10 +95,17 @@ class MainScreen extends GetView<RobotStateController> {
       ),
       body: Obx(() {
         final selectedIndex = _index.value;
-        if (selectedIndex == 1 && !settingsController.expertModeEnabled.value) {
-          return widgetList[0];
-        }
-        return widgetList[selectedIndex];
+        final effectiveIndex =
+            selectedIndex == 1 && !settingsController.expertModeEnabled.value
+                ? 0
+                : selectedIndex;
+
+        return Column(
+          children: [
+            Expanded(child: widgetList[effectiveIndex]),
+            _buildCurrentPageStrip(pageTitles[effectiveIndex]),
+          ],
+        );
       }),
     );
   }
@@ -83,11 +125,52 @@ class MainScreen extends GetView<RobotStateController> {
     );
   }
 
+  Widget _buildCurrentPageStrip(String pageTitle) {
+    return Material(
+      color: Colors.white,
+      elevation: 6,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            height: 4,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white,
+                  Color(0x66FFFFFF),
+                  _kUiBlueEdge,
+                ],
+                stops: [0.0, 0.35, 1.0],
+              ),
+            ),
+          ),
+          Container(
+            height: 18,
+            width: double.infinity,
+            alignment: Alignment.center,
+            color: _kUiBlue,
+            child: Text(
+              pageTitle,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   List<Widget> buildDrawerList() {
     final drawerList = <Widget>[
       const DrawerHeader(
         decoration: BoxDecoration(
-          color: Colors.blue,
+          color: _kUiBlue,
         ),
         child: Padding(
           padding: EdgeInsets.all(24),
