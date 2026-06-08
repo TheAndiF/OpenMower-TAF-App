@@ -1,0 +1,16 @@
+# Web-only icon generation for the Docker/web build.
+# The normal pubspec.yaml icon configuration also generates Android/iOS icons.
+# In the web Docker build there is no android/app/src/main/AndroidManifest.xml,
+# so the default full icon generation would fail.
+flutter_launcher_icons:
+  image_path: "assets/openmower_taf_icon.png"
+  android: false
+  ios: false
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: "assets/openmower_taf_icon.png"
+    background_color: "#0175C2"
+    theme_color: "#0175C2"
+  windows:
+    generate: false

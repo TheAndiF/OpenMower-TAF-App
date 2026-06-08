@@ -8,6 +8,22 @@ import 'package:open_mower_app/controllers/remote_controller.dart';
 import 'package:open_mower_app/controllers/robot_state_controller.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 
+const List<String> _kSkipPathActions = [
+  'mower_logic:mowing/skip_path',
+  'mower_logic:mowing/skip_current_path',
+  'mower_logic:mowing/skip_segment',
+  'mower_logic:mowing/skip_current_segment',
+];
+
+String? _firstAvailableAction(RobotStateController controller, List<String> actions) {
+  for (final action in actions) {
+    if (controller.hasAction(action)) {
+      return action;
+    }
+  }
+  return null;
+}
+
 class MqttAreasScreen extends StatefulWidget {
   const MqttAreasScreen({super.key, this.onOpenEditor});
 
@@ -84,7 +100,10 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     final hasCurrentArea = currentArea != null;
     final currentName = currentArea == null ? 'Keine aktive Fläche' : controller.areaNameFor(currentArea);
     final currentOrder = currentArea == null ? '-' : controller.formatMowingOrder(controller.mowingOrderFor(currentArea));
+    final currentPathIndex = robotStateController.robotState.value.currentPathIndex;
+    final currentPathText = currentPathIndex >= 0 ? currentPathIndex.toString() : '-';
     final skipAvailable = robotStateController.hasAction('mower_logic:mowing/skip_area');
+    final skipPathAction = _firstAvailableAction(robotStateController, _kSkipPathActions);
 
     return Card(
       margin: EdgeInsets.zero,
@@ -123,8 +142,10 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
               context,
               currentName: currentName,
               currentOrder: currentOrder,
+              currentPathText: currentPathText,
               hasCurrentArea: hasCurrentArea,
               skipAvailable: skipAvailable,
+              skipPathAction: skipPathAction,
             ),
           ),
         ],
@@ -136,13 +157,16 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     BuildContext context, {
     required String currentName,
     required String currentOrder,
+    required String currentPathText,
     required bool hasCurrentArea,
     required bool skipAvailable,
+    required String? skipPathAction,
   }) {
     final isMobile = MediaQuery.of(context).size.width < 760;
     final headline = hasCurrentArea ? 'Aktuelle Fläche' : 'Keine aktive Fläche';
     final detail = hasCurrentArea ? currentName : 'Aktuell meldet robot_state/json keine zuordenbare Mähfläche.';
     final orderText = hasCurrentArea ? 'Mähreihenfolge $currentOrder' : 'Mähreihenfolge -';
+    final pathText = hasCurrentArea ? 'Aktueller Pfad $currentPathText' : 'Aktueller Pfad -';
     final skipButton = _currentAreaActionButton(
       context,
       label: 'Fläche skippen',
@@ -150,6 +174,15 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
       icon: Icons.skip_next,
       onPressed: (hasCurrentArea && skipAvailable)
           ? () => remoteController.callAction('mower_logic:mowing/skip_area')
+          : null,
+    );
+    final skipPathButton = _currentAreaActionButton(
+      context,
+      label: 'Pfad skippen',
+      active: false,
+      icon: Icons.route_outlined,
+      onPressed: (hasCurrentArea && skipPathAction != null)
+          ? () => remoteController.callAction(skipPathAction)
           : null,
     );
 
@@ -168,8 +201,12 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
           ),
           const SizedBox(height: 6),
           Text(orderText, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor)),
+          const SizedBox(height: 4),
+          Text(pathText, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor)),
           const SizedBox(height: 20),
           SizedBox(height: 56, child: skipButton),
+          const SizedBox(height: 8),
+          SizedBox(height: 56, child: skipPathButton),
         ],
       );
     }
@@ -191,11 +228,23 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
               ),
               const SizedBox(height: 8),
               Text(orderText, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).hintColor)),
+              const SizedBox(height: 4),
+              Text(pathText, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).hintColor)),
             ],
           ),
         ),
         const SizedBox(width: 24),
-        SizedBox(width: 220, height: 56, child: skipButton),
+        SizedBox(
+          width: 220,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(height: 56, child: skipButton),
+              const SizedBox(height: 8),
+              SizedBox(height: 56, child: skipPathButton),
+            ],
+          ),
+        ),
       ],
     );
   }

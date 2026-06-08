@@ -17,6 +17,7 @@ import 'package:open_mower_app/screens/hardware_settings.dart';
 import 'package:open_mower_app/screens/settings.dart';
 import 'package:open_mower_app/views/logo_widget.dart';
 import 'package:open_mower_app/views/logo_widget_drawer.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 const Color _kUiBlue = Color(0xFF36618E);
 const Color _kUiBlueEdge = Color(0xFF274B70);
@@ -54,8 +55,27 @@ class MainScreen extends GetView<RobotStateController> {
     'Flächeneditor',
   ];
 
+  static final Uri _manualUri = Uri.parse('https://theandif.github.io/OpenMower-TAF-App/bedienungsanleitung/');
+
   final RobotStateController robotStateController = Get.find();
   final SettingsController settingsController = Get.find();
+
+  Future<void> _openManual() async {
+    final opened = await launchUrl(
+      _manualUri,
+      mode: LaunchMode.platformDefault,
+      webOnlyWindowName: '_blank',
+    );
+
+    if (!opened) {
+      Get.snackbar(
+        'Bedienungsanleitung',
+        'Die Bedienungsanleitung konnte nicht geöffnet werden.',
+        snackPosition: SnackPosition.BOTTOM,
+        duration: const Duration(seconds: 3),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +83,14 @@ class MainScreen extends GetView<RobotStateController> {
       appBar: AppBar(
         backgroundColor: _kUiBlue,
         surfaceTintColor: Colors.transparent,
-        title: const LogoWidget(size: 200),
+        title: InkWell(
+          onTap: _openManual,
+          borderRadius: BorderRadius.circular(8),
+          child: const Tooltip(
+            message: 'Bedienungsanleitung öffnen',
+            child: LogoWidget(size: 200),
+          ),
+        ),
         titleSpacing: 0,
         elevation: 0,
         shadowColor: Colors.transparent,
@@ -287,14 +314,24 @@ class MainScreen extends GetView<RobotStateController> {
 
   List<Widget> buildDrawerList() {
     final drawerList = <Widget>[
-      const DrawerHeader(
-        decoration: BoxDecoration(
+      DrawerHeader(
+        decoration: const BoxDecoration(
           color: _kUiBlue,
         ),
         child: Padding(
-          padding: EdgeInsets.all(24),
-          child: FittedBox(
-            child: LogoWidgetDrawer(size: 0.2),
+          padding: const EdgeInsets.all(24),
+          child: InkWell(
+            onTap: () async {
+              Get.back();
+              await _openManual();
+            },
+            borderRadius: BorderRadius.circular(8),
+            child: const Tooltip(
+              message: 'Bedienungsanleitung öffnen',
+              child: FittedBox(
+                child: LogoWidgetDrawer(size: 0.2),
+              ),
+            ),
           ),
         ),
       ),

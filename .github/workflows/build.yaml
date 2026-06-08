@@ -37,6 +37,10 @@ permissions:
   packages: write
   id-token: write
 
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   meta:
     # Build nur bei manuellem Start oder Commit-Nachricht mit BS_ / BL_.

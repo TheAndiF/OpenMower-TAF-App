@@ -8,6 +8,7 @@ import random
 topic = "python/mqtt"
 client_id = f'python-mqtt-{random.randint(0, 1000)}'
 current_area = 0
+current_path_index = 0
 
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -41,8 +42,9 @@ def on_message(client, userdata, msg):
 
 def robot_state_publish():
 
-    global current_area 
+    global current_area, current_path_index 
     current_area = current_area + 1
+    current_path_index = current_path_index + 1
     j ={ "d":
         {
         "battery_percentage": 0.8,
@@ -51,8 +53,8 @@ def robot_state_publish():
         "current_state": "AREA_RECORDING",
         "current_sub_state": "",
         "current_area": current_area,
-        "current_path": 0,
-        "current_path_index": 0,
+        "current_path": current_path_index,
+        "current_path_index": current_path_index,
         "emergency": 0,
         "is_charging": 0,
         "rain_detected": 0,
@@ -86,6 +88,11 @@ def action_publish():
             },
                        {
             "action_id": "mower_logic:mowing/skip_area",
+            "action_name": 0,
+            "enabled": 1
+            },
+            {
+            "action_id": "mower_logic:mowing/skip_path",
             "action_name": 0,
             "enabled": 1
             },         

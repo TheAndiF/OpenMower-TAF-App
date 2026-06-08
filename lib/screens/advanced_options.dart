@@ -4,6 +4,22 @@ import 'package:open_mower_app/controllers/remote_controller.dart';
 import 'package:open_mower_app/controllers/robot_state_controller.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 
+const List<String> _kSkipPathActions = [
+  'mower_logic:mowing/skip_path',
+  'mower_logic:mowing/skip_current_path',
+  'mower_logic:mowing/skip_segment',
+  'mower_logic:mowing/skip_current_segment',
+];
+
+String? _firstAvailableAction(RobotStateController controller, List<String> actions) {
+  for (final action in actions) {
+    if (controller.hasAction(action)) {
+      return action;
+    }
+  }
+  return null;
+}
+
 class AdvancedOptions extends GetView<RobotStateController> {
   AdvancedOptions({super.key});
 
@@ -37,7 +53,10 @@ class AdvancedOptions extends GetView<RobotStateController> {
   Widget _buildOverviewSection(BuildContext context) {
     return Obx(() {
       final currentArea = controller.robotState.value.currentArea;
-      final skipAvailable = controller.hasAction('mower_logic:mowing/skip_area');
+      final currentPath = controller.robotState.value.currentPathIndex;
+      final skipAreaAvailable = controller.hasAction('mower_logic:mowing/skip_area');
+      final skipPathAction = _firstAvailableAction(controller, _kSkipPathActions);
+      final skipPathAvailable = skipPathAction != null;
 
       return Card(
         margin: EdgeInsets.zero,
@@ -52,7 +71,7 @@ class AdvancedOptions extends GetView<RobotStateController> {
                   final header = Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _headerIcon(context, Icons.settings_applications_outlined, active: skipAvailable),
+                      _headerIcon(context, Icons.settings_applications_outlined, active: skipAreaAvailable || skipPathAvailable),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
@@ -72,22 +91,41 @@ class AdvancedOptions extends GetView<RobotStateController> {
                       ),
                     ],
                   );
-                  final skipButton = OutlinedButton.icon(
-                    onPressed: skipAvailable
+                  final skipAreaButton = OutlinedButton.icon(
+                    onPressed: skipAreaAvailable
                         ? () => remoteControl.callAction('mower_logic:mowing/skip_area')
                         : null,
                     icon: const Icon(Icons.skip_next),
                     label: const Text('Aktuelle Fläche überspringen'),
                   );
+                  final skipPathButton = OutlinedButton.icon(
+                    onPressed: skipPathAction == null
+                        ? null
+                        : () => remoteControl.callAction(skipPathAction),
+                    icon: const Icon(Icons.route_outlined),
+                    label: const Text('Aktuellen Pfad überspringen'),
+                  );
+                  final actionButtons = Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      skipAreaButton,
+                      const SizedBox(height: 8),
+                      skipPathButton,
+                    ],
+                  );
                   if (isMobile) {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [header, const SizedBox(height: 12), skipButton],
+                      children: [header, const SizedBox(height: 12), actionButtons],
                     );
                   }
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [Expanded(child: header), const SizedBox(width: 16), skipButton],
+                    children: [
+                      Expanded(child: header),
+                      const SizedBox(width: 16),
+                      SizedBox(width: 280, child: actionButtons),
+                    ],
                   );
                 },
               ),
@@ -107,9 +145,21 @@ class AdvancedOptions extends GetView<RobotStateController> {
                   ),
                   _statusChip(
                     context,
-                    icon: skipAvailable ? Icons.check_circle_outline : Icons.block,
-                    label: 'Überspringen',
-                    value: skipAvailable ? 'Verfügbar' : 'Nicht verfügbar',
+                    icon: skipAreaAvailable ? Icons.check_circle_outline : Icons.block,
+                    label: 'Fläche skippen',
+                    value: skipAreaAvailable ? 'Verfügbar' : 'Nicht verfügbar',
+                  ),
+                  _statusChip(
+                    context,
+                    icon: Icons.route_outlined,
+                    label: 'Aktueller Pfad',
+                    value: currentPath >= 0 ? currentPath.toString() : '-',
+                  ),
+                  _statusChip(
+                    context,
+                    icon: skipPathAvailable ? Icons.check_circle_outline : Icons.block,
+                    label: 'Pfad skippen',
+                    value: skipPathAvailable ? 'Verfügbar' : 'Nicht verfügbar',
                   ),
                 ],
               ),
