@@ -12,6 +12,8 @@ Die Dokumentation liegt im Repository unter `docs/` und ist bei aktivierten GitH
 
 - [Dokumentations-Startseite](https://theandif.github.io/OpenMower-TAF-App/)
 - [Bedienungsanleitung](https://theandif.github.io/OpenMower-TAF-App/bedienungsanleitung/)
+- [MQTT-Schnittstelle](https://theandif.github.io/OpenMower-TAF-App/mqtt-schnittstelle/)
+- [MQTT-Schnittstelle v1.0](https://theandif.github.io/OpenMower-TAF-App/mqtt-schnittstelle/v1.0/)
 - [Bedienungsanleitung als PDF](https://theandif.github.io/OpenMower-TAF-App/assets/OpenMower_App_Bedienungsanleitung_Unterseiten.pdf)
 - [Datenschutzerklärung / Privacy](https://theandif.github.io/OpenMower-TAF-App/google-play/privacy.html)
 

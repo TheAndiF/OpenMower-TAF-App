@@ -13,7 +13,10 @@ Diese Seite kann im GitHub-Repository im Bereich **About** als Website eingetrag
 ## Wichtige Links
 
 - [Bedienungsanleitung der App-Unterseiten](./bedienungsanleitung/)
+- [MQTT-Schnittstelle](./mqtt-schnittstelle/)
+- [MQTT-Schnittstelle v1.0](./mqtt-schnittstelle/v1.0/)
 - [PDF-Version der Bedienungsanleitung herunterladen](./assets/OpenMower_App_Bedienungsanleitung_Unterseiten.pdf)
+- [PDF-Version der MQTT-Schnittstelle herunterladen](./assets/OpenMower_App_MQTT_Schnittstelle.pdf)
 - [Datenschutzerklärung / Privacy](./google-play/privacy.html)
 
 ## Versionsbezug der Anleitung
