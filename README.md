@@ -1,19 +1,29 @@
 # OpenMower TAF App
 
+**Dokumentation:** [Startseite](https://theandif.github.io/OpenMower-TAF-App/) · [Bedienungsanleitung](https://theandif.github.io/OpenMower-TAF-App/bedienungsanleitung/) · [Privacy](https://theandif.github.io/OpenMower-TAF-App/google-play/privacy.html) · [PDF-Anleitung](https://theandif.github.io/OpenMower-TAF-App/assets/OpenMower_App_Bedienungsanleitung_Unterseiten.pdf)
+
 OpenMower TAF App ist eine erweiterte Flutter-Oberfläche für ein OpenMower-System. Die App verbindet sich mit dem OpenMower-Backend über MQTT und stellt Dashboard, Sensordaten, Zeitplan, Flächenverwaltung, Protokollanzeige sowie Hardware- und Softwareeinstellungen in einer gemeinsamen Oberfläche bereit.
 
 > Hinweis: Dieses Repository enthält die App-Oberfläche. Für den Mähbetrieb wird ein kompatibles OpenMower-System mit laufendem `open_mower_ros` benötigt.
 
 ## Dokumentation
 
+Die Dokumentation liegt im Repository unter `docs/` und ist bei aktivierten GitHub Pages auch direkt im Browser erreichbar.
+
+- [Dokumentations-Startseite](https://theandif.github.io/OpenMower-TAF-App/)
+- [Bedienungsanleitung](https://theandif.github.io/OpenMower-TAF-App/bedienungsanleitung/)
+- [Bedienungsanleitung als PDF](https://theandif.github.io/OpenMower-TAF-App/assets/OpenMower_App_Bedienungsanleitung_Unterseiten.pdf)
+- [Datenschutzerklärung / Privacy](https://theandif.github.io/OpenMower-TAF-App/google-play/privacy.html)
+
+Die gleichen Inhalte sind lokal im Repository erreichbar:
+
 - [Bedienungsanleitung](docs/bedienungsanleitung.md)
-- [Bedienungsanleitung als PDF](docs/assets/OpenMower_App_Bedienungsanleitung_Unterseiten.pdf)
-- [Datenschutzerklärung / Privacy](docs/google-play/privacy.html)
+- [PDF-Anleitung](docs/assets/OpenMower_App_Bedienungsanleitung_Unterseiten.pdf)
+- [Privacy-Seite](docs/google-play/privacy.html)
 
-Bei aktivierten GitHub Pages sind die Seiten zusätzlich über die GitHub-Pages-Adresse des Repositories erreichbar, zum Beispiel:
+## GitHub About ausfüllen
 
-- `https://theandif.github.io/OpenMower-TAF-App/bedienungsanleitung/`
-- `https://theandif.github.io/OpenMower-TAF-App/google-play/privacy.html`
+Für den rechten GitHub-Bereich **About** kann die Datei [`GITHUB_ABOUT_SETTINGS.md`](GITHUB_ABOUT_SETTINGS.md) verwendet werden. Dort stehen Description, Website-Link und optionale Topics. Da GitHub im About-Bereich nur ein Website-Feld anbietet, sollte dort die Dokumentations-Startseite eingetragen werden. Von dieser Startseite sind Bedienungsanleitung und Privacy klickbar erreichbar.
 
 ## Was kann die App?
 

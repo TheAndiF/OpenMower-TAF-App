@@ -1,1 +1,8 @@
 Erweiterte Flutter-App für OpenMower mit Dashboard, MQTT-Steuerung, Sensordaten, Zeitplan, Flächenverwaltung, Protokoll, Hardware-/Softwareeinstellungen und separatem Flächeneditor.
+
+GitHub About / Website:
+https://theandif.github.io/OpenMower-TAF-App/
+
+Direkte Links:
+Bedienungsanleitung: https://theandif.github.io/OpenMower-TAF-App/bedienungsanleitung/
+Privacy: https://theandif.github.io/OpenMower-TAF-App/google-play/privacy.html

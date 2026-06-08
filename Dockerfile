@@ -12,6 +12,7 @@ COPY pubspec.yaml pubspec.lock ./
 RUN flutter pub get
 COPY . .
 RUN (flutter create . --platforms=web || true)
+RUN dart run flutter_launcher_icons
 
 RUN set -eux; \
     if flutter build web -h 2>&1 | grep -q -- '--web-renderer'; then \

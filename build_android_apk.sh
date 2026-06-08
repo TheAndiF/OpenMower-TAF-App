@@ -2,6 +2,7 @@
 set -euo pipefail
 
 flutter pub get
+dart run flutter_launcher_icons
 flutter build apk
 
 echo ""
