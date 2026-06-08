@@ -1,0 +1,1 @@
+Erweiterte Flutter-App für OpenMower mit Dashboard, MQTT-Steuerung, Sensordaten, Zeitplan, Flächenverwaltung, Protokoll, Hardware-/Softwareeinstellungen und separatem Flächeneditor.
