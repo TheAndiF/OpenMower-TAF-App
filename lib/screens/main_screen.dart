@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -39,6 +40,16 @@ class MainScreen extends GetView<RobotStateController> {
   }
 
   final _index = 0.obs;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  Offset? _drawerGestureStart;
+  bool _drawerGestureTriggered = false;
+
+  Offset? _pageSwipeStart;
+  DateTime? _pageSwipeStartTime;
+  int _activePagePointers = 0;
+  bool _pageSwipeCancelled = false;
+
 
   late final List<Widget> widgetList;
 
@@ -80,6 +91,8 @@ class MainScreen extends GetView<RobotStateController> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
+      drawerEnableOpenDragGesture: false,
       appBar: AppBar(
         backgroundColor: _kUiBlue,
         surfaceTintColor: Colors.transparent,
@@ -126,24 +139,30 @@ class MainScreen extends GetView<RobotStateController> {
           ],
         ),
       ),
-      body: Obx(() {
-        final selectedIndex = _index.value;
-        final effectiveIndex =
-            selectedIndex == 1 && !settingsController.expertModeEnabled.value
-                ? 0
-                : selectedIndex;
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: Obx(() {
+          final selectedIndex = _index.value;
+          final effectiveIndex =
+              selectedIndex == 1 && !settingsController.expertModeEnabled.value
+                  ? 0
+                  : selectedIndex;
 
-        return Column(
-          children: [
-            Expanded(
-              child: _isAndroidApp
-                  ? _buildSwipeablePage(effectiveIndex)
-                  : widgetList[effectiveIndex],
-            ),
-            _buildCurrentPageStrip(effectiveIndex),
-          ],
-        );
-      }),
+          final content = Column(
+            children: [
+              Expanded(
+                child: _isAndroidApp
+                    ? _buildSwipeablePage(effectiveIndex)
+                    : widgetList[effectiveIndex],
+              ),
+              _buildCurrentPageStrip(effectiveIndex),
+            ],
+          );
+
+          return _isAndroidApp ? _buildDiagonalDrawerGesture(context, content) : content;
+        }),
+      ),
     );
   }
 
@@ -164,6 +183,39 @@ class MainScreen extends GetView<RobotStateController> {
 
   bool get _isAndroidApp => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
+  Widget _buildDiagonalDrawerGesture(BuildContext context, Widget child) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (event) {
+        _drawerGestureStart = event.position;
+        _drawerGestureTriggered = false;
+      },
+      onPointerMove: (event) {
+        final start = _drawerGestureStart;
+        if (start == null || _drawerGestureTriggered) return;
+
+        final screenSize = MediaQuery.of(context).size;
+        final startsInLowerLeft = start.dx <= screenSize.width * 0.28 &&
+            start.dy >= screenSize.height * 0.62;
+        if (!startsInLowerLeft) return;
+
+        final delta = event.position - start;
+        final isDiagonalUpRight = delta.dx >= 80 &&
+            delta.dy <= -80 &&
+            delta.dx.abs() / delta.dy.abs() >= 0.55 &&
+            delta.dx.abs() / delta.dy.abs() <= 2.4;
+
+        if (isDiagonalUpRight) {
+          _drawerGestureTriggered = true;
+          _scaffoldKey.currentState?.openDrawer();
+        }
+      },
+      onPointerUp: (_) => _drawerGestureStart = null,
+      onPointerCancel: (_) => _drawerGestureStart = null,
+      child: child,
+    );
+  }
+
   Widget _buildSwipeablePage(int effectiveIndex) {
     final page = widgetList[effectiveIndex];
 
@@ -171,20 +223,60 @@ class MainScreen extends GetView<RobotStateController> {
       return page;
     }
 
-    return GestureDetector(
+    return Listener(
       behavior: HitTestBehavior.translucent,
-      onHorizontalDragEnd: (details) {
-        final velocity = details.primaryVelocity;
-        if (velocity == null || velocity.abs() < 250) return;
-
-        if (velocity < 0) {
-          _goToNextPage(effectiveIndex);
+      onPointerDown: (PointerDownEvent event) {
+        _activePagePointers += 1;
+        if (_activePagePointers == 1) {
+          _pageSwipeStart = event.position;
+          _pageSwipeStartTime = DateTime.now();
+          _pageSwipeCancelled = false;
         } else {
-          _goToPreviousPage(effectiveIndex);
+          // Mehrfinger-Gesten, z. B. Pinch-Zoom auf der Karte, duerfen
+          // keinen Seitenwechsel ausloesen.
+          _pageSwipeCancelled = true;
         }
+      },
+      onPointerUp: (PointerUpEvent event) {
+        if (_activePagePointers <= 1) {
+          _finishPageSwipe(event.position, effectiveIndex);
+          _activePagePointers = 0;
+        } else {
+          _activePagePointers -= 1;
+        }
+      },
+      onPointerCancel: (_) {
+        _activePagePointers = 0;
+        _pageSwipeStart = null;
+        _pageSwipeStartTime = null;
+        _pageSwipeCancelled = false;
       },
       child: page,
     );
+  }
+
+  void _finishPageSwipe(Offset endPosition, int effectiveIndex) {
+    final start = _pageSwipeStart;
+    final startTime = _pageSwipeStartTime;
+    _pageSwipeStart = null;
+    _pageSwipeStartTime = null;
+
+    if (start == null || startTime == null || _pageSwipeCancelled) return;
+
+    final delta = endPosition - start;
+    final elapsedMs = DateTime.now().difference(startTime).inMilliseconds.clamp(1, 10000);
+    final horizontalSpeed = delta.dx.abs() / elapsedMs * 1000;
+
+    final isClearHorizontalSwipe = delta.dx.abs() >= 110 &&
+        delta.dy.abs() <= 90 &&
+        horizontalSpeed >= 360;
+    if (!isClearHorizontalSwipe) return;
+
+    if (delta.dx < 0) {
+      _goToNextPage(effectiveIndex);
+    } else {
+      _goToPreviousPage(effectiveIndex);
+    }
   }
 
   bool _isSwipeEnabledOnPage(int index) {

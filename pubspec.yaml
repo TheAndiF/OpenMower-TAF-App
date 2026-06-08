@@ -107,11 +107,14 @@ flutter:
   # see https://flutter.dev/custom-fonts/#from-packages
 
 # Zentrale Icon-Konfiguration.
-# Wenn assets/openmower_taf_icon.png geändert wird, erzeugt
-# dart run flutter_launcher_icons daraus die Plattform-Icons neu.
+# Wenn assets/openmower_taf_icon.png geändert wird, kann daraus
+# assets/openmower_taf_icon_round.png / _foreground.png abgeleitet werden.
+# dart run flutter_launcher_icons erzeugt daraus die Plattform-Icons neu.
 flutter_launcher_icons:
-  image_path: "assets/openmower_taf_icon.png"
+  image_path: "assets/openmower_taf_icon_round.png"
   android: true
+  adaptive_icon_background: "#1E6FB8"
+  adaptive_icon_foreground: "assets/openmower_taf_icon_foreground.png"
   ios: true
   remove_alpha_ios: true
   web:
