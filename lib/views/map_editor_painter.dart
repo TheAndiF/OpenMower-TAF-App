@@ -70,6 +70,7 @@ class MapEditorPainter extends CustomPainter {
     required this.selectedPointIndices,
     required this.viewerScale,
     required this.showGrid,
+    required this.repaintTick,
   });
 
   final List<EditableMapArea> areas;
@@ -79,6 +80,7 @@ class MapEditorPainter extends CustomPainter {
   final Set<int> selectedPointIndices;
   final double viewerScale;
   final bool showGrid;
+  final int repaintTick;
 
   final Paint _backgroundPaint = Paint()
     ..color = const Color.fromRGBO(0, 0, 0, 0.06)
@@ -248,6 +250,7 @@ class MapEditorPainter extends CustomPainter {
         oldDelegate.selectedPointIndices.length != selectedPointIndices.length ||
         !oldDelegate.selectedPointIndices.containsAll(selectedPointIndices) ||
         oldDelegate.viewerScale != viewerScale ||
-        oldDelegate.showGrid != showGrid;
+        oldDelegate.showGrid != showGrid ||
+        oldDelegate.repaintTick != repaintTick;
   }
 }

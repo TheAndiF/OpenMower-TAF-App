@@ -21,6 +21,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
   static const double _maxViewerScale = 80.0;
   double _viewerScale = 1.0;
   Size _lastViewportSize = Size.zero;
+  Rect? _lastContentBounds;
 
   @override
   void dispose() {
@@ -35,9 +36,14 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
       return LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth.isFinite ? constraints.maxWidth : 900.0;
-          final height = width < 700 ? 360.0 : 520.0;
+          final mediaHeight = MediaQuery.sizeOf(context).height;
+          final height = constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : math.max(width < 700 ? 420.0 : 560.0, mediaHeight - 280.0).clamp(420.0, 920.0).toDouble();
           _lastViewportSize = Size(width, height);
-          final viewport = MapEditorViewport(size: _lastViewportSize, bounds: controller.displayBounds());
+          final contentBounds = controller.displayBounds();
+          _resetViewWhenContentBoundsChanged(contentBounds);
+          final viewport = MapEditorViewport(size: _lastViewportSize, bounds: contentBounds);
           return Container(
             width: double.infinity,
             height: height,
@@ -83,6 +89,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
                             selectedPointIndices: controller.selectedPointIndices.toSet(),
                             viewerScale: _viewerScale,
                             showGrid: controller.showGrid.value,
+                            repaintTick: controller.editorRepaintTick.value,
                           ),
                         ),
                       ),
@@ -236,6 +243,30 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
     });
   }
 
+
+  void _refreshEditorPaint() {
+    controller.requestEditorRepaint();
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  void _resetViewWhenContentBoundsChanged(Rect bounds) {
+    final previous = _lastContentBounds;
+    _lastContentBounds = bounds;
+    if (previous == null) return;
+    if (controller.hasUnsavedChanges.value || controller.isDraggingPoint.value) return;
+    const tolerance = 0.000001;
+    final changed = (previous.left - bounds.left).abs() > tolerance ||
+        (previous.top - bounds.top).abs() > tolerance ||
+        (previous.right - bounds.right).abs() > tolerance ||
+        (previous.bottom - bounds.bottom).abs() > tolerance;
+    if (!changed) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _resetZoom();
+    });
+  }
+
   void _handleTap(Offset canvasPoint, MapEditorViewport viewport) {
     final worldPoint = viewport.canvasToWorld(canvasPoint);
     final toleranceWorld = 14 / (viewport.scale * _safeViewerScale);
@@ -246,16 +277,29 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
     // Dadurch wechselt die Auswahl eindeutig: neue Fläche markieren, alte entmarkieren.
     if (hitAreaIndex != null && hitAreaIndex != currentAreaIndex) {
       controller.selectAreaByIndex(hitAreaIndex);
+      _refreshEditorPaint();
       return;
     }
 
     // Punktbearbeitung ist nur innerhalb der aktuell aktiven Fläche relevant.
     if (controller.multiPointSelectionMode.value) {
-      if (controller.togglePointSelectionNear(worldPoint, toleranceWorld) != null) return;
-      if (hitAreaIndex != null && hitAreaIndex == currentAreaIndex) return;
+      if (controller.togglePointSelectionNear(worldPoint, toleranceWorld) != null) {
+        _refreshEditorPaint();
+        return;
+      }
+      if (hitAreaIndex != null && hitAreaIndex == currentAreaIndex) {
+        _refreshEditorPaint();
+        return;
+      }
     } else {
-      if (controller.insertPointNearMidpoint(worldPoint, toleranceWorld)) return;
-      if (controller.selectPointNear(worldPoint, toleranceWorld) != null) return;
+      if (controller.insertPointNearMidpoint(worldPoint, toleranceWorld)) {
+        _refreshEditorPaint();
+        return;
+      }
+      if (controller.selectPointNear(worldPoint, toleranceWorld) != null) {
+        _refreshEditorPaint();
+        return;
+      }
     }
 
     if (hitAreaIndex != null) {
@@ -263,6 +307,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
     } else {
       controller.clearAreaSelection();
     }
+    _refreshEditorPaint();
   }
 
   void _handlePanStart(Offset canvasPoint, MapEditorViewport viewport) {
@@ -275,6 +320,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
     // Der Nutzer kann anschließend deren Punkte gezielt bewegen.
     if (hitAreaIndex != null && hitAreaIndex != currentAreaIndex) {
       controller.selectAreaByIndex(hitAreaIndex);
+      _refreshEditorPaint();
       return;
     }
 
@@ -285,11 +331,13 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
         controller.clearAreaSelection();
       }
     }
+    _refreshEditorPaint();
   }
 
   void _handlePanUpdate(Offset canvasPoint, MapEditorViewport viewport) {
     if (!controller.isDraggingPoint.value) return;
     controller.updateDraggedPoint(viewport.canvasToWorld(canvasPoint));
+    if (mounted) setState(() {});
   }
 
   double get _safeViewerScale => math.max(_viewerScale, _minViewerScale);
@@ -305,6 +353,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
     _transformationController.value = Matrix4.identity();
     if (!mounted) return;
     setState(() => _viewerScale = _minViewerScale);
+    controller.requestEditorRepaint();
   }
 
 

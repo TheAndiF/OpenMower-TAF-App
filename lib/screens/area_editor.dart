@@ -34,9 +34,12 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 60, 16, 16),
-          child: _buildMapEditorCard(context),
+        Positioned.fill(
+          top: 52,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+            child: _buildMapEditorCard(context),
+          ),
         ),
         const Positioned(
           top: 0,
@@ -57,11 +60,11 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
             child: Row(
               children: [
-                Icon(Icons.edit_location_alt_outlined, color: color, size: 32),
-                const SizedBox(width: 12),
+                Icon(Icons.edit_location_alt_outlined, color: color, size: 24),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -85,9 +88,11 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
             ),
           ),
           const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: _buildMapEditorSection(context),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: _buildMapEditorSection(context),
+            ),
           ),
         ],
       ),
@@ -156,7 +161,7 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           DropdownButtonFormField<int?>(
             value: selectedAreaIndex,
             isExpanded: true,
@@ -181,17 +186,17 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
             ],
             onChanged: editableAreas.isEmpty ? null : mapEditorController.selectAreaByIndex,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
               color: Theme.of(context).primaryColor.withOpacity(0.05),
               border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.18)),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Wrap(
-              spacing: 18,
-              runSpacing: 8,
+              spacing: 14,
+              runSpacing: 4,
               children: [
                 _editorMetaText(context, 'Status', hasChanges ? 'Lokal geändert' : 'Synchron'),
                 _editorMetaText(context, 'Fläche', selectedName),
@@ -204,16 +209,18 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
             ),
           ),
           if (status.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(status, style: Theme.of(context).textTheme.bodyMedium),
+            const SizedBox(height: 6),
+            Text(status, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium),
           ],
-          const SizedBox(height: 12),
-          const MapEditorWidget(),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
+          const Expanded(child: MapEditorWidget()),
+          const SizedBox(height: 6),
           Text(
             editMode
-                ? 'Fläche bevorzugt über das Dropdown wählen. Punkte ziehen: Grenze verschieben. Plus-Marker antippen: Punkt einfügen. Mehrfachauswahl aktivieren: mehrere Punkte antippen, gemeinsam ziehen oder gemeinsam löschen. Der Zoom reicht jetzt bis 80×.'
-                : 'Diese Unterseite ist getrennt von Dashboard-, Steuer- und Flächenübersicht. Bearbeiten aktiviert ausschließlich diesen Editor.',
+                ? 'Fläche wählen oder anklicken. Punkte ziehen: Grenze verschieben. Plus-Marker: Punkt einfügen. Mehrfachauswahl: mehrere Punkte gemeinsam ziehen/löschen.'
+                : 'Bearbeiten aktiviert ausschließlich diesen Editor.',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
