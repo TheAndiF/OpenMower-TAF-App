@@ -197,9 +197,14 @@ class MainScreen extends GetView<RobotStateController> {
         if (start == null || _cornerGestureTriggered) return;
 
         final screenSize = MediaQuery.of(context).size;
-        final startsInLowerLeft = start.dx <= screenSize.width * 0.28 &&
+        // Die Eckgesten duerfen nicht ueber dem Buttonbereich starten,
+        // damit Start/Stop/Area-Recording normale Touch-Eingaben behalten.
+        final startsAboveDashboardButtons = start.dy < screenSize.height - 170;
+        final startsInLowerLeft = startsAboveDashboardButtons &&
+            start.dx <= screenSize.width * 0.28 &&
             start.dy >= screenSize.height * 0.62;
-        final startsInLowerRight = start.dx >= screenSize.width * 0.72 &&
+        final startsInLowerRight = startsAboveDashboardButtons &&
+            start.dx >= screenSize.width * 0.72 &&
             start.dy >= screenSize.height * 0.62;
         if (!startsInLowerLeft && !startsInLowerRight) return;
 

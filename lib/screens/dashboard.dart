@@ -45,9 +45,14 @@ class Dashboard extends GetView<RobotStateController> {
             );
           },
         ),
-        n.Column([
-          Obx(() => _buildStatusCard(context)),
-        ])..p = 16,
+        // Die Statuskarte ist rein informativ. IgnorePointer verhindert,
+        // dass eine unsichtbare/ueberlaufende Kartenflaeche Touch-Eingaben
+        // auf der Karte oder den Dashboard-Tasten abfaengt.
+        IgnorePointer(
+          child: n.Column([
+            Obx(() => _buildStatusCard(context)),
+          ])..p = 16,
+        ),
         Obx(
           () => (controller.robotState.value.currentState == 'AREA_RECORDING')
               ? Container(
@@ -95,29 +100,37 @@ class Dashboard extends GetView<RobotStateController> {
 
     return SizedBox(
       width: double.infinity,
-      height: 112,
+      height: 124,
       child: Card(
         elevation: 3,
+        margin: EdgeInsets.zero,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
+            mainAxisSize: MainAxisSize.max,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Current State:',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                state,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.headlineMedium,
+                style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 2),
               SizedBox(
-                height: 30,
+                height: 44,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    state,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Expanded(
                 child: showMowingDetails
                     ? Column(
                         mainAxisAlignment: MainAxisAlignment.end,
@@ -141,7 +154,7 @@ class Dashboard extends GetView<RobotStateController> {
                           ),
                         ],
                       )
-                    : const SizedBox.shrink(),
+                    : const SizedBox.expand(),
               ),
             ],
           ),
