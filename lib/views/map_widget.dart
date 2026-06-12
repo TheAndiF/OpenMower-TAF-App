@@ -169,7 +169,7 @@ class MapPainter extends CustomPainter {
     final double mapWidth = max(mapModel.width, 15);
     final double mapHeight = max(mapModel.height, 15);
 
-    double mapScale = 80;
+    double mapScale = 60;
     if (!centerOnRobot) {
       mapScale = min(drawingRect.width / mapWidth, drawingRect.height / mapHeight);
     }

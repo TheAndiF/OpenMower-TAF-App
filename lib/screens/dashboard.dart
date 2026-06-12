@@ -16,7 +16,9 @@ n.ButtonStyle _primaryActionButtonStyle() => n.ButtonStyle(
     );
 
 class Dashboard extends GetView<RobotStateController> {
-  Dashboard({super.key});
+  Dashboard({super.key, required this.followRobot});
+
+  final RxBool followRobot;
 
   final RemoteController remoteControl = Get.find();
 
@@ -28,7 +30,8 @@ class Dashboard extends GetView<RobotStateController> {
         Obx(
           () => MapWidget(
             centerOnRobot:
-                controller.robotState.value.currentState == 'AREA_RECORDING',
+                controller.robotState.value.currentState == 'AREA_RECORDING' ||
+                    followRobot.value,
           ),
         ),
         n.Column([

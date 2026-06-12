@@ -26,7 +26,7 @@ const Color _kUiBlueEdge = Color(0xFF274B70);
 class MainScreen extends GetView<RobotStateController> {
   MainScreen({super.key}) {
     widgetList = <Widget>[
-      Dashboard(),
+      Dashboard(followRobot: _dashboardFollowRobot),
       AdvancedOptions(),
       const SensorValues(),
       const TimetableScreen(),
@@ -42,8 +42,10 @@ class MainScreen extends GetView<RobotStateController> {
   final _index = 0.obs;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  Offset? _drawerGestureStart;
-  bool _drawerGestureTriggered = false;
+  final _dashboardFollowRobot = false.obs;
+
+  Offset? _cornerGestureStart;
+  bool _cornerGestureTriggered = false;
 
   Offset? _pageSwipeStart;
   DateTime? _pageSwipeStartTime;
@@ -160,7 +162,7 @@ class MainScreen extends GetView<RobotStateController> {
             ],
           );
 
-          return _isAndroidApp ? _buildDiagonalDrawerGesture(context, content) : content;
+          return _isAndroidApp ? _buildCornerGestures(context, content) : content;
         }),
       ),
     );
@@ -183,35 +185,46 @@ class MainScreen extends GetView<RobotStateController> {
 
   bool get _isAndroidApp => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
-  Widget _buildDiagonalDrawerGesture(BuildContext context, Widget child) {
+  Widget _buildCornerGestures(BuildContext context, Widget child) {
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (event) {
-        _drawerGestureStart = event.position;
-        _drawerGestureTriggered = false;
+        _cornerGestureStart = event.position;
+        _cornerGestureTriggered = false;
       },
       onPointerMove: (event) {
-        final start = _drawerGestureStart;
-        if (start == null || _drawerGestureTriggered) return;
+        final start = _cornerGestureStart;
+        if (start == null || _cornerGestureTriggered) return;
 
         final screenSize = MediaQuery.of(context).size;
         final startsInLowerLeft = start.dx <= screenSize.width * 0.28 &&
             start.dy >= screenSize.height * 0.62;
-        if (!startsInLowerLeft) return;
+        final startsInLowerRight = start.dx >= screenSize.width * 0.72 &&
+            start.dy >= screenSize.height * 0.62;
+        if (!startsInLowerLeft && !startsInLowerRight) return;
 
         final delta = event.position - start;
-        final isDiagonalUpRight = delta.dx >= 80 &&
-            delta.dy <= -80 &&
-            delta.dx.abs() / delta.dy.abs() >= 0.55 &&
-            delta.dx.abs() / delta.dy.abs() <= 2.4;
+        final verticalDistance = delta.dy.abs();
+        if (verticalDistance == 0) return;
 
-        if (isDiagonalUpRight) {
-          _drawerGestureTriggered = true;
+        final diagonalRatio = delta.dx.abs() / verticalDistance;
+        final isDiagonalToCenter = delta.dy <= -80 &&
+            delta.dx.abs() >= 80 &&
+            diagonalRatio >= 0.55 &&
+            diagonalRatio <= 2.4;
+        if (!isDiagonalToCenter) return;
+
+        if (startsInLowerLeft && delta.dx > 0) {
+          _cornerGestureTriggered = true;
           _scaffoldKey.currentState?.openDrawer();
+        } else if (startsInLowerRight && delta.dx < 0) {
+          _cornerGestureTriggered = true;
+          _index.value = 0;
+          _dashboardFollowRobot.value = true;
         }
       },
-      onPointerUp: (_) => _drawerGestureStart = null,
-      onPointerCancel: (_) => _drawerGestureStart = null,
+      onPointerUp: (_) => _cornerGestureStart = null,
+      onPointerCancel: (_) => _cornerGestureStart = null,
       child: child,
     );
   }
