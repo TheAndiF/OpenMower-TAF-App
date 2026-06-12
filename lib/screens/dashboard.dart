@@ -6,6 +6,7 @@ import 'package:open_mower_app/controllers/mqtt_areas_controller.dart';
 import 'package:open_mower_app/controllers/remote_controller.dart';
 import 'package:open_mower_app/controllers/robot_state_controller.dart';
 import 'package:open_mower_app/models/joystick_command.dart';
+import 'package:open_mower_app/models/mowing_progress_model.dart';
 import 'package:open_mower_app/views/map_widget.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 
@@ -45,25 +46,7 @@ class Dashboard extends GetView<RobotStateController> {
           },
         ),
         n.Column([
-          Card(
-            elevation: 3,
-            child: n.Column([
-              'Current State:'.bodyLarge..m = 4,
-              Obx(
-                () => Text(
-                  _dashboardStateText(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ).niku
-                  ..m = 4,
-              ),
-            ])
-              ..p = 16
-              ..mainAxisAlignment = MainAxisAlignment.start
-              ..crossAxisAlignment = CrossAxisAlignment.start
-              ..fullWidth,
-          ),
+          Obx(() => _buildStatusCard(context)),
         ])..p = 16,
         Obx(
           () => (controller.robotState.value.currentState == 'AREA_RECORDING')
@@ -103,18 +86,68 @@ class Dashboard extends GetView<RobotStateController> {
   }
 
 
-  String _dashboardStateText() {
+  Widget _buildStatusCard(BuildContext context) {
     final state = controller.robotState.value.currentState;
-    if (state.toUpperCase() != 'MOWING') {
-      return state;
-    }
+    final isMowing = state.toUpperCase() == 'MOWING';
+    final areaName = isMowing ? _currentMowingAreaName() : null;
+    final showMowingDetails = areaName != null && areaName.isNotEmpty;
+    final progress = showMowingDetails ? _currentMowingProgressPercent() : 0.0;
 
-    final areaName = _currentMowingAreaName();
-    if (areaName == null || areaName.isEmpty) {
-      return state;
-    }
-
-    return '$state · $areaName';
+    return SizedBox(
+      width: double.infinity,
+      height: 112,
+      child: Card(
+        elevation: 3,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Current State:',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                state,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
+              const SizedBox(height: 2),
+              SizedBox(
+                height: 30,
+                child: showMowingDetails
+                    ? Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            areaName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 5),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(2),
+                            child: LinearProgressIndicator(
+                              value: progress,
+                              minHeight: 3,
+                              backgroundColor: Colors.grey.shade300,
+                              valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
+                            ),
+                          ),
+                        ],
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   String? _currentMowingAreaName() {
@@ -149,6 +182,58 @@ class Dashboard extends GetView<RobotStateController> {
     }
 
     return controller.lastActiveMowingAreaId.value.trim();
+  }
+
+
+  double _currentMowingProgressPercent() {
+    final areaId = _currentMowingAreaId();
+    final progress = controller.mowingProgress.value.areaById(areaId);
+    if (progress == null) {
+      return 0.0;
+    }
+
+    if (progress.percent > 0) {
+      return (progress.percent / 100.0).clamp(0.0, 1.0).toDouble();
+    }
+
+    final plannedCount = progress.plannedPaths.length;
+    if (plannedCount > 0) {
+      final mowedIds = progress.mowedPaths
+          .map((path) => path.pathId.trim())
+          .where((pathId) => pathId.isNotEmpty)
+          .toSet();
+      var completed = progress.mowedPaths.length.toDouble();
+
+      final currentPathId = progress.currentPathId.trim();
+      MowingPathProgress? currentPath;
+      for (final path in progress.plannedPaths) {
+        final matchesCurrent = currentPathId.isNotEmpty
+            ? path.pathId == currentPathId
+            : path.index == progress.currentPath;
+        if (matchesCurrent) {
+          currentPath = path;
+          break;
+        }
+      }
+      if (currentPath != null && !mowedIds.contains(currentPath.pathId)) {
+        final pointCount = currentPath.points.length;
+        if (pointCount > 1) {
+          completed += (progress.currentPathIndex / pointCount).clamp(0.0, 1.0).toDouble();
+        }
+      }
+
+      return (completed / plannedCount).clamp(0.0, 1.0).toDouble();
+    }
+
+    if (progress.mowedPaths.isNotEmpty) {
+      final average = progress.mowedPaths
+              .map((path) => path.completedPercent)
+              .fold<double>(0.0, (sum, value) => sum + value) /
+          progress.mowedPaths.length;
+      return (average / 100.0).clamp(0.0, 1.0).toDouble();
+    }
+
+    return 0.0;
   }
 
   Widget getButtonPanel(BuildContext context, RobotStateController controller) {

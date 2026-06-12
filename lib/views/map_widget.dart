@@ -366,8 +366,12 @@ class MapPainter extends CustomPainter {
         .map((path) => path.pathId.trim())
         .where((pathId) => pathId.isNotEmpty)
         .toSet();
+    final pathsToDraw = progress.plannedPaths.isNotEmpty
+        ? progress.plannedPaths
+        : progress.mowedPaths;
+    final isFallbackMowedOnly = progress.plannedPaths.isEmpty;
 
-    for (final path in progress.plannedPaths) {
+    for (final path in pathsToDraw) {
       final pathShape = _pathFromPoints(path.points);
       if (pathShape == null) {
         continue;
@@ -377,7 +381,8 @@ class MapPainter extends CustomPainter {
           ? path.pathId == currentPathId
           : path.index == progress.currentPath;
       final isCompleted = !isCurrent &&
-          (mowedPathIds.contains(path.pathId) ||
+          (isFallbackMowedOnly ||
+              mowedPathIds.contains(path.pathId) ||
               progress.mowedPaths.any((mowed) => mowed.index == path.index));
 
       if (isCurrent) {
