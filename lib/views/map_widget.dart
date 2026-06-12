@@ -9,15 +9,26 @@ import 'package:open_mower_app/models/mowing_progress_model.dart';
 import 'package:open_mower_app/models/robot_state.dart';
 
 class MapWidget extends GetView<RobotStateController> {
-  const MapWidget({super.key, required this.centerOnRobot});
+  const MapWidget({
+    super.key,
+    required this.centerOnRobot,
+    this.onManualInteraction,
+  });
 
   final bool centerOnRobot;
+  final VoidCallback? onManualInteraction;
 
   @override
   Widget build(BuildContext context) {
-    return InteractiveViewer(
-      panEnabled: !centerOnRobot,
-      scaleEnabled: !centerOnRobot,
+    final manualInteractionCanDisableFollow =
+        centerOnRobot && onManualInteraction != null;
+
+    final viewer = InteractiveViewer(
+      panEnabled: !centerOnRobot || manualInteractionCanDisableFollow,
+      scaleEnabled: !centerOnRobot || manualInteractionCanDisableFollow,
+      onInteractionStart: manualInteractionCanDisableFollow
+          ? (_) => onManualInteraction?.call()
+          : null,
       maxScale: 10.0,
       minScale: 0.1,
       child: SizedBox(
@@ -39,6 +50,15 @@ class MapWidget extends GetView<RobotStateController> {
           ),
         ),
       ),
+    );
+
+    if (!manualInteractionCanDisableFollow) {
+      return viewer;
+    }
+
+    return Listener(
+      onPointerSignal: (_) => onManualInteraction?.call(),
+      child: viewer,
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_joystick/flutter_joystick.dart';
 import 'package:get/get.dart';
 import 'package:niku/namespace.dart' as n;
+import 'package:open_mower_app/controllers/mqtt_areas_controller.dart';
 import 'package:open_mower_app/controllers/remote_controller.dart';
 import 'package:open_mower_app/controllers/robot_state_controller.dart';
 import 'package:open_mower_app/models/joystick_command.dart';
@@ -21,6 +22,7 @@ class Dashboard extends GetView<RobotStateController> {
   final RxBool followRobot;
 
   final RemoteController remoteControl = Get.find();
+  final MqttAreasController areasController = Get.find<MqttAreasController>();
 
   @override
   Widget build(BuildContext context) {
@@ -28,11 +30,19 @@ class Dashboard extends GetView<RobotStateController> {
       const RobotStateWidget(),
       n.Stack([
         Obx(
-          () => MapWidget(
-            centerOnRobot:
-                controller.robotState.value.currentState == 'AREA_RECORDING' ||
-                    followRobot.value,
-          ),
+          () {
+            final currentState = controller.robotState.value.currentState;
+            final followDashboardRobot =
+                followRobot.value && currentState != 'AREA_RECORDING';
+
+            return MapWidget(
+              centerOnRobot: currentState == 'AREA_RECORDING' ||
+                  followRobot.value,
+              onManualInteraction: followDashboardRobot
+                  ? () => followRobot.value = false
+                  : null,
+            );
+          },
         ),
         n.Column([
           Card(
@@ -41,7 +51,9 @@ class Dashboard extends GetView<RobotStateController> {
               'Current State:'.bodyLarge..m = 4,
               Obx(
                 () => Text(
-                  controller.robotState.value.currentState,
+                  _dashboardStateText(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.headlineMedium,
                 ).niku
                   ..m = 4,
@@ -88,6 +100,55 @@ class Dashboard extends GetView<RobotStateController> {
         child: Obx(() => getButtonPanel(context, controller)),
       ),
     ]);
+  }
+
+
+  String _dashboardStateText() {
+    final state = controller.robotState.value.currentState;
+    if (state.toUpperCase() != 'MOWING') {
+      return state;
+    }
+
+    final areaName = _currentMowingAreaName();
+    if (areaName == null || areaName.isEmpty) {
+      return state;
+    }
+
+    return '$state · $areaName';
+  }
+
+  String? _currentMowingAreaName() {
+    final areaId = _currentMowingAreaId();
+    if (areaId.isEmpty) {
+      return null;
+    }
+
+    final area = areasController.findAreaById(areaId);
+    if (area == null) {
+      return null;
+    }
+
+    final props = areasController.propertiesFor(area);
+    final name = (props['name'] ?? area['name'] ?? '').toString().trim();
+    if (name.isEmpty) {
+      return null;
+    }
+
+    return name;
+  }
+
+  String _currentMowingAreaId() {
+    final progressAreaId = controller.mowingProgress.value.currentAreaId.trim();
+    if (progressAreaId.isNotEmpty) {
+      return progressAreaId;
+    }
+
+    final currentAreaId = controller.robotState.value.currentAreaId.trim();
+    if (currentAreaId.isNotEmpty) {
+      return currentAreaId;
+    }
+
+    return controller.lastActiveMowingAreaId.value.trim();
   }
 
   Widget getButtonPanel(BuildContext context, RobotStateController controller) {
