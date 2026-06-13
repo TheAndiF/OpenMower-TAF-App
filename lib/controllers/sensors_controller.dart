@@ -2,5 +2,5 @@ import 'package:get/get.dart';
 import 'package:open_mower_app/models/sensor_state.dart';
 
 class SensorsController extends GetxController {
-  final sensorStates = <String, DoubleSensorState>{}.obs;
+  final sensorStates = <String, SensorState>{}.obs;
 }

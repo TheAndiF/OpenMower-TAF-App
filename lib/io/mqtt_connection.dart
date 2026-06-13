@@ -1530,6 +1530,13 @@ class MqttConnection  {
 
 
 
+  double _sensorDoubleValue(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
   void parseSensorInfos(obj) {
     debugPrint("Got new sensor infos, refreshing");
     for (final sensorInfo in obj["d"]) {
@@ -1539,16 +1546,28 @@ class MqttConnection  {
             // Got a double sensor
             final sensor = DoubleSensorState(
                 sensorInfo["sensor_name"],
-                sensorInfo["unit"],
-                sensorInfo["min_value"],
-                sensorInfo["max_value"],
+                sensorInfo["unit"] ?? '',
+                _sensorDoubleValue(sensorInfo["min_value"]),
+                _sensorDoubleValue(sensorInfo["max_value"]),
                 sensorInfo["has_min_max"] == 1,
-                sensorInfo["lower_critical_value"],
+                _sensorDoubleValue(sensorInfo["lower_critical_value"]),
                 sensorInfo["has_critical_low"] == 1,
-                sensorInfo["upper_critical_value"],
+                _sensorDoubleValue(sensorInfo["upper_critical_value"]),
                 sensorInfo["has_critical_high"] == 1);
             sensorsController.sensorStates[sensorInfo["sensor_id"]] = sensor;
           }
+          break;
+        case "STRING":
+          {
+            // Got a string/text sensor. These are displayed as text tiles
+            // without numeric gauges, min/max values, or warning bars.
+            final sensor = StringSensorState(
+              sensorInfo["sensor_name"],
+              sensorInfo["unit"] ?? '',
+            );
+            sensorsController.sensorStates[sensorInfo["sensor_id"]] = sensor;
+          }
+          break;
       }
     }
     sensorsController.sensorStates.refresh();
@@ -1556,8 +1575,10 @@ class MqttConnection  {
 
   void parseSensorData(sensorId, obj) {
     final sensor = sensorsController.sensorStates[sensorId];
-    if(sensor != null) {
-      sensor.value = obj["d"];
+    if(sensor is DoubleSensorState) {
+      sensor.value = _sensorDoubleValue(obj["d"]);
+    } else if (sensor is StringSensorState) {
+      sensor.value = obj["d"]?.toString() ?? '';
     }
     sensorsController.sensorStates.refresh();
   }

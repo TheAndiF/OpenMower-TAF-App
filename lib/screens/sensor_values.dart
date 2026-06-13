@@ -18,7 +18,13 @@ final List<String> widgetSortList = [
   'om_mow_motor_temp',
   'om_mow_esc_temp',
   'om_left_esc_temp',
-  'om_right_esc_temp'
+  'om_right_esc_temp',
+  'om_system_wifi_signal_percent',
+  'om_system_wifi_ssid',
+  'om_system_disk_free_percent',
+  'om_system_time',
+  'om_system_date',
+  'om_system_last_reboot'
 ];
 
 // Sensors that are intentionally kept available internally,
@@ -58,15 +64,15 @@ class SensorValues extends GetView<SensorsController> {
             ];
 
             return n.GridView.extent(
-              maxCrossAxisExtent: 200,
+              maxCrossAxisExtent: 170,
             )
-              ..p = 16
+              ..p = 12
               ..children = sensorWidgets
               // ..backgroundColor = Colors.red
               ..wFull
               ..hFull
-              ..crossAxisSpacing = 8
-              ..mainAxisSpacing = 8
+              ..crossAxisSpacing = 6
+              ..mainAxisSpacing = 6
               ..expanded;
           }),
         ])
