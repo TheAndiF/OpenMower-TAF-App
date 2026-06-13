@@ -12,6 +12,7 @@ class RobotState {
 
   int currentArea = -1;
   String currentAreaId = "";
+  String checkpointAreaId = "";
   int currentPath = 0;
   int currentPathIndex = 0;
 

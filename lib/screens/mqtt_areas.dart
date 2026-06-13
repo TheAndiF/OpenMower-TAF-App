@@ -95,7 +95,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
 
   Widget _buildCurrentAreaSection(BuildContext context) {
     final color = Theme.of(context).primaryColor;
-    final currentAreaId = robotStateController.robotState.value.currentAreaId.trim();
+    final currentAreaId = robotStateController.robotState.value.checkpointAreaId.trim();
     final currentArea = controller.findAreaById(currentAreaId);
     final hasCurrentArea = currentArea != null;
     final currentName = currentArea == null ? 'Keine aktive Fläche' : controller.areaNameFor(currentArea);
@@ -399,7 +399,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     final order = controller.mowingOrderFor(area);
     final name = controller.areaNameFor(area);
     final viewRevision = controller.currentAreaViewRevision;
-    final isCurrentArea = id.isNotEmpty && id == robotStateController.robotState.value.currentAreaId.trim();
+    final isCurrentArea = id.isNotEmpty && id == robotStateController.robotState.value.checkpointAreaId.trim();
 
     return Container(
       padding: const EdgeInsets.all(12),

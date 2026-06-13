@@ -3,12 +3,14 @@
 import paho.mqtt.client as mqtt 
 import time
 import bson
+import json
 import random
 
 topic = "python/mqtt"
 client_id = f'python-mqtt-{random.randint(0, 1000)}'
 current_area = 0
 current_path_index = 0
+current_area_id = "mow-01"
 
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -53,6 +55,8 @@ def robot_state_publish():
         "current_state": "AREA_RECORDING",
         "current_sub_state": "",
         "current_area": current_area,
+        "current_area_id": current_area_id,
+        "checkpoint_area_id": current_area_id,
         "current_path": current_path_index,
         "current_path_index": current_path_index,
         "emergency": 0,
@@ -105,11 +109,73 @@ def action_publish():
     
 
 
+
+def mowing_progress_publish():
+
+    geometry = {
+        "d": {
+            "current_area_id": current_area_id,
+            "areas": {
+                current_area_id: {
+                    "area_id": current_area_id,
+                    "paths": [
+                        {
+                            "path_id": "pa_000001",
+                            "order": 1,
+                            "slicer_source": { "path_id": 1 },
+                            "path_direction": "forward",
+                            "points": [ { "x": 0, "y": 0 }, { "x": 2, "y": 0 } ]
+                        },
+                        {
+                            "path_id": "pa_000002",
+                            "order": 2,
+                            "slicer_source": { "path_id": 2 },
+                            "path_direction": "reverse",
+                            "points": [ { "x": 0, "y": 1 }, { "x": 2, "y": 1 } ]
+                        }
+                    ]
+                }
+            }
+        }
+    }
+
+    status = {
+        "d": {
+            "current_area_id": current_area_id,
+            "areas": {
+                current_area_id: {
+                    "area_id": current_area_id,
+                    "state": "mowing",
+                    "percent": min(current_path_index * 10, 100),
+                    "current_path_id": "pa_000001",
+                    "paths": [
+                        {
+                            "path_id": "pa_000001",
+                            "mow_status": "mowing",
+                            "current_pose_index": current_path_index,
+                            "completed_percent": min(current_path_index * 10, 100)
+                        },
+                        {
+                            "path_id": "pa_000002",
+                            "mow_status": "unmowed",
+                            "current_pose_index": 0,
+                            "completed_percent": 0
+                        }
+                    ]
+                }
+            }
+        }
+    }
+
+    client.publish("map/mowing_progress/json", json.dumps(geometry), retain=True)
+    client.publish("map/mowing_progress/status/json", json.dumps(status), retain=True)
+
 def publish(client):
     while True:
         time.sleep(1)
         robot_state_publish()
         action_publish()
+        mowing_progress_publish()
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 client.on_connect = on_connect

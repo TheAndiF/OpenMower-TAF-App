@@ -168,6 +168,7 @@ Der Robot State ist die wichtigste Statusquelle. JSON kann direkt oder unter `d`
     "load_factor_effective": 1.05,
     "current_area": 2,
     "current_area_id": "area-02",
+    "checkpoint_area_id": "area-02",
     "current_path": 4,
     "current_path_index": 4,
     "AutoMowSuspension": 0,
@@ -189,6 +190,7 @@ Die App verwendet unter anderem diese Felder:
 | `gps_percentage`, `battery_percentage` | GPS- und Akkuanzeige. |
 | `load_factor_computed`, `load_factor_effective` | Mäh-Lastfaktor. |
 | `current_area`, `current_area_id` | Aktuelle Fläche. |
+| `checkpoint_area_id` | Flächenbezug für die Anzeige und Markierung unter „Flächen“. |
 | `current_path`, `current_path_index` | Aktueller Pfad. |
 | `AutoMowSuspension` | Aussetzung des automatischen Mähens. `0` bedeutet nicht ausgesetzt. |
 | `AutoMowID` | ID des aktiven Timetable-/AutoMow-Eintrags. |
@@ -340,7 +342,9 @@ Die App akzeptiert auch Varianten mit `ok`, `success`, `accepted`, `status` oder
 
 ### Mähfortschritt
 
-`map/mowing_progress/json` enthält pro Fläche den Fortschritt, geplante Pfade und gemähte Pfade. `map/mowing_progress/status/json` kann eine reduzierte Statusversion liefern; fehlende Pfadlisten bleiben dann aus dem vorherigen Zustand erhalten.
+Ab dieser Version unterstützt die App ausschließlich das neue Mähfortschritts-Schema mit getrenntem Geometrie- und Status-Snapshot. Das alte Schema mit `planned_paths`, `mowed_paths` und `current_path` wird nicht mehr ausgewertet.
+
+`map/mowing_progress/json` enthält die schweren, stabilen Geometriedaten. Die Pfade werden über `area_id` und `path_id` identifiziert.
 
 ```json
 {
@@ -349,25 +353,48 @@ Die App akzeptiert auch Varianten mit `ok`, `success`, `accepted`, `status` oder
     "areas": {
       "mow-01": {
         "area_id": "mow-01",
-        "percent": 47.5,
-        "state": "mowing",
-        "current_path": 3,
-        "current_path_id": "path-003",
-        "current_path_index": 3,
-        "planned_paths": [
+        "paths": [
           {
-            "index": 3,
-            "path_id": "path-003",
-            "completed_percent": 20,
-            "points": [ { "x": 1, "y": 1 }, { "x": 4, "y": 1 } ]
+            "path_id": "pa_000021",
+            "order": 11,
+            "slicer_source": { "path_id": 21 },
+            "path_direction": "reverse",
+            "points": [ { "x": 1.0, "y": 2.0 }, { "x": 1.1, "y": 2.1 } ]
           }
-        ],
-        "mowed_paths": []
+        ]
       }
     }
   }
 }
 ```
+
+`map/mowing_progress/status/json` enthält die leichten Statusdaten ohne Geometrie. Ein Pfad wird erst gezeichnet, wenn Geometrie und Status für dieselbe Kombination aus `area_id` und `path_id` vorhanden sind.
+
+```json
+{
+  "d": {
+    "current_area_id": "mow-01",
+    "areas": {
+      "mow-01": {
+        "area_id": "mow-01",
+        "state": "mowing",
+        "percent": 47.5,
+        "current_path_id": "pa_000021",
+        "paths": [
+          {
+            "path_id": "pa_000021",
+            "mow_status": "mowing",
+            "current_pose_index": 88,
+            "completed_percent": 42.0
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+Gültige Werte für `mow_status` sind `unmowed`, `mowing` und `mowed`.
 
 ## Timetable und Zeitservice
 

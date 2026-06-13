@@ -362,32 +362,19 @@ class MapPainter extends CustomPainter {
 
   void _drawPlannedPaths(Canvas canvas, AreaMowingProgress progress) {
     final currentPathId = progress.currentPathId.trim();
-    final mowedPathIds = progress.mowedPaths
-        .map((path) => path.pathId.trim())
-        .where((pathId) => pathId.isNotEmpty)
-        .toSet();
-    final pathsToDraw = progress.plannedPaths.isNotEmpty
-        ? progress.plannedPaths
-        : progress.mowedPaths;
-    final isFallbackMowedOnly = progress.plannedPaths.isEmpty;
 
-    for (final path in pathsToDraw) {
+    for (final path in progress.paths.where((path) => path.isRenderable)) {
       final pathShape = _pathFromPoints(path.points);
       if (pathShape == null) {
         continue;
       }
 
-      final isCurrent = currentPathId.isNotEmpty
-          ? path.pathId == currentPathId
-          : path.index == progress.currentPath;
-      final isCompleted = !isCurrent &&
-          (isFallbackMowedOnly ||
-              mowedPathIds.contains(path.pathId) ||
-              progress.mowedPaths.any((mowed) => mowed.index == path.index));
+      final isCurrent = path.isCurrent ||
+          (currentPathId.isNotEmpty && path.pathId == currentPathId);
 
       if (isCurrent) {
         _drawDashedPath(canvas, pathShape, _currentPathPaint, 0.18, 0.10);
-      } else if (isCompleted) {
+      } else if (path.isCompleted) {
         _drawDashedPath(canvas, pathShape, _completedPathPaint, 0.014, 0.10);
       } else {
         canvas.drawPath(pathShape, _plannedPathPaint);

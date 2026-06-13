@@ -6,7 +6,6 @@ import 'package:open_mower_app/controllers/mqtt_areas_controller.dart';
 import 'package:open_mower_app/controllers/remote_controller.dart';
 import 'package:open_mower_app/controllers/robot_state_controller.dart';
 import 'package:open_mower_app/models/joystick_command.dart';
-import 'package:open_mower_app/models/mowing_progress_model.dart';
 import 'package:open_mower_app/views/map_widget.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 
@@ -209,44 +208,22 @@ class Dashboard extends GetView<RobotStateController> {
       return (progress.percent / 100.0).clamp(0.0, 1.0).toDouble();
     }
 
-    final plannedCount = progress.plannedPaths.length;
-    if (plannedCount > 0) {
-      final mowedIds = progress.mowedPaths
-          .map((path) => path.pathId.trim())
-          .where((pathId) => pathId.isNotEmpty)
-          .toSet();
-      var completed = progress.mowedPaths.length.toDouble();
-
-      final currentPathId = progress.currentPathId.trim();
-      MowingPathProgress? currentPath;
-      for (final path in progress.plannedPaths) {
-        final matchesCurrent = currentPathId.isNotEmpty
-            ? path.pathId == currentPathId
-            : path.index == progress.currentPath;
-        if (matchesCurrent) {
-          currentPath = path;
-          break;
-        }
-      }
-      if (currentPath != null && !mowedIds.contains(currentPath.pathId)) {
-        final pointCount = currentPath.points.length;
-        if (pointCount > 1) {
-          completed += (progress.currentPathIndex / pointCount).clamp(0.0, 1.0).toDouble();
-        }
-      }
-
-      return (completed / plannedCount).clamp(0.0, 1.0).toDouble();
+    final statusPaths = progress.paths.where((path) => path.hasStatus).toList();
+    if (statusPaths.isEmpty) {
+      return 0.0;
     }
 
-    if (progress.mowedPaths.isNotEmpty) {
-      final average = progress.mowedPaths
-              .map((path) => path.completedPercent)
-              .fold<double>(0.0, (sum, value) => sum + value) /
-          progress.mowedPaths.length;
-      return (average / 100.0).clamp(0.0, 1.0).toDouble();
-    }
+    final completed = statusPaths.fold<double>(0.0, (sum, path) {
+      if (path.isCompleted) {
+        return sum + 1.0;
+      }
+      if (path.isCurrent) {
+        return sum + (path.completedPercent / 100.0).clamp(0.0, 1.0).toDouble();
+      }
+      return sum;
+    });
 
-    return 0.0;
+    return (completed / statusPaths.length).clamp(0.0, 1.0).toDouble();
   }
 
   Widget getButtonPanel(BuildContext context, RobotStateController controller) {

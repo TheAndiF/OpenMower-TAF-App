@@ -25,41 +25,29 @@ class AreaMowingProgress {
   AreaMowingProgress({
     required this.areaId,
     required this.percent,
-    required this.currentPath,
     required this.currentPathId,
-    required this.currentPathIndex,
-    required this.plannedPaths,
-    required this.mowedPaths,
+    required this.paths,
     this.state = '',
   });
 
   final String areaId;
   final double percent;
   final String state;
-  final int currentPath;
   final String currentPathId;
-  final int currentPathIndex;
-  final List<MowingPathProgress> plannedPaths;
-  final List<MowingPathProgress> mowedPaths;
+  final List<MowingPathProgress> paths;
 
   AreaMowingProgress copyWith({
     double? percent,
     String? state,
-    int? currentPath,
     String? currentPathId,
-    int? currentPathIndex,
-    List<MowingPathProgress>? plannedPaths,
-    List<MowingPathProgress>? mowedPaths,
+    List<MowingPathProgress>? paths,
   }) {
     return AreaMowingProgress(
       areaId: areaId,
       percent: percent ?? this.percent,
       state: state ?? this.state,
-      currentPath: currentPath ?? this.currentPath,
       currentPathId: currentPathId ?? this.currentPathId,
-      currentPathIndex: currentPathIndex ?? this.currentPathIndex,
-      plannedPaths: plannedPaths ?? this.plannedPaths,
-      mowedPaths: mowedPaths ?? this.mowedPaths,
+      paths: paths ?? this.paths,
     );
   }
 }
@@ -69,11 +57,57 @@ class MowingPathProgress {
     required this.index,
     required this.pathId,
     required this.points,
+    this.order,
+    this.slicerSourcePathId,
+    this.pathDirection = '',
+    this.mowStatus = '',
+    this.currentPoseIndex = 0,
     this.completedPercent = 0.0,
+    this.hasGeometry = false,
+    this.hasStatus = false,
   });
 
   final int index;
+  final int? order;
   final String pathId;
+  final int? slicerSourcePathId;
+  final String pathDirection;
   final List<Offset> points;
+  final String mowStatus;
+  final int currentPoseIndex;
   final double completedPercent;
+  final bool hasGeometry;
+  final bool hasStatus;
+
+  bool get isRenderable => hasGeometry && hasStatus;
+  bool get isCurrent => mowStatus == 'mowing';
+  bool get isCompleted => mowStatus == 'mowed';
+
+  MowingPathProgress copyWith({
+    int? index,
+    int? order,
+    String? pathId,
+    int? slicerSourcePathId,
+    String? pathDirection,
+    List<Offset>? points,
+    String? mowStatus,
+    int? currentPoseIndex,
+    double? completedPercent,
+    bool? hasGeometry,
+    bool? hasStatus,
+  }) {
+    return MowingPathProgress(
+      index: index ?? this.index,
+      order: order ?? this.order,
+      pathId: pathId ?? this.pathId,
+      slicerSourcePathId: slicerSourcePathId ?? this.slicerSourcePathId,
+      pathDirection: pathDirection ?? this.pathDirection,
+      points: points ?? this.points,
+      mowStatus: mowStatus ?? this.mowStatus,
+      currentPoseIndex: currentPoseIndex ?? this.currentPoseIndex,
+      completedPercent: completedPercent ?? this.completedPercent,
+      hasGeometry: hasGeometry ?? this.hasGeometry,
+      hasStatus: hasStatus ?? this.hasStatus,
+    );
+  }
 }

@@ -400,6 +400,9 @@ class MqttConnection  {
       state.currentAreaId = raw["current_area_id"]?.toString() ?? "";
       robotStateController.rememberActiveMowingArea(state.currentAreaId);
     }
+    if (raw.containsKey("checkpoint_area_id")) {
+      state.checkpointAreaId = raw["checkpoint_area_id"]?.toString() ?? "";
+    }
     if (raw.containsKey("current_area")) {
       state.currentArea = _readIntValue(raw["current_area"], fallback: state.currentArea);
     }
@@ -1350,31 +1353,28 @@ class MqttConnection  {
           final areaMap = Map<String, dynamic>.from(value);
           final areaId = (areaMap["area_id"] ?? key).toString();
           final previous = currentModel.areaById(areaId);
-          final hasPlannedPaths = !statusOnly && areaMap.containsKey("planned_paths");
-          final hasMowedPaths = !statusOnly && areaMap.containsKey("mowed_paths");
-          final plannedPaths = hasPlannedPaths
-              ? _parseMowingPathList(areaMap["planned_paths"])
-              : (previous?.plannedPaths ?? <MowingPathProgress>[]);
-          final mowedPaths = hasMowedPaths
-              ? _parseMowingPathList(areaMap["mowed_paths"])
-              : (previous?.mowedPaths ?? <MowingPathProgress>[]);
+          final mergedPaths = <String, MowingPathProgress>{
+            for (final path in previous?.paths ?? <MowingPathProgress>[])
+              if (path.pathId.trim().isNotEmpty) path.pathId.trim(): path,
+          };
+
+          final rawPaths = areaMap["paths"];
+          if (rawPaths is Iterable) {
+            final seenPathIds = statusOnly
+                ? _mergeMowingStatusPaths(mergedPaths, rawPaths)
+                : _mergeMowingGeometryPaths(mergedPaths, rawPaths);
+            mergedPaths.removeWhere((pathId, _) => !seenPathIds.contains(pathId));
+          }
 
           progressAreas[areaId] = AreaMowingProgress(
             areaId: areaId,
             percent: _readDoubleValue(areaMap["percent"], fallback: previous?.percent ?? 0.0),
             state: areaMap["state"]?.toString() ?? previous?.state ?? "",
-            currentPath: _readIntValue(areaMap["current_path"], fallback: previous?.currentPath ?? -1),
             currentPathId: areaMap["current_path_id"]?.toString() ?? previous?.currentPathId ?? "",
-            currentPathIndex: _readIntValue(areaMap["current_path_index"], fallback: previous?.currentPathIndex ?? 0),
-            plannedPaths: plannedPaths,
-            mowedPaths: mowedPaths,
+            paths: _sortedMowingPaths(mergedPaths.values),
           );
         }
       });
-    }
-
-    if (currentAreaId.isEmpty && progressAreas.length == 1) {
-      currentAreaId = progressAreas.keys.first;
     }
 
     final progressModel = MowingProgressModel(
@@ -1387,17 +1387,21 @@ class MqttConnection  {
     robotStateController.mowingProgress.refresh();
   }
 
-  List<MowingPathProgress> _parseMowingPathList(dynamic rawPaths) {
-    final result = <MowingPathProgress>[];
-    if (rawPaths is! Iterable) {
-      return result;
-    }
-
+  Set<String> _mergeMowingGeometryPaths(Map<String, MowingPathProgress> target, Iterable rawPaths) {
+    final seenPathIds = <String>{};
+    var fallbackIndex = target.length;
     for (final rawPath in rawPaths) {
       if (rawPath is! Map) {
         continue;
       }
       final pathMap = Map<String, dynamic>.from(rawPath);
+      final pathId = pathMap["path_id"]?.toString().trim() ?? "";
+      if (pathId.isEmpty) {
+        continue;
+      }
+      seenPathIds.add(pathId);
+      final previous = target[pathId];
+      final order = _readIntValue(pathMap["order"], fallback: previous?.order ?? fallbackIndex);
       final points = <Offset>[];
       final rawPoints = pathMap["points"];
       if (rawPoints is Iterable) {
@@ -1412,13 +1416,74 @@ class MqttConnection  {
         }
       }
 
-      result.add(MowingPathProgress(
-        index: _readIntValue(pathMap["index"], fallback: result.length),
-        pathId: pathMap["path_id"]?.toString() ?? "",
+      int? slicerSourcePathId;
+      final slicerSource = pathMap["slicer_source"];
+      if (slicerSource is Map) {
+        slicerSourcePathId = _readIntValue(
+          Map<String, dynamic>.from(slicerSource)["path_id"],
+          fallback: previous?.slicerSourcePathId ?? -1,
+        );
+        if (slicerSourcePathId < 0) {
+          slicerSourcePathId = previous?.slicerSourcePathId;
+        }
+      }
+
+      target[pathId] = (previous ?? MowingPathProgress(
+        index: order,
+        order: order,
+        pathId: pathId,
+        points: const <Offset>[],
+      )).copyWith(
+        index: order,
+        order: order,
+        slicerSourcePathId: slicerSourcePathId,
+        pathDirection: pathMap["path_direction"]?.toString() ?? previous?.pathDirection ?? "",
         points: points,
-        completedPercent: _readDoubleValue(pathMap["completed_percent"], fallback: 0.0),
-      ));
+        hasGeometry: true,
+      );
+      fallbackIndex++;
     }
+    return seenPathIds;
+  }
+
+  Set<String> _mergeMowingStatusPaths(Map<String, MowingPathProgress> target, Iterable rawPaths) {
+    final seenPathIds = <String>{};
+    var fallbackIndex = target.length;
+    for (final rawPath in rawPaths) {
+      if (rawPath is! Map) {
+        continue;
+      }
+      final pathMap = Map<String, dynamic>.from(rawPath);
+      final pathId = pathMap["path_id"]?.toString().trim() ?? "";
+      if (pathId.isEmpty) {
+        continue;
+      }
+      seenPathIds.add(pathId);
+      final previous = target[pathId];
+      target[pathId] = (previous ?? MowingPathProgress(
+        index: fallbackIndex,
+        pathId: pathId,
+        points: const <Offset>[],
+      )).copyWith(
+        mowStatus: pathMap["mow_status"]?.toString() ?? previous?.mowStatus ?? "",
+        currentPoseIndex: _readIntValue(pathMap["current_pose_index"], fallback: previous?.currentPoseIndex ?? 0),
+        completedPercent: _readDoubleValue(pathMap["completed_percent"], fallback: previous?.completedPercent ?? 0.0),
+        hasStatus: true,
+      );
+      fallbackIndex++;
+    }
+    return seenPathIds;
+  }
+
+  List<MowingPathProgress> _sortedMowingPaths(Iterable<MowingPathProgress> paths) {
+    final result = paths.toList();
+    result.sort((a, b) {
+      final orderCompare = (a.order ?? a.index).compareTo(b.order ?? b.index);
+      if (orderCompare != 0) {
+        return orderCompare;
+      }
+      return a.pathId.compareTo(b.pathId);
+    });
     return result;
   }
 
@@ -1456,6 +1521,7 @@ class MqttConnection  {
     }
     state.currentArea       = obj["d"]["current_area"];
     state.currentAreaId     = obj["d"]["current_area_id"]?.toString() ?? "";
+    state.checkpointAreaId  = obj["d"]["checkpoint_area_id"]?.toString() ?? state.checkpointAreaId;
     robotStateController.rememberActiveMowingArea(state.currentAreaId);
     state.currentPath       = obj["d"]["current_path"];
     state.currentPathIndex  = obj["d"]["current_path_index"];
