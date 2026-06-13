@@ -401,6 +401,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     final viewRevision = controller.currentAreaViewRevision;
     final isCurrentArea = id.isNotEmpty && id == robotStateController.robotState.value.checkpointAreaId.trim();
     final canDirectStart = controller.isDirectMowingStartAllowed(area);
+<<<<<<< HEAD
     final startBlockedReason = controller.directMowingStartBlockedReason(area);
     final startActionAvailable = robotStateController.hasAction('mower_logic:idle/start_mowing');
     final startDisabledReason = !canDirectStart
@@ -411,6 +412,18 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     final canPressDirectStart = canDirectStart &&
         !_jsonEditUnlocked &&
         !controller.hasActiveAreaEdit &&
+=======
+    final startActionAvailable = robotStateController.hasAction('mower_logic:idle/start_mowing');
+    final robotState = robotStateController.robotState.value;
+    final currentState = robotState.currentState.trim();
+    final robotStatusKnown = robotState.isConnected &&
+        currentState.isNotEmpty &&
+        currentState.toLowerCase() != 'unknown';
+    final canShowDirectStart = canDirectStart &&
+        !_jsonEditUnlocked &&
+        !controller.hasActiveAreaEdit &&
+        robotStatusKnown &&
+>>>>>>> 9345c9e (BS_Refactor: show direct area mowing as outlined play icon)
         startActionAvailable;
 
     return Container(
@@ -428,6 +441,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
           _areaNameField(id, name, enabled: editing, viewRevision: viewRevision),
           _areaOrderField(id, order, enabled: editing, viewRevision: viewRevision),
           _boolSwitch('Aktiv', enabled, editing ? (value) => controller.updateMowingEnabled(id, value) : null),
+<<<<<<< HEAD
           Tooltip(
             message: canPressDirectStart ? 'Nur diese Fläche mähen' : startDisabledReason,
             child: SizedBox(
@@ -445,6 +459,17 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
               ),
             ),
           ),
+=======
+          if (canShowDirectStart)
+            SizedBox(
+              width: 56,
+              child: IconButton(
+                tooltip: 'Diese Fläche mähen',
+                onPressed: () => _confirmStartSingleArea(context, area),
+                icon: const _OutlinedPlayIcon(size: 32),
+              ),
+            ),
+>>>>>>> 9345c9e (BS_Refactor: show direct area mowing as outlined play icon)
           SizedBox(
             width: 56,
             child: IconButton(
@@ -470,6 +495,17 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
   Future<void> _confirmStartSingleArea(BuildContext context, Map<String, dynamic> area) async {
     final areaId = controller.areaIdFor(area);
     final areaName = controller.areaNameFor(area);
+<<<<<<< HEAD
+=======
+    final robotState = robotStateController.robotState.value;
+    final stateText = robotState.currentState.trim().isEmpty ? 'Unbekannt' : robotState.currentState.trim();
+    final subStateText = robotState.currentSubState.trim();
+    final stateSearch = '${robotState.currentState} ${robotState.currentSubState}'.toLowerCase();
+    final isMowingNow = stateSearch.contains('mow') || stateSearch.contains('mähen') || stateSearch.contains('maeh');
+    final mowingStatusText = isMowingNow
+        ? 'Es wird gerade gemäht.'
+        : 'Es wird aktuell nicht gemäht.';
+>>>>>>> 9345c9e (BS_Refactor: show direct area mowing as outlined play icon)
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -484,6 +520,20 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
               const SizedBox(height: 4),
               Text('ID: $areaId'),
               const SizedBox(height: 12),
+<<<<<<< HEAD
+=======
+              Text(
+                'Aktueller Status:\n$mowingStatusText',
+                style: Theme.of(dialogContext).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                subStateText.isEmpty
+                    ? 'Roboterstatus: $stateText'
+                    : 'Roboterstatus: $stateText / $subStateText',
+              ),
+              const SizedBox(height: 12),
+>>>>>>> 9345c9e (BS_Refactor: show direct area mowing as outlined play icon)
               const Text('Der Mäher startet nur diese Fläche. Nach Abschluss fährt er zum Dock.'),
             ],
           ),
@@ -1084,3 +1134,51 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:${time.second.toString().padLeft(2, '0')}';
   }
 }
+
+class _OutlinedPlayIcon extends StatelessWidget {
+  const _OutlinedPlayIcon({this.size = 32});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = IconTheme.of(context).color ?? Theme.of(context).iconTheme.color ?? Colors.black87;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(
+        painter: _OutlinedPlayPainter(color),
+      ),
+    );
+  }
+}
+
+class _OutlinedPlayPainter extends CustomPainter {
+  const _OutlinedPlayPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final strokeWidth = (size.shortestSide * 0.08).clamp(1.8, 2.6).toDouble();
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final triangle = Path()
+      ..moveTo(size.width * 0.34, size.height * 0.24)
+      ..lineTo(size.width * 0.34, size.height * 0.76)
+      ..lineTo(size.width * 0.74, size.height * 0.50)
+      ..close();
+    canvas.drawPath(triangle, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _OutlinedPlayPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
