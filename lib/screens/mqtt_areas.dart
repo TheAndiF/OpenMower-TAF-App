@@ -400,6 +400,18 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     final name = controller.areaNameFor(area);
     final viewRevision = controller.currentAreaViewRevision;
     final isCurrentArea = id.isNotEmpty && id == robotStateController.robotState.value.checkpointAreaId.trim();
+    final canDirectStart = controller.isDirectMowingStartAllowed(area);
+    final startBlockedReason = controller.directMowingStartBlockedReason(area);
+    final startActionAvailable = robotStateController.hasAction('mower_logic:idle/start_mowing');
+    final startDisabledReason = !canDirectStart
+        ? startBlockedReason
+        : (_jsonEditUnlocked || controller.hasActiveAreaEdit)
+            ? 'Bitte zuerst offene Flächen- oder JSON-Bearbeitung speichern oder verwerfen.'
+            : (!startActionAvailable ? 'Der Mäher ist aktuell nicht startbereit.' : '');
+    final canPressDirectStart = canDirectStart &&
+        !_jsonEditUnlocked &&
+        !controller.hasActiveAreaEdit &&
+        startActionAvailable;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -416,6 +428,23 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
           _areaNameField(id, name, enabled: editing, viewRevision: viewRevision),
           _areaOrderField(id, order, enabled: editing, viewRevision: viewRevision),
           _boolSwitch('Aktiv', enabled, editing ? (value) => controller.updateMowingEnabled(id, value) : null),
+          Tooltip(
+            message: canPressDirectStart ? 'Nur diese Fläche mähen' : startDisabledReason,
+            child: SizedBox(
+              width: 230,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: canPressDirectStart ? () => _confirmStartSingleArea(context, area) : null,
+                icon: const Icon(Icons.play_arrow),
+                label: const Text(
+                  'Diese Fläche mähen',
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ),
           SizedBox(
             width: 56,
             child: IconButton(
@@ -434,6 +463,53 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _confirmStartSingleArea(BuildContext context, Map<String, dynamic> area) async {
+    final areaId = controller.areaIdFor(area);
+    final areaName = controller.areaNameFor(area);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Diese Fläche mähen?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(areaName, style: Theme.of(dialogContext).textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text('ID: $areaId'),
+              const SizedBox(height: 12),
+              const Text('Der Mäher startet nur diese Fläche. Nach Abschluss fährt er zum Dock.'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Abbrechen'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Starten'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    remoteController.callAction('mower_logic:idle/start_mowing_area/$areaId');
+    controller.markDirectMowingStartSent(areaName);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Direktstart für „$areaName“ wurde gesendet.'),
+        duration: const Duration(seconds: 2),
       ),
     );
   }

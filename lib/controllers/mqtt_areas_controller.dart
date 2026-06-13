@@ -83,9 +83,44 @@ class MqttAreasController extends GetxController {
   bool mowingEnabledFor(Map<String, dynamic> area) {
     final props = propertiesFor(area);
     final value = props['mowing_enabled'] ?? area['mowing_enabled'];
-    if (value is bool) return value;
-    if (value is num) return value != 0;
-    return value.toString().toLowerCase() == 'true';
+    return _boolValue(value, defaultValue: true);
+  }
+
+  bool activeFor(Map<String, dynamic> area) {
+    final props = propertiesFor(area);
+    final value = props['active'] ?? area['active'];
+    return _boolValue(value, defaultValue: true);
+  }
+
+  bool isDirectMowingStartAllowed(Map<String, dynamic> area) {
+    final props = propertiesFor(area);
+    final type = (props['type'] ?? area['type'] ?? '').toString().toLowerCase().trim();
+    final order = mowingOrderFor(area) ?? 0;
+    return areaIdFor(area).trim().isNotEmpty &&
+        type == 'mow' &&
+        activeFor(area) &&
+        mowingEnabledFor(area) &&
+        order > 0;
+  }
+
+  String directMowingStartBlockedReason(Map<String, dynamic> area) {
+    final props = propertiesFor(area);
+    final type = (props['type'] ?? area['type'] ?? '').toString().toLowerCase().trim();
+    if (areaIdFor(area).trim().isEmpty) return 'Keine area_id vorhanden.';
+    if (type != 'mow') return 'Nur Flächen vom Typ mow können direkt gestartet werden.';
+    if (!activeFor(area)) return 'Die Fläche ist nicht aktiv.';
+    if (!mowingEnabledFor(area)) return 'Mähen ist für diese Fläche deaktiviert.';
+    final order = mowingOrderFor(area) ?? 0;
+    if (order <= 0) return 'Die Fläche benötigt eine Mähreihenfolge größer 0.';
+    return '';
+  }
+
+  void markDirectMowingStartSent(String areaName) {
+    lastUpdated.value = DateTime.now();
+    lastTopic.value = 'action';
+    lastStatusOk.value = null;
+    waitingForResponse.value = false;
+    lastStatus.value = 'Direktstart für „$areaName“ gesendet.';
   }
 
   int? mowingOrderFor(Map<String, dynamic> area) {
@@ -496,6 +531,16 @@ class MqttAreasController extends GetxController {
       return legacyOutline.length;
     }
     return 0;
+  }
+
+  bool _boolValue(dynamic value, {required bool defaultValue}) {
+    if (value == null) return defaultValue;
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final normalized = value.toString().toLowerCase().trim();
+    if (normalized == 'true' || normalized == 'yes' || normalized == '1' || normalized == 'active') return true;
+    if (normalized == 'false' || normalized == 'no' || normalized == '0' || normalized == 'inactive') return false;
+    return defaultValue;
   }
 
   bool? _validationResult(Map<String, dynamic> root) {
