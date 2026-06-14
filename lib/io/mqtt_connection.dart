@@ -1,4 +1,5 @@
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,7 @@ import 'package:open_mower_app/controllers/status_transition_log_controller.dart
 import 'package:open_mower_app/controllers/mower_logic_settings_controller.dart';
 import 'package:open_mower_app/controllers/mow_load_factor_settings_controller.dart';
 import 'package:open_mower_app/controllers/low_level_power_settings_controller.dart';
+import 'package:open_mower_app/controllers/satellite_logging_controller.dart';
 import 'package:open_mower_app/models/map_model.dart';
 import 'package:open_mower_app/models/robot_state.dart';
 import 'package:open_mower_app/models/sensor_state.dart';
@@ -41,6 +43,9 @@ class MqttConnection  {
   }
 
   bool _connecting = false;
+  StreamSubscription<List<MqttReceivedMessage<MqttMessage>>>? _updatesSubscription;
+  DateTime? _lastConnectAttempt;
+  int _reconnectDelaySeconds = 1;
 
   final SettingsController settingsController = Get.find();
   final RobotStateController robotStateController = Get.find();
@@ -51,6 +56,7 @@ class MqttConnection  {
   final MowerLogicSettingsController mowerLogicSettingsController = Get.find();
   final MowLoadFactorSettingsController mowLoadFactorSettingsController = Get.find();
   final LowLevelPowerSettingsController lowLevelPowerSettingsController = Get.find();
+  final SatelliteLoggingController satelliteLoggingController = Get.find();
 
   final RegExp exp = RegExp(r'sensors/(.*)/bson');
   final RegExp expJson = RegExp(r'sensors/(.*)/json');
@@ -103,18 +109,19 @@ class MqttConnection  {
   static const String mowerLogicSettingsSetSessionJsonTopic = "settings/mower_logic/set/session/json";
   static const String mowerLogicSettingsSetPersistentJsonTopic = "settings/mower_logic/set/persistent/json";
 
-  // Mäh-Lastregelung ist kein eigener Settings-Namespace mehr.
-  // Die UI nutzt weiterhin einen eigenen Controller als gefilterte Ansicht,
-  // MQTT läuft aber vollständig über settings/mower_logic/....
+  // Mäh-Lastregelung ist kein eigener MQTT-Namespace mehr.
+  // Die gefilterte UI nutzt ausschließlich die generischen Mäher-Logik-Settings.
   static const String mowLoadFactorSettingsJsonTopic = mowerLogicSettingsJsonTopic;
   static const String mowLoadFactorSettingsValidationJsonTopic = mowerLogicSettingsValidationJsonTopic;
   static const String mowLoadFactorSettingsRenewJsonTopic = mowerLogicSettingsRenewJsonTopic;
   static const String mowLoadFactorSettingsSetSessionJsonTopic = mowerLogicSettingsSetSessionJsonTopic;
   static const String mowLoadFactorSettingsSetPersistentJsonTopic = mowerLogicSettingsSetPersistentJsonTopic;
 
-  // Legacy retained backend values may still exist, but are no longer subscribed.
-  static const String legacyMowLoadFactorSettingsJsonTopic = "settings/mow_load_factor/json";
-  static const String legacyMowLoadFactorSettingsValidationJsonTopic = "settings/mow_load_factor/validation/json";
+  // Satellite-Logging ist Runtime-Status/-Bedienung im settings/mower_logic-Namensraum,
+  // aber kein persistenter Settings-Wert.
+  static const String mowerLogicSatelliteLoggingJsonTopic = "settings/mower_logic/satellite_logging/json";
+  static const String mowerLogicSatelliteLoggingControlJsonTopic = "settings/mower_logic/satellite_logging/set/control/json";
+  static const String mowerLogicSatelliteLoggingRenewJsonTopic = "settings/mower_logic/satellite_logging/set/renew/json";
 
   static const String lowLevelPowerJsonTopic = "settings/ll_board/json";
   static const String lowLevelPowerValidationJsonTopic = "settings/ll_board/validation/json";
@@ -591,29 +598,16 @@ class MqttConnection  {
     }
   }
 
-  void parseMowLoadFactorSettings(MqttPublishMessage payload) {
+  void parseMowerLogicSatelliteLoggingStatus(MqttPublishMessage payload) {
     try {
       final map = _decodeMap(payload);
       if (map == null) {
-        mowLoadFactorSettingsController.setError("Leere oder ungültige Mäh-Lastregelungs-Nachricht empfangen.", topic: mowLoadFactorSettingsJsonTopic);
+        satelliteLoggingController.setError("Leere oder ungültige Satellite-Logging-Nachricht empfangen.", topic: mowerLogicSatelliteLoggingJsonTopic);
         return;
       }
-      mowLoadFactorSettingsController.setStatusPayload(map, topic: mowLoadFactorSettingsJsonTopic);
+      satelliteLoggingController.setStatusPayload(map, topic: mowerLogicSatelliteLoggingJsonTopic);
     } catch (e) {
-      mowLoadFactorSettingsController.setError("Mäh-Lastregelungs-Status konnte nicht gelesen werden: $e", topic: mowLoadFactorSettingsJsonTopic);
-    }
-  }
-
-  void parseMowLoadFactorSettingsValidation(MqttPublishMessage payload) {
-    try {
-      final map = _decodeMap(payload);
-      if (map == null) {
-        mowLoadFactorSettingsController.setError("Leere oder ungültige Mäh-Lastregelungs-Validierung empfangen.", topic: mowLoadFactorSettingsValidationJsonTopic);
-        return;
-      }
-      mowLoadFactorSettingsController.setValidation(map, topic: mowLoadFactorSettingsValidationJsonTopic);
-    } catch (e) {
-      mowLoadFactorSettingsController.setError("Mäh-Lastregelungs-Validierung konnte nicht gelesen werden: $e", topic: mowLoadFactorSettingsValidationJsonTopic);
+      satelliteLoggingController.setError("Satellite-Logging-Status konnte nicht gelesen werden: $e", topic: mowerLogicSatelliteLoggingJsonTopic);
     }
   }
 
@@ -788,29 +782,32 @@ class MqttConnection  {
   }
 
   void requestMowLoadFactorSettings() {
-    try {
-      _publishJson(mowLoadFactorSettingsRenewJsonTopic, <String, dynamic>{});
-    } catch(e) {
-      debugPrint("error requesting mow load factor settings via mqtt");
-      mowLoadFactorSettingsController.setError("Mäh-Lastregelungs-Anfrage konnte nicht gesendet werden.", topic: mowLoadFactorSettingsRenewJsonTopic);
-    }
+    requestMowerLogicSettings();
   }
 
   void publishMowLoadFactorSessionSettings(Map<String, dynamic> settings) {
-    try {
-      _publishJson(mowLoadFactorSettingsSetSessionJsonTopic, settings, qos: MqttQos.exactlyOnce);
-    } catch(e) {
-      debugPrint("error publishing mow load factor session settings via mqtt");
-      mowLoadFactorSettingsController.setError("Mäh-Lastregelungs-Sessionwerte konnten nicht gesendet werden.", topic: mowLoadFactorSettingsSetSessionJsonTopic);
-    }
+    publishMowerLogicSessionSettings(settings);
   }
 
   void publishMowLoadFactorPersistentSettings(Map<String, dynamic> settings) {
+    publishMowerLogicPersistentSettings(settings);
+  }
+
+  void requestMowerLogicSatelliteLoggingStatus() {
     try {
-      _publishJson(mowLoadFactorSettingsSetPersistentJsonTopic, settings, qos: MqttQos.exactlyOnce);
+      _publishJson(mowerLogicSatelliteLoggingRenewJsonTopic, <String, dynamic>{});
     } catch(e) {
-      debugPrint("error publishing mow load factor persistent settings via mqtt");
-      mowLoadFactorSettingsController.setError("Dauerhafte Mäh-Lastregelungs-Settings konnten nicht gesendet werden.", topic: mowLoadFactorSettingsSetPersistentJsonTopic);
+      debugPrint("error requesting satellite logging status via mqtt");
+      satelliteLoggingController.setError("Satellite-Logging-Anfrage konnte nicht gesendet werden.", topic: mowerLogicSatelliteLoggingRenewJsonTopic);
+    }
+  }
+
+  void publishMowerLogicSatelliteLoggingControl(Map<String, dynamic> control) {
+    try {
+      _publishJson(mowerLogicSatelliteLoggingControlJsonTopic, control, qos: MqttQos.exactlyOnce);
+    } catch(e) {
+      debugPrint("error publishing satellite logging control via mqtt");
+      satelliteLoggingController.setError("Satellite-Logging-Control konnte nicht gesendet werden.", topic: mowerLogicSatelliteLoggingControlJsonTopic);
     }
   }
 
@@ -854,6 +851,8 @@ class MqttConnection  {
   void disconnect() {
     client.autoReconnect = false;
     client.onDisconnected = null;
+    _updatesSubscription?.cancel();
+    _updatesSubscription = null;
     client.disconnect();
   }
 
@@ -1605,10 +1604,15 @@ class MqttConnection  {
     debugPrint("MQTT connected");
     robotStateController.setConnected(true);
 
-    client.updates.listen((List<MqttReceivedMessage<MqttMessage>> c) {
+    _reconnectDelaySeconds = 1;
+    _lastConnectAttempt = null;
+    _updatesSubscription?.cancel();
+    _updatesSubscription = client.updates.listen((List<MqttReceivedMessage<MqttMessage>> c) {
 
       for (var msg in c) {
-          debugPrint("got message on ${msg.topic}");
+          if (kDebugMode && msg.topic != null && !msg.topic!.startsWith('sensors/') && msg.topic != robotPoseJsonTopic) {
+            debugPrint("got message on ${msg.topic}");
+          }
           final payload = msg.payload as MqttPublishMessage;
           switch(msg.topic) {
             case timetableTopic: {
@@ -1707,14 +1711,8 @@ class MqttConnection  {
               parseMowerLogicSettingsValidation(payload);
             }
             break;
-            case legacyMowLoadFactorSettingsJsonTopic: {
-              // Legacy namespace is ignored by default; if a retained value is still delivered,
-              // parse it only as compatibility input for the filtered UI.
-              parseMowLoadFactorSettings(payload);
-            }
-            break;
-            case legacyMowLoadFactorSettingsValidationJsonTopic: {
-              parseMowLoadFactorSettingsValidation(payload);
+            case mowerLogicSatelliteLoggingJsonTopic: {
+              parseMowerLogicSatelliteLoggingStatus(payload);
             }
             break;
             case lowLevelPowerJsonTopic: {
@@ -1811,7 +1809,8 @@ class MqttConnection  {
     client.subscribe(statusTransitionLogJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mowerLogicSettingsJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mowerLogicSettingsValidationJsonTopic, MqttQos.atLeastOnce);
-    // Kein Subscribe auf settings/mow_load_factor/...: dieser Namespace ist entfallen.
+    client.subscribe(mowerLogicSatelliteLoggingJsonTopic, MqttQos.atLeastOnce);
+    // Mäh-Lastregelung wird ausschließlich über settings/mower_logic/... verarbeitet.
     client.subscribe(lowLevelPowerJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(lowLevelPowerValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mapOverlayJsonTopic, MqttQos.atMostOnce);
@@ -1904,9 +1903,17 @@ class MqttConnection  {
   }
 
   void tryConnect() {
-    if(client.connectionStatus?.state == MqttConnectionState.connected || client.connectionStatus?.state == MqttConnectionState.connecting) {
+    final state = client.connectionStatus?.state;
+    if(state == MqttConnectionState.connected || state == MqttConnectionState.connecting || _connecting) {
       return;
     }
+    final now = DateTime.now();
+    final lastAttempt = _lastConnectAttempt;
+    if (lastAttempt != null && now.difference(lastAttempt).inSeconds < _reconnectDelaySeconds) {
+      return;
+    }
+    _lastConnectAttempt = now;
+    _reconnectDelaySeconds = min(_reconnectDelaySeconds * 2, 30);
     debugPrint("trying reconnect MQTT");
     connect();
   }
