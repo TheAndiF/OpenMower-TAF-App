@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:open_mower_app/services/platform_text_file.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/low_level_power_settings_controller.dart';
 import 'package:open_mower_app/controllers/settings_controller.dart';
@@ -16,6 +17,7 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
   final LowLevelPowerSettingsController controller = Get.find<LowLevelPowerSettingsController>();
   final SettingsController settingsController = Get.find<SettingsController>();
   bool _renewSent = false;
+  bool _jsonExpanded = false;
 
   @override
   void initState() {
@@ -352,19 +354,7 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
           final field = Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextFormField(
-                key: ValueKey('ll_board_${key}_${controller.editorRevision.value}'),
-                initialValue: controller.draftText(key),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,\.\-]'))],
-                onChanged: (value) => controller.updateDraftText(key, value),
-                decoration: InputDecoration(
-                  labelText: 'Entwurf',
-                  suffixText: unit.isEmpty ? null : unit,
-                  border: const OutlineInputBorder(),
-                  helperText: 'Wird vor dem Senden als JSON-number geprüft.',
-                ),
-              ),
+              _buildDraftEditor(context, key, unit),
               if (settingsController.expertModeEnabled.value) ...[
                 const SizedBox(height: 10),
                 _buildMetadataEditor(context, key),
@@ -376,6 +366,44 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
           }
           return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 3, child: meta), const SizedBox(width: 16), Expanded(flex: 2, child: field)]);
         },
+      ),
+    );
+  }
+
+  Widget _buildDraftEditor(BuildContext context, String key, String unit) {
+    if (controller.isBoolKey(key)) {
+      return SwitchListTile(
+        key: ValueKey('ll-board-bool-$key-${controller.editorRevision.value}'),
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        secondary: const Icon(Icons.toggle_on_outlined),
+        title: const Text('Entwurf'),
+        subtitle: Text('Wird vor dem Senden als JSON-boolean geprüft.${unit.isEmpty ? '' : ' Einheit: $unit'}'),
+        value: controller.draftBool(key),
+        onChanged: (value) => controller.updateDraftBool(key, value),
+      );
+    }
+
+    final isNumeric = controller.isNumericKey(key);
+    return TextFormField(
+      key: ValueKey('ll_board_${key}_${controller.editorRevision.value}'),
+      initialValue: controller.draftText(key),
+      keyboardType: isNumeric
+          ? const TextInputType.numberWithOptions(decimal: true, signed: true)
+          : TextInputType.text,
+      inputFormatters: isNumeric
+          ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9,\.\-]'))]
+          : null,
+      onChanged: (value) => controller.updateDraftText(key, value),
+      decoration: InputDecoration(
+        labelText: 'Entwurf',
+        suffixText: unit.isEmpty ? null : unit,
+        border: const OutlineInputBorder(),
+        helperText: controller.isIntKey(key)
+            ? 'Wird vor dem Senden als JSON-integer geprüft.'
+            : controller.isDoubleKey(key)
+                ? 'Wird vor dem Senden als JSON-number geprüft.'
+                : 'Wird vor dem Senden als JSON-string geprüft.',
       ),
     );
   }
@@ -478,27 +506,119 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
   }
 
   Widget _buildJsonSection(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      child: ExpansionTile(
-        title: const Text('LL-Board JSON-Status'),
-        subtitle: const Text('Rohdaten aus settings/ll_board/json'),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              border: Border.all(color: Theme.of(context).dividerColor),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: SelectableText(
-              controller.rawStatusJson,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+    final color = Theme.of(context).primaryColor;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 720;
+        return Card(
+          margin: EdgeInsets.zero,
+          child: Container(
+            color: color.withOpacity(0.08),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 12, isMobile ? 8 : 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.code, color: color, size: 32),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('JSON-Ansicht', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
+                                const SizedBox(height: 2),
+                                Text('Rohstatus aus settings/ll_board/json anzeigen und exportieren', style: Theme.of(context).textTheme.bodyMedium),
+                              ],
+                            ),
+                          ),
+                          if (!isMobile) _jsonActionButtons(context, isMobile: false),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: _jsonExpanded ? 'JSON-Ansicht einklappen' : 'JSON-Ansicht ausklappen',
+                            onPressed: () => setState(() => _jsonExpanded = !_jsonExpanded),
+                            icon: Icon(_jsonExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: color),
+                          ),
+                        ],
+                      ),
+                      if (isMobile) ...[
+                        const SizedBox(height: 12),
+                        _jsonActionButtons(context, isMobile: true),
+                      ],
+                    ],
+                  ),
+                ),
+                if (_jsonExpanded)
+                  Container(
+                    width: double.infinity,
+                    color: Theme.of(context).cardColor,
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildStatusCard(context),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          key: ValueKey('ll-board-settings-json-${controller.lastUpdated.value?.millisecondsSinceEpoch ?? 0}'),
+                          initialValue: controller.rawStatusJson,
+                          readOnly: true,
+                          minLines: 10,
+                          maxLines: 24,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            labelText: 'settings/ll_board/json',
+                            alignLabelWithHint: true,
+                          ),
+                          style: const TextStyle(fontFamily: 'monospace'),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
-        ],
+        );
+      },
+    );
+  }
+
+  Widget _jsonActionButtons(BuildContext context, {required bool isMobile}) {
+    final buttons = <Widget>[
+      OutlinedButton.icon(
+        onPressed: controller.hasData ? _downloadJsonFile : null,
+        icon: const Icon(Icons.download),
+        label: Text(isMobile ? 'Herunterladen' : 'Download'),
       ),
+      OutlinedButton.icon(
+        onPressed: controller.hasData ? () => _copyJsonToClipboard(context) : null,
+        icon: const Icon(Icons.copy_outlined),
+        label: const Text('Kopieren'),
+      ),
+    ];
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < buttons.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            SizedBox(width: double.infinity, child: buttons[i]),
+          ],
+        ],
+      );
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < buttons.length; i++) ...[
+          if (i > 0) const SizedBox(width: 8),
+          buttons[i],
+        ],
+      ],
     );
   }
 
@@ -594,6 +714,20 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Icon(icon, color: color, size: 28),
+    );
+  }
+
+  Future<void> _copyJsonToClipboard(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: controller.rawStatusJson));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('LL-Board-JSON wurde in die Zwischenablage kopiert.')));
+  }
+
+  Future<void> _downloadJsonFile() async {
+    await saveTextFile(
+      fileName: 'openmower_ll_board_settings.json',
+      content: controller.rawStatusJson,
+      mimeType: 'application/json',
     );
   }
 

@@ -50,9 +50,8 @@ class LowLevelPowerSettingsController extends GetxController {
 
   final statusPayload = <String, dynamic>{}.obs;
   final settings = <String, Map<String, dynamic>>{}.obs;
-  final activeValues = <String, double>{}.obs;
-  final draftTexts = <String, String>{}.obs;
-  final groupDraftTexts = <String, String>{}.obs;
+  final draftValues = <String, dynamic>{}.obs;
+  final groupDraftValues = <String, String>{}.obs;
   final expertDraftValues = <String, bool>{}.obs;
   final dirtyKeys = <String>{}.obs;
   final dirtyGroupKeys = <String>{}.obs;
@@ -72,45 +71,78 @@ class LowLevelPowerSettingsController extends GetxController {
   Set<String> _pendingGroupKeys = <String>{};
   Set<String> _pendingExpertKeys = <String>{};
 
-  bool get hasData => activeValues.isNotEmpty;
-  int get settingCount => activeValues.length;
-  int get differenceCount => orderedKeys.where((key) => activeValues.containsKey(key) && isDifferent(key)).length;
-  int get restartRequiredCount => orderedKeys.where((key) => _boolOrFalse(settings[key]?['restart_required'])).length;
+  bool get hasData => settings.isNotEmpty;
+  int get settingCount => settings.length;
+  int get differenceCount => settings.entries.where((entry) => isDifferent(entry.key)).length;
+  int get restartRequiredCount => settings.values.where((setting) => _bool(setting['restart_required'])).length;
   int get dirtyCount => {...dirtyKeys, ...dirtyGroupKeys, ...dirtyExpertKeys}.length;
-  int get sessionDirtyCount => dirtyKeys.length;
+  int get sessionDirtyCount => settings.entries.where((entry) => dirtyKeys.contains(entry.key) && sessionApplySupported(entry.key)).length;
 
-  List<String> visibleKeys({required bool expertModeEnabled}) => orderedKeys
-      .where((key) => activeValues.containsKey(key))
-      .where((key) => expertModeEnabled || !expertOriginalBool(key))
-      .toList(growable: false);
-
-
-  List<String> groupsForMode({required bool expertModeEnabled}) {
-    final groups = visibleKeys(expertModeEnabled: expertModeEnabled)
-        .map(groupOriginalText)
-        .toSet()
-        .toList(growable: false);
-    groups.sort((a, b) => _groupOrder(a).compareTo(_groupOrder(b)));
-    return groups;
+  String get rawStatusJson {
+    if (statusPayload.isEmpty) {
+      return '{}';
+    }
+    return const JsonEncoder.withIndent('  ').convert(statusPayload);
   }
 
-  List<String> keysForGroup(String group, {required bool expertModeEnabled}) => visibleKeys(expertModeEnabled: expertModeEnabled)
-      .where((key) => groupOriginalText(key) == group)
+  List<String> groupsForMode({required bool expertModeEnabled}) {
+    final groupNames = settings.values
+        .where((setting) => expertModeEnabled || !_settingIsExpert(setting))
+        .map((setting) => _groupSeed(setting))
+        .toSet()
+        .toList();
+    groupNames.sort((a, b) => _groupOrder(a).compareTo(_groupOrder(b)));
+    return groupNames;
+  }
+
+  List<String> visibleKeys({required bool expertModeEnabled}) => settingsForMode(expertModeEnabled: expertModeEnabled)
+      .map((entry) => entry.key)
       .toList(growable: false);
 
-  int dirtyCountForGroup(String group, {required bool expertModeEnabled}) => keysForGroup(group, expertModeEnabled: expertModeEnabled)
-      .where((key) => dirtyKeys.contains(key) || dirtyGroupKeys.contains(key) || dirtyExpertKeys.contains(key))
+  List<MapEntry<String, Map<String, dynamic>>> settingsForMode({required bool expertModeEnabled}) {
+    final entries = settings.entries.where((entry) => expertModeEnabled || !_settingIsExpert(entry.value)).toList();
+    entries.sort(_compareSettingsEntries);
+    return entries;
+  }
+
+  List<String> keysForGroup(String group, {required bool expertModeEnabled}) => settingsForGroup(group, expertModeEnabled: expertModeEnabled)
+      .map((entry) => entry.key)
+      .toList(growable: false);
+
+  List<MapEntry<String, Map<String, dynamic>>> settingsForGroup(String group, {bool expertModeEnabled = true}) {
+    final entries = settings.entries
+        .where((entry) => _groupSeed(entry.value) == group)
+        .where((entry) => expertModeEnabled || !_settingIsExpert(entry.value))
+        .toList();
+    entries.sort(_compareSettingsEntries);
+    return entries;
+  }
+
+  int _compareSettingsEntries(MapEntry<String, Map<String, dynamic>> a, MapEntry<String, Map<String, dynamic>> b) {
+    final orderA = _int(a.value['order']) ?? _fallbackKeyOrder(a.key);
+    final orderB = _int(b.value['order']) ?? _fallbackKeyOrder(b.key);
+    final byOrder = orderA.compareTo(orderB);
+    return byOrder != 0 ? byOrder : a.key.compareTo(b.key);
+  }
+
+  int _fallbackKeyOrder(String key) {
+    final index = orderedKeys.indexOf(key);
+    return index < 0 ? 999999 : (index + 1) * 10;
+  }
+
+  int dirtyCountForGroup(String group, {required bool expertModeEnabled}) => settingsForGroup(group, expertModeEnabled: expertModeEnabled)
+      .where((entry) => dirtyKeys.contains(entry.key) || dirtyGroupKeys.contains(entry.key) || dirtyExpertKeys.contains(entry.key))
       .length;
 
   int differenceCountForGroup(String group, {required bool expertModeEnabled}) =>
-      keysForGroup(group, expertModeEnabled: expertModeEnabled).where(isDifferent).length;
+      settingsForGroup(group, expertModeEnabled: expertModeEnabled).where((entry) => isDifferent(entry.key)).length;
 
-  int metadataDirtyCountForGroup(String group, {required bool expertModeEnabled}) => keysForGroup(group, expertModeEnabled: expertModeEnabled)
-      .where((key) => dirtyGroupKeys.contains(key) || dirtyExpertKeys.contains(key))
+  int metadataDirtyCountForGroup(String group, {required bool expertModeEnabled}) => settingsForGroup(group, expertModeEnabled: expertModeEnabled)
+      .where((entry) => dirtyGroupKeys.contains(entry.key) || dirtyExpertKeys.contains(entry.key))
       .length;
 
-  int sessionSupportedDirtyCountForGroup(String group, {required bool expertModeEnabled}) => keysForGroup(group, expertModeEnabled: expertModeEnabled)
-      .where((key) => dirtyKeys.contains(key) && sessionApplySupported(key))
+  int sessionSupportedDirtyCountForGroup(String group, {required bool expertModeEnabled}) => settingsForGroup(group, expertModeEnabled: expertModeEnabled)
+      .where((entry) => dirtyKeys.contains(entry.key) && sessionApplySupported(entry.key))
       .length;
 
   String groupLabel(String group) {
@@ -122,6 +154,9 @@ class LowLevelPowerSettingsController extends GetxController {
       case 'charge':
       case 'charging':
         return 'Laden';
+      case 'speed':
+      case 'drive':
+        return 'Fahrverhalten';
       case 'safety':
         return 'Sicherheit';
       default:
@@ -136,35 +171,35 @@ class LowLevelPowerSettingsController extends GetxController {
       case 'charge':
       case 'charging':
         return Icons.ev_station_outlined;
+      case 'speed':
+      case 'drive':
+        return Icons.speed;
       case 'safety':
         return Icons.health_and_safety_outlined;
       case 'll_board':
+        return Icons.memory_outlined;
       default:
-        return Icons.battery_charging_full_outlined;
+        return Icons.settings_outlined;
     }
   }
 
   int _groupOrder(String group) {
     switch (group) {
       case 'll_board':
-        return 0;
+        return 100;
       case 'battery':
-        return 10;
+        return 200;
       case 'charge':
       case 'charging':
-        return 20;
+        return 300;
+      case 'speed':
+      case 'drive':
+        return 400;
       case 'safety':
-        return 30;
+        return 900;
       default:
-        return 1000 + group.hashCode.abs() % 100000;
+        return 999;
     }
-  }
-
-  String get rawStatusJson {
-    if (statusPayload.isEmpty) {
-      return '{}';
-    }
-    return const JsonEncoder.withIndent('  ').convert(statusPayload);
   }
 
   void requestStatus() {
@@ -174,43 +209,45 @@ class LowLevelPowerSettingsController extends GetxController {
     lastStatus.value = 'Low-Level-Board-Status wird neu angefordert ...';
     lastTopic.value = 'settings/ll_board/set/renew/json';
     lastUpdated.value = DateTime.now();
-    _armResponseTimeout(
-      'Keine Low-Level-Board-Antwort empfangen. Bitte MQTT-Topic settings/ll_board/json prüfen.',
-    );
+    _armResponseTimeout('Keine Low-Level-Board-Antwort empfangen. Bitte MQTT-Topic settings/ll_board/json prüfen.');
     Get.find<MqttConnection>().requestLowLevelPowerSettings();
   }
 
   void setStatusPayload(Map<String, dynamic> payload, {String topic = 'settings/ll_board/json'}) {
     final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
     final rawSettings = root['settings'];
-    final nextSettings = <String, Map<String, dynamic>>{};
-    final parsed = <String, double>{};
 
+    final next = <String, Map<String, dynamic>>{};
     if (rawSettings is Map) {
-      for (final key in orderedKeys) {
-        final setting = rawSettings[key];
-        if (setting is Map) {
-          final normalized = Map<String, dynamic>.from(setting);
-          nextSettings[key] = normalized;
-          final active = _double(normalized['value'] ?? normalized['active'] ?? normalized['persistent'] ?? normalized['default']);
-          if (active != null) {
-            parsed[key] = active;
-          }
+      rawSettings.forEach((key, value) {
+        final settingKey = key.toString();
+        if (value is Map) {
+          final normalized = Map<String, dynamic>.from(value);
+          normalized.putIfAbsent('group', () => 'll_board');
+          normalized.putIfAbsent('expert', () => false);
+          next[settingKey] = normalized;
         }
-      }
+      });
     } else {
       // Limited legacy compatibility for old ll_power/json payloads.
       for (final key in orderedKeys) {
-        final value = _double(root[key]);
+        final value = root[key];
         if (value != null) {
-          parsed[key] = value;
-          nextSettings[key] = <String, dynamic>{'value': value, 'active': value, 'group': 'll_board', 'expert': false};
+          next[key] = <String, dynamic>{
+            'value': value,
+            'active': value,
+            'persistent': value,
+            'group': 'll_board',
+            'expert': false,
+            'type': 'number',
+            ...?fallbackMeta[key],
+          };
         }
       }
     }
 
-    if (parsed.isEmpty) {
-      setError('Low-Level-Board-Status enthält keine unterstützten Zahlenwerte.', topic: topic);
+    if (next.isEmpty) {
+      setError('Low-Level-Board-Status enthält kein gültiges settings-Objekt.', topic: topic);
       return;
     }
 
@@ -219,38 +256,25 @@ class LowLevelPowerSettingsController extends GetxController {
       ..addAll(_deepCopy(root));
     settings
       ..clear()
-      ..addAll(nextSettings);
-    activeValues
-      ..clear()
-      ..addAll(parsed);
+      ..addAll(next);
 
-    for (final key in orderedKeys) {
-      final active = activeValues[key];
-      if (active == null) {
-        continue;
+    for (final entry in settings.entries) {
+      if (!dirtyKeys.contains(entry.key)) {
+        draftValues[entry.key] = _seedValue(entry.value);
       }
-      if (dirtyKeys.contains(key)) {
-        final draft = _double(draftTexts[key]);
-        if (draft != null && draft == active) {
-          dirtyKeys.remove(key);
-          draftTexts[key] = _displayNumber(active);
-        }
-      } else {
-        draftTexts[key] = _displayNumber(active);
+      if (!dirtyGroupKeys.contains(entry.key)) {
+        groupDraftValues[entry.key] = _groupSeed(entry.value);
       }
-      if (!dirtyGroupKeys.contains(key)) {
-        groupDraftTexts[key] = groupOriginalText(key);
-      }
-      if (!dirtyExpertKeys.contains(key)) {
-        expertDraftValues[key] = expertOriginalBool(key);
+      if (!dirtyExpertKeys.contains(entry.key)) {
+        expertDraftValues[entry.key] = _expertSeed(entry.value);
       }
     }
-    draftTexts.removeWhere((key, value) => !orderedKeys.contains(key));
-    groupDraftTexts.removeWhere((key, value) => !orderedKeys.contains(key));
-    expertDraftValues.removeWhere((key, value) => !orderedKeys.contains(key));
-    dirtyKeys.removeWhere((key) => !orderedKeys.contains(key));
-    dirtyGroupKeys.removeWhere((key) => !orderedKeys.contains(key));
-    dirtyExpertKeys.removeWhere((key) => !orderedKeys.contains(key));
+    draftValues.removeWhere((key, value) => !settings.containsKey(key));
+    groupDraftValues.removeWhere((key, value) => !settings.containsKey(key));
+    expertDraftValues.removeWhere((key, value) => !settings.containsKey(key));
+    dirtyKeys.removeWhere((key) => !settings.containsKey(key));
+    dirtyGroupKeys.removeWhere((key) => !settings.containsKey(key));
+    dirtyExpertKeys.removeWhere((key) => !settings.containsKey(key));
     editorRevision.value++;
 
     _clearResponseTimeout();
@@ -266,7 +290,7 @@ class LowLevelPowerSettingsController extends GetxController {
   void setValidation(Map<String, dynamic> payload, {String topic = 'settings/ll_board/validation/json'}) {
     final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
     final valid = _boolOrNull(root['valid']);
-    final mode = root['mode']?.toString() ?? root['scope']?.toString() ?? '';
+    final mode = _text(root['mode'] ?? root['scope']);
     final accepted = _acceptedFields(root['accepted'] ?? root['applied']);
     final remarks = <String>[
       ..._stringList(root['remarks']),
@@ -330,17 +354,27 @@ class LowLevelPowerSettingsController extends GetxController {
     lastUpdated.value = DateTime.now();
   }
 
-  String labelFor(String key) => settings[key]?['label']?.toString() ?? fallbackMeta[key]?['label'] ?? key;
-  String unitFor(String key) => settings[key]?['unit']?.toString() ?? fallbackMeta[key]?['unit'] ?? '';
-  String descriptionFor(String key) => settings[key]?['description']?.toString() ?? fallbackMeta[key]?['description'] ?? '';
-  String activeText(String key) => activeValues.containsKey(key) ? _displayNumber(activeValues[key]!) : '-';
-  String draftText(String key) => draftTexts[key] ?? activeText(key);
-  String groupOriginalText(String key) => settings[key]?['group']?.toString().trim().isNotEmpty == true
-      ? settings[key]!['group'].toString().trim()
-      : 'll_board';
-  String groupDraftText(String key) => groupDraftTexts[key] ?? groupOriginalText(key);
-  bool expertOriginalBool(String key) => settings[key]?['expert'] is bool ? settings[key]!['expert'] as bool : false;
+  String labelFor(String key) => _text(settings[key]?['label'], fallback: fallbackMeta[key]?['label'] ?? key);
+  String unitFor(String key) => _text(settings[key]?['unit'], fallback: fallbackMeta[key]?['unit'] ?? '');
+  String descriptionFor(String key) => _text(settings[key]?['description'], fallback: fallbackMeta[key]?['description'] ?? '');
+  String activeText(String key) => _valueText(_seedValue(settings[key]));
+  String draftText(String key) => _valueText(draftValues[key] ?? _seedValue(settings[key]));
+  String persistentText(String key) => _valueText(settings[key]?['persistent']);
+  bool hasPersistentValue(String key) => settings[key]?.containsKey('persistent') == true;
+  String groupOriginalText(String key) => _groupSeed(settings[key]);
+  String groupDraftText(String key) => groupDraftValues[key] ?? groupOriginalText(key);
+  bool expertOriginalBool(String key) => _expertSeed(settings[key]);
   bool expertDraftBool(String key) => expertDraftValues[key] ?? expertOriginalBool(key);
+
+  String typeForKey(String key) => typeFor(settings[key]);
+  bool isBoolKey(String key) => typeForKey(key) == 'bool';
+  bool isIntKey(String key) => typeForKey(key) == 'int';
+  bool isDoubleKey(String key) => typeForKey(key) == 'double';
+  bool isNumericKey(String key) => isIntKey(key) || isDoubleKey(key);
+  bool isStringKey(String key) => typeForKey(key) == 'string';
+
+  bool draftBool(String key) => _bool(draftValues[key] ?? _seedValue(settings[key]));
+
   String rangeText(String key) {
     final setting = settings[key];
     final min = setting?['min'];
@@ -349,89 +383,235 @@ class LowLevelPowerSettingsController extends GetxController {
       return '';
     }
     if (min != null && max != null) {
-      return 'Erlaubt: ${_displayAny(min)} bis ${_displayAny(max)}';
+      return 'Erlaubt: ${_valueText(min)} bis ${_valueText(max)}';
     }
     if (min != null) {
-      return 'Mindestens ${_displayAny(min)}';
+      return 'Mindestens ${_valueText(min)}';
     }
-    return 'Maximal ${_displayAny(max)}';
+    return 'Maximal ${_valueText(max)}';
   }
-
-
-  String persistentText(String key) {
-    final persistent = _double(settings[key]?['persistent']);
-    return persistent == null ? '-' : _displayNumber(persistent);
-  }
-
-  bool hasPersistentValue(String key) => _double(settings[key]?['persistent']) != null;
 
   bool isDifferent(String key) {
-    if (_boolOrFalse(settings[key]?['different'])) {
+    final setting = settings[key];
+    if (setting == null) {
+      return false;
+    }
+    if (_bool(setting['different'])) {
       return true;
     }
-    final active = activeValues[key];
-    final persistent = _double(settings[key]?['persistent']);
-    return active != null && persistent != null && active != persistent;
+    if (!setting.containsKey('persistent')) {
+      return false;
+    }
+    return !_sameValue(_normalizedSettingValue(_seedValue(setting), setting), _normalizedSettingValue(setting['persistent'], setting));
   }
 
   bool sessionApplySupported(String key) {
     final raw = settings[key]?['session_apply_supported'];
-    return raw == null ? true : _boolOrFalse(raw);
+    return raw == null ? true : _bool(raw);
   }
 
-  bool restartRequired(String key) => _boolOrFalse(settings[key]?['restart_required']);
+  bool restartRequired(String key) => _bool(settings[key]?['restart_required']);
+
+  String typeFor(Map<String, dynamic>? setting) {
+    if (setting == null) {
+      return 'double';
+    }
+    final declared = _text(setting['type']).toLowerCase();
+    switch (declared) {
+      case 'bool':
+      case 'boolean':
+        return 'bool';
+      case 'int':
+      case 'integer':
+        return 'int';
+      case 'double':
+      case 'float':
+      case 'number':
+        return 'double';
+      case 'string':
+        return _inferredScalarType(setting);
+    }
+
+    final active = setting['active'];
+    final persistent = setting['persistent'];
+    if (active is bool || persistent is bool) {
+      return 'bool';
+    }
+    if (active is double || persistent is double) {
+      return 'double';
+    }
+    if (active is int || persistent is int) {
+      return 'int';
+    }
+
+    final activeInt = _int(active);
+    final persistentInt = _int(persistent);
+    final minInt = _int(setting['min']);
+    final maxInt = _int(setting['max']);
+    if ((active != null && activeInt != null) ||
+        (persistent != null && persistentInt != null) ||
+        ((setting['min'] != null || setting['max'] != null) && minInt != null && maxInt != null)) {
+      return 'int';
+    }
+
+    final activeDouble = _double(active);
+    final persistentDouble = _double(persistent);
+    if ((active != null && activeDouble != null) ||
+        (persistent != null && persistentDouble != null) ||
+        setting['min'] is num || setting['max'] is num) {
+      return 'double';
+    }
+    return _inferredScalarType(setting);
+  }
+
+  String _inferredScalarType(Map<String, dynamic> setting) {
+    final evidence = <dynamic>[
+      setting['value'],
+      setting['active'],
+      setting['persistent'],
+      setting['min'],
+      setting['max'],
+    ].where((value) => value != null).toList();
+
+    if (evidence.any(_isExplicitBoolEvidence)) {
+      return 'bool';
+    }
+
+    var hasNumericEvidence = false;
+    var needsDouble = false;
+    for (final value in evidence) {
+      final parsedDouble = _double(value);
+      if (parsedDouble == null) {
+        continue;
+      }
+      hasNumericEvidence = true;
+      if (_int(value) == null) {
+        needsDouble = true;
+      }
+    }
+
+    if (hasNumericEvidence) {
+      return needsDouble ? 'double' : 'int';
+    }
+    return 'string';
+  }
+
+  bool _isExplicitBoolEvidence(dynamic value) {
+    if (value is bool) return true;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      return normalized == 'true' || normalized == 'false' || normalized == 'yes' || normalized == 'no' || normalized == 'on' || normalized == 'off';
+    }
+    return false;
+  }
 
   void updateDraftText(String key, String rawValue) {
-    draftTexts[key] = rawValue;
-    final parsed = _double(rawValue);
-    final active = activeValues[key];
-    if (parsed == null || active == null || parsed != active) {
-      dirtyKeys.add(key);
+    final setting = settings[key];
+    final parsed = _parseTextValue(rawValue, setting);
+    if (parsed == null && rawValue.trim().isNotEmpty && typeFor(setting) != 'string') {
+      draftValues[key] = rawValue;
     } else {
-      dirtyKeys.remove(key);
+      draftValues[key] = parsed ?? '';
     }
+    _updateDirtyState(key);
+  }
+
+  void updateDraftBool(String key, bool value) {
+    draftValues[key] = value;
+    _updateDirtyState(key);
   }
 
   void updateDraftGroup(String key, String rawValue) {
-    groupDraftTexts[key] = rawValue;
-    final normalized = _normalizedGroupDraftValue(key);
-    final original = groupOriginalText(key);
-    if (normalized == null || normalized != original) {
-      dirtyGroupKeys.add(key);
-    } else {
-      dirtyGroupKeys.remove(key);
-    }
+    groupDraftValues[key] = rawValue;
+    _updateGroupDirtyState(key);
   }
 
   void updateDraftExpert(String key, bool value) {
     expertDraftValues[key] = value;
-    if (value != expertOriginalBool(key)) {
-      dirtyExpertKeys.add(key);
-    } else {
-      dirtyExpertKeys.remove(key);
-    }
+    _updateExpertDirtyState(key);
   }
 
   void resetDrafts() {
-    for (final key in orderedKeys) {
-      final active = activeValues[key];
-      if (active != null) {
-        draftTexts[key] = _displayNumber(active);
-      }
-      groupDraftTexts[key] = groupOriginalText(key);
-      expertDraftValues[key] = expertOriginalBool(key);
-      dirtyKeys.remove(key);
-      dirtyGroupKeys.remove(key);
-      dirtyExpertKeys.remove(key);
+    for (final entry in settings.entries) {
+      draftValues[entry.key] = _seedValue(entry.value);
+      groupDraftValues[entry.key] = _groupSeed(entry.value);
+      expertDraftValues[entry.key] = _expertSeed(entry.value);
+      dirtyKeys.remove(entry.key);
+      dirtyGroupKeys.remove(entry.key);
+      dirtyExpertKeys.remove(entry.key);
     }
     editorRevision.value++;
     setInfo('Low-Level-Board-Entwürfe wurden zurückgesetzt.', topic: 'local/reset');
   }
 
-  Map<String, dynamic>? _payloadFromDrafts({required bool sessionOnly, Iterable<String>? onlyKeys}) {
+  void resetGroupDrafts(String group, {required bool expertModeEnabled}) {
+    for (final entry in settingsForGroup(group, expertModeEnabled: expertModeEnabled)) {
+      draftValues[entry.key] = _seedValue(entry.value);
+      groupDraftValues[entry.key] = _groupSeed(entry.value);
+      expertDraftValues[entry.key] = _expertSeed(entry.value);
+      dirtyKeys.remove(entry.key);
+      dirtyGroupKeys.remove(entry.key);
+      dirtyExpertKeys.remove(entry.key);
+    }
+    editorRevision.value++;
+    setInfo('Entwürfe in „${groupLabel(group)}“ wurden zurückgesetzt.', topic: 'local/reset');
+  }
+
+  void applySessionChanges() {
+    final payload = _payloadFromDrafts(sessionOnly: true);
+    if (payload == null) return;
+    _sendPayload(payload, sessionOnly: true, group: null);
+  }
+
+  void savePersistentChanges() {
+    final payload = _payloadFromDrafts(sessionOnly: false);
+    if (payload == null) return;
+    _sendPayload(payload, sessionOnly: false, group: null);
+  }
+
+  void applySessionForGroup(String group, {required bool expertModeEnabled}) {
+    final keys = keysForGroup(group, expertModeEnabled: expertModeEnabled);
+    final payload = _payloadFromDrafts(sessionOnly: true, onlyKeys: keys, groupLabel: groupLabel(group));
+    if (payload == null) return;
+    _sendPayload(payload, sessionOnly: true, group: group);
+  }
+
+  void savePersistentForGroup(String group, {required bool expertModeEnabled}) {
+    final keys = keysForGroup(group, expertModeEnabled: expertModeEnabled);
+    final payload = _payloadFromDrafts(sessionOnly: false, onlyKeys: keys, groupLabel: groupLabel(group));
+    if (payload == null) return;
+    _sendPayload(payload, sessionOnly: false, group: group);
+  }
+
+  void _sendPayload(Map<String, dynamic> payload, {required bool sessionOnly, String? group}) {
+    waitingForResponse.value = true;
+    lastStatusOk.value = null;
+    if (sessionOnly) {
+      lastStatus.value = group == null
+          ? 'Low-Level-Board-Werte werden für die aktuelle Session gesendet ...'
+          : 'Low-Level-Board-Werte in „${groupLabel(group)}“ werden für die aktuelle Session gesendet ...';
+      lastTopic.value = 'settings/ll_board/set/session/json';
+      _armResponseTimeout('Keine Backend-Bestätigung für die Low-Level-Board-Sessionänderung empfangen.');
+      _rememberPendingAction(payload, sessionOnly: true);
+      Get.find<MqttConnection>().publishLowLevelPowerSessionSettings(payload);
+    } else {
+      lastStatus.value = group == null
+          ? 'Low-Level-Board-Werte und Metadaten werden dauerhaft gespeichert ...'
+          : 'Low-Level-Board-Werte und Metadaten in „${groupLabel(group)}“ werden dauerhaft gespeichert ...';
+      lastTopic.value = 'settings/ll_board/set/persistent/json';
+      _armResponseTimeout('Keine Backend-Bestätigung für das dauerhafte Speichern der Low-Level-Board-Werte empfangen.');
+      _rememberPendingAction(payload, sessionOnly: false);
+      Get.find<MqttConnection>().publishLowLevelPowerPersistentSettings(payload);
+    }
+    lastUpdated.value = DateTime.now();
+  }
+
+  Map<String, dynamic>? _payloadFromDrafts({required bool sessionOnly, Iterable<String>? onlyKeys, String? groupLabel}) {
     final payload = <String, dynamic>{};
-    final keys = onlyKeys ?? orderedKeys;
+    final keys = onlyKeys ?? settings.keys;
     for (final key in keys) {
+      final setting = settings[key];
+      if (setting == null) continue;
       final valueDirty = dirtyKeys.contains(key) && (!sessionOnly || sessionApplySupported(key));
       final groupDirty = dirtyGroupKeys.contains(key);
       final expertDirty = dirtyExpertKeys.contains(key);
@@ -440,22 +620,14 @@ class LowLevelPowerSettingsController extends GetxController {
       }
 
       final fields = <String, dynamic>{};
-
       if (valueDirty) {
-        final parsed = _double(draftTexts[key]);
-        if (parsed == null) {
-          setError('Der Wert für „${labelFor(key)}“ ist keine gültige JSON-Zahl.', topic: 'local/validation');
+        final value = _normalizedDraftValue(key);
+        if (value == _invalidValue) {
+          setError('Der Wert für „${labelFor(key)}“ ist nicht gültig.', topic: 'local/validation');
           return null;
         }
-        final min = _double(settings[key]?['min']);
-        final max = _double(settings[key]?['max']);
-        if ((min != null && parsed < min) || (max != null && parsed > max)) {
-          setError('Der Wert für „${labelFor(key)}“ liegt außerhalb des erlaubten Bereichs.', topic: 'local/validation');
-          return null;
-        }
-        fields['value'] = parsed;
+        fields['value'] = value;
       }
-
       if (groupDirty && !sessionOnly) {
         final groupValue = _normalizedGroupDraftValue(key);
         if (groupValue == null) {
@@ -464,105 +636,129 @@ class LowLevelPowerSettingsController extends GetxController {
         }
         fields['group'] = groupValue;
       }
-
       if (expertDirty && !sessionOnly) {
         fields['expert'] = expertDraftBool(key);
       }
-
       if (fields.isNotEmpty) {
         payload[key] = fields;
       }
     }
+
     if (payload.isEmpty) {
-      setInfo(sessionOnly
-          ? 'Es gibt keine live anwendbaren Low-Level-Board-Werte. Metadaten werden nur dauerhaft gespeichert.'
-          : 'Es gibt keine geänderten Low-Level-Board-Werte oder Metadaten.', topic: 'local/info');
+      if (sessionOnly) {
+        setInfo(groupLabel == null
+            ? 'Es gibt keine live anwendbaren Low-Level-Board-Werte. Metadaten werden nur dauerhaft gespeichert.'
+            : 'In „$groupLabel“ gibt es keine live anwendbaren Änderungen.', topic: 'local/info');
+      } else {
+        setInfo(groupLabel == null
+            ? 'Es gibt keine geänderten Low-Level-Board-Werte oder Metadaten.'
+            : 'In „$groupLabel“ gibt es keine geänderten Werte.', topic: 'local/info');
+      }
       return null;
     }
     return payload;
   }
 
-  void applySessionChanges() {
-    final payload = _payloadFromDrafts(sessionOnly: true);
-    if (payload == null) {
-      return;
+  dynamic _normalizedDraftValue(String key) => _normalizedSettingValue(draftValues[key], settings[key]);
+
+  dynamic _normalizedSettingValue(dynamic raw, Map<String, dynamic>? setting) {
+    final type = typeFor(setting);
+    dynamic value;
+    switch (type) {
+      case 'bool':
+        value = _boolOrNull(raw);
+        if (value == null) return _invalidValue;
+        break;
+      case 'int':
+        value = _int(raw);
+        if (value == null) return _invalidValue;
+        break;
+      case 'double':
+        value = _double(raw);
+        if (value == null) return _invalidValue;
+        break;
+      case 'string':
+        if (raw is! String) return _invalidValue;
+        value = raw;
+        break;
+      default:
+        value = raw;
     }
-    waitingForResponse.value = true;
-    lastStatusOk.value = null;
-    lastStatus.value = 'Low-Level-Board-Werte werden für die aktuelle Session gesendet ...';
-    lastTopic.value = 'settings/ll_board/set/session/json';
-    lastUpdated.value = DateTime.now();
-    _armResponseTimeout(
-      'Keine Backend-Bestätigung für die Low-Level-Board-Sessionänderung empfangen.',
-    );
-    _rememberPendingAction(payload, sessionOnly: true);
-    Get.find<MqttConnection>().publishLowLevelPowerSessionSettings(payload);
+
+    final min = _double(setting?['min']);
+    final max = _double(setting?['max']);
+    if (value is num) {
+      if (min != null && value.toDouble() < min) return _invalidValue;
+      if (max != null && value.toDouble() > max) return _invalidValue;
+    }
+    return value;
   }
 
-  void savePersistentChanges() {
-    final payload = _payloadFromDrafts(sessionOnly: false);
-    if (payload == null) {
-      return;
-    }
-    waitingForResponse.value = true;
-    lastStatusOk.value = null;
-    lastStatus.value = 'Low-Level-Board-Werte und Metadaten werden dauerhaft gespeichert ...';
-    lastTopic.value = 'settings/ll_board/set/persistent/json';
-    lastUpdated.value = DateTime.now();
-    _armResponseTimeout(
-      'Keine Backend-Bestätigung für das dauerhafte Speichern der Low-Level-Board-Werte empfangen.',
-    );
-    _rememberPendingAction(payload, sessionOnly: false);
-    Get.find<MqttConnection>().publishLowLevelPowerPersistentSettings(payload);
-  }
-
-  void resetGroupDrafts(String group, {required bool expertModeEnabled}) {
-    for (final key in keysForGroup(group, expertModeEnabled: expertModeEnabled)) {
-      final active = activeValues[key];
-      if (active != null) {
-        draftTexts[key] = _displayNumber(active);
-      }
-      groupDraftTexts[key] = groupOriginalText(key);
-      expertDraftValues[key] = expertOriginalBool(key);
+  void _updateDirtyState(String key) {
+    final setting = settings[key];
+    final normalized = _normalizedDraftValue(key);
+    final seed = _seedValue(setting);
+    if (normalized == _invalidValue || !_sameValue(normalized, _normalizedSettingValue(seed, setting))) {
+      dirtyKeys.add(key);
+    } else {
       dirtyKeys.remove(key);
+    }
+  }
+
+  void _updateGroupDirtyState(String key) {
+    final normalized = _normalizedGroupDraftValue(key);
+    final seed = groupOriginalText(key);
+    if (normalized == null || normalized != seed) {
+      dirtyGroupKeys.add(key);
+    } else {
       dirtyGroupKeys.remove(key);
+    }
+  }
+
+  void _updateExpertDirtyState(String key) {
+    final normalized = expertDraftBool(key);
+    final seed = expertOriginalBool(key);
+    if (normalized != seed) {
+      dirtyExpertKeys.add(key);
+    } else {
       dirtyExpertKeys.remove(key);
     }
-    editorRevision.value++;
-    setInfo('Entwürfe in „${groupLabel(group)}“ wurden zurückgesetzt.', topic: 'local/reset');
   }
 
-  void applySessionForGroup(String group, {required bool expertModeEnabled}) {
-    final keys = keysForGroup(group, expertModeEnabled: expertModeEnabled);
-    final payload = _payloadFromDrafts(sessionOnly: true, onlyKeys: keys);
-    if (payload == null) {
-      return;
+  dynamic _parseTextValue(String rawValue, Map<String, dynamic>? setting) {
+    final text = rawValue.trim();
+    switch (typeFor(setting)) {
+      case 'int':
+        return text.isEmpty ? '' : int.tryParse(text);
+      case 'double':
+        return text.isEmpty ? '' : double.tryParse(text.replaceAll(',', '.'));
+      case 'string':
+        return rawValue;
+      default:
+        return rawValue;
     }
-    waitingForResponse.value = true;
-    lastStatusOk.value = null;
-    lastStatus.value = 'Low-Level-Board-Werte in „${groupLabel(group)}“ werden für die aktuelle Session gesendet ...';
-    lastTopic.value = 'settings/ll_board/set/session/json';
-    lastUpdated.value = DateTime.now();
-    _armResponseTimeout('Keine Backend-Bestätigung für die Low-Level-Board-Sessionänderung empfangen.');
-    _rememberPendingAction(payload, sessionOnly: true);
-    Get.find<MqttConnection>().publishLowLevelPowerSessionSettings(payload);
   }
 
-  void savePersistentForGroup(String group, {required bool expertModeEnabled}) {
-    final keys = keysForGroup(group, expertModeEnabled: expertModeEnabled);
-    final payload = _payloadFromDrafts(sessionOnly: false, onlyKeys: keys);
-    if (payload == null) {
-      return;
-    }
-    waitingForResponse.value = true;
-    lastStatusOk.value = null;
-    lastStatus.value = 'Low-Level-Board-Werte und Metadaten in „${groupLabel(group)}“ werden dauerhaft gespeichert ...';
-    lastTopic.value = 'settings/ll_board/set/persistent/json';
-    lastUpdated.value = DateTime.now();
-    _armResponseTimeout('Keine Backend-Bestätigung für das dauerhafte Speichern der Low-Level-Board-Werte empfangen.');
-    _rememberPendingAction(payload, sessionOnly: false);
-    Get.find<MqttConnection>().publishLowLevelPowerPersistentSettings(payload);
+  dynamic _seedValue(Map<String, dynamic>? setting) {
+    if (setting == null) return null;
+    if (setting.containsKey('value')) return setting['value'];
+    if (setting.containsKey('active')) return setting['active'];
+    return setting['persistent'];
   }
+
+  String _groupSeed(Map<String, dynamic>? setting) => _text(setting?['group'], fallback: 'll_board');
+  bool _expertSeed(Map<String, dynamic>? setting) => setting?['expert'] is bool ? setting!['expert'] as bool : false;
+  bool _settingIsExpert(Map<String, dynamic> setting) => _expertSeed(setting);
+
+  String? _normalizedGroupDraftValue(String key) {
+    final value = (groupDraftValues[key] ?? groupOriginalText(key)).trim();
+    if (value.isEmpty || value.length > 80 || _containsControlCharacters(value)) {
+      return null;
+    }
+    return value;
+  }
+
+  bool _containsControlCharacters(String value) => value.runes.any((char) => char < 0x20 || char == 0x7f);
 
   void _rememberPendingAction(Map<String, dynamic> payload, {required bool sessionOnly}) {
     final valueKeys = <String>{};
@@ -571,15 +767,9 @@ class LowLevelPowerSettingsController extends GetxController {
     payload.forEach((key, value) {
       final settingKey = key.toString();
       if (value is Map) {
-        if (value.containsKey('value')) {
-          valueKeys.add(settingKey);
-        }
-        if (!sessionOnly && value.containsKey('group')) {
-          groupKeys.add(settingKey);
-        }
-        if (!sessionOnly && value.containsKey('expert')) {
-          expertKeys.add(settingKey);
-        }
+        if (value.containsKey('value')) valueKeys.add(settingKey);
+        if (!sessionOnly && value.containsKey('group')) groupKeys.add(settingKey);
+        if (!sessionOnly && value.containsKey('expert')) expertKeys.add(settingKey);
       } else {
         valueKeys.add(settingKey);
       }
@@ -624,34 +814,16 @@ class LowLevelPowerSettingsController extends GetxController {
   }
 
   void _clearAcceptedFields(String key, Set<String> fields) {
-    if (fields.contains('value')) {
-      dirtyKeys.remove(key);
-    }
-    if (fields.contains('group')) {
-      dirtyGroupKeys.remove(key);
-    }
-    if (fields.contains('expert')) {
-      dirtyExpertKeys.remove(key);
-    }
+    if (fields.contains('value')) dirtyKeys.remove(key);
+    if (fields.contains('group')) dirtyGroupKeys.remove(key);
+    if (fields.contains('expert')) dirtyExpertKeys.remove(key);
   }
-
-  String? _normalizedGroupDraftValue(String key) {
-    final value = (groupDraftTexts[key] ?? groupOriginalText(key)).trim();
-    if (value.isEmpty || value.length > 80 || _containsControlCharacters(value)) {
-      return null;
-    }
-    return value;
-  }
-
-  bool _containsControlCharacters(String value) => value.runes.any((char) => char < 0x20 || char == 0x7f);
 
   void _armResponseTimeout(String timeoutMessage) {
     _responseTimeout?.cancel();
     final generation = ++_responseWaitGeneration;
     _responseTimeout = Timer(const Duration(seconds: 8), () {
-      if (generation != _responseWaitGeneration || !waitingForResponse.value) {
-        return;
-      }
+      if (generation != _responseWaitGeneration || !waitingForResponse.value) return;
       waitingForResponse.value = false;
       lastStatusOk.value = null;
       lastStatus.value = timeoutMessage;
@@ -671,44 +843,69 @@ class LowLevelPowerSettingsController extends GetxController {
     super.onClose();
   }
 
-  double? _double(dynamic value) {
-    final parsed = value is num
-        ? value.toDouble()
-        : double.tryParse(value?.toString().trim().replaceAll(',', '.') ?? '');
-    if (parsed == null || !parsed.isFinite) {
-      return null;
+  static const Object _invalidValue = Object();
+
+  bool _sameValue(dynamic left, dynamic right) {
+    if (left is num && right is num) {
+      return left.toDouble() == right.toDouble();
     }
-    return parsed;
+    return left == right;
   }
 
-  bool _boolOrFalse(dynamic value) => _boolOrNull(value) ?? false;
+  String _valueText(dynamic value) {
+    if (value == null) return '-';
+    if (value is bool) return value ? 'An' : 'Aus';
+    if (value is double) {
+      final text = value.toStringAsFixed(6).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+      return text.isEmpty ? '0' : text;
+    }
+    return value.toString();
+  }
+
+  String _text(dynamic value, {String fallback = ''}) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty ? fallback : text;
+  }
+
+  bool _bool(dynamic value) => _boolOrNull(value) ?? false;
 
   bool? _boolOrNull(dynamic value) {
     if (value is bool) return value;
     if (value is num) return value != 0;
-    final text = value?.toString().trim().toLowerCase();
-    if (text == 'true' || text == '1') return true;
-    if (text == 'false' || text == '0') return false;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized == 'true' || normalized == '1' || normalized == 'yes' || normalized == 'on') return true;
+      if (normalized == 'false' || normalized == '0' || normalized == 'no' || normalized == 'off') return false;
+    }
     return null;
   }
 
+  int? _int(dynamic value) {
+    if (value is int) return value;
+    if (value is num) {
+      final numeric = value.toDouble();
+      if (!numeric.isFinite || numeric != numeric.truncateToDouble()) return null;
+      return numeric.toInt();
+    }
+    return int.tryParse(value?.toString().trim() ?? '');
+  }
+
+  double? _double(dynamic value) {
+    final parsed = value is num ? value.toDouble() : double.tryParse(value?.toString().trim().replaceAll(',', '.') ?? '');
+    if (parsed == null || !parsed.isFinite) return null;
+    return parsed;
+  }
+
   List<String> _stringList(dynamic raw) {
-    if (raw is List) {
-      return raw.map((item) => item.toString()).toList();
-    }
-    if (raw == null) {
-      return const <String>[];
-    }
-    return <String>[raw.toString()];
+    if (raw is List) return raw.map((item) => item.toString()).where((item) => item.trim().isNotEmpty).toList();
+    if (raw == null) return const <String>[];
+    final text = raw.toString().trim();
+    return text.isEmpty ? const <String>[] : <String>[text];
   }
 
   List<String> _rejectedRemarks(dynamic raw) {
-    if (raw is Map) {
-      return raw.entries.map((entry) => '${entry.key}: ${entry.value}').toList();
-    }
-    if (raw is! List) {
-      return const <String>[];
-    }
+    if (raw is Map) return raw.entries.map((entry) => '${entry.key}: ${entry.value}').toList();
+    if (raw is! List) return const <String>[];
     final remarks = <String>[];
     for (final item in raw) {
       if (item is Map) {
@@ -721,16 +918,6 @@ class LowLevelPowerSettingsController extends GetxController {
       }
     }
     return remarks;
-  }
-
-  String _displayNumber(double value) {
-    final text = value.toStringAsFixed(6).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
-    return text.isEmpty ? '0' : text;
-  }
-
-  String _displayAny(dynamic value) {
-    final number = _double(value);
-    return number == null ? value.toString() : _displayNumber(number);
   }
 
   Map<String, dynamic> _deepCopy(Map<String, dynamic> source) => jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
