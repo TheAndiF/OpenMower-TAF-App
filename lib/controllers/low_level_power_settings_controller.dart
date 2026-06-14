@@ -287,6 +287,87 @@ class LowLevelPowerSettingsController extends GetxController {
     lastUpdated.value = DateTime.now();
   }
 
+  bool importBackupJson(String jsonText, {String? filename}) {
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(jsonText);
+    } catch (e) {
+      setError('JSON-Datei ist ungültig: $e', topic: 'local/upload');
+      return false;
+    }
+    if (decoded is! Map) {
+      setError('JSON-Datei muss ein Objekt enthalten.', topic: 'local/upload');
+      return false;
+    }
+
+    final root = decoded['d'] is Map ? Map<String, dynamic>.from(decoded['d'] as Map) : Map<String, dynamic>.from(decoded);
+    final namespace = root['namespace']?.toString();
+    if (namespace != null && namespace.isNotEmpty && namespace != 'll_board') {
+      setError('JSON-Datei gehört zu „$namespace“ und nicht zu „ll_board“.', topic: 'local/upload');
+      return false;
+    }
+    final rawSettings = root['settings'];
+    if (rawSettings is! Map) {
+      setError('JSON-Datei enthält kein gültiges settings-Objekt.', topic: 'local/upload');
+      return false;
+    }
+
+    final next = <String, Map<String, dynamic>>{};
+    rawSettings.forEach((key, value) {
+      final settingKey = key.toString();
+      if (settingKey.isEmpty || value is! Map) {
+        return;
+      }
+      final normalized = Map<String, dynamic>.from(value);
+      normalized.putIfAbsent('group', () => 'll_board');
+      normalized.putIfAbsent('expert', () => false);
+      next[settingKey] = normalized;
+    });
+    if (next.isEmpty) {
+      setError('JSON-Datei enthält keine gültigen Low-Level-Board-Einstellungen.', topic: 'local/upload');
+      return false;
+    }
+
+    _clearResponseTimeout();
+    waitingForResponse.value = false;
+
+    statusPayload
+      ..clear()
+      ..addAll(_deepCopy(root));
+    settings
+      ..clear()
+      ..addAll(next);
+
+    draftValues.clear();
+    groupDraftValues.clear();
+    expertDraftValues.clear();
+    dirtyKeys.clear();
+    dirtyGroupKeys.clear();
+    dirtyExpertKeys.clear();
+
+    for (final entry in settings.entries) {
+      draftValues[entry.key] = _seedValue(entry.value);
+      groupDraftValues[entry.key] = _groupSeed(entry.value);
+      expertDraftValues[entry.key] = _expertSeed(entry.value);
+      dirtyKeys.add(entry.key);
+      dirtyGroupKeys.add(entry.key);
+      dirtyExpertKeys.add(entry.key);
+    }
+
+    editorRevision.value++;
+    lastRemarks.assignAll(const <String>[
+      'Die Sicherung wurde lokal als Entwurf geladen.',
+      'Zum Wiederherstellen bitte die betroffenen Gruppen dauerhaft speichern.',
+    ]);
+    lastStatusOk.value = null;
+    lastStatus.value = filename == null || filename.isEmpty
+        ? 'LL-Board-JSON wurde lokal geladen.'
+        : 'LL-Board-JSON „$filename“ wurde lokal geladen.';
+    lastTopic.value = 'local/upload';
+    lastUpdated.value = DateTime.now();
+    return true;
+  }
+
   void setValidation(Map<String, dynamic> payload, {String topic = 'settings/ll_board/validation/json'}) {
     final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
     final valid = _boolOrNull(root['valid']);

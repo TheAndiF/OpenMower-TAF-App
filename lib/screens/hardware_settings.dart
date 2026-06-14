@@ -595,6 +595,16 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
         label: Text(isMobile ? 'Herunterladen' : 'Download'),
       ),
       OutlinedButton.icon(
+        onPressed: controller.waitingForResponse.value ? null : controller.requestStatus,
+        icon: const Icon(Icons.refresh),
+        label: Text(isMobile ? 'LL neu laden' : 'LL-Board neu laden'),
+      ),
+      OutlinedButton.icon(
+        onPressed: () => _uploadJsonFile(context),
+        icon: const Icon(Icons.upload_file),
+        label: const Text('Upload'),
+      ),
+      OutlinedButton.icon(
         onPressed: controller.hasData ? () => _copyJsonToClipboard(context) : null,
         icon: const Icon(Icons.copy_outlined),
         label: const Text('Kopieren'),
@@ -715,6 +725,29 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
       ),
       child: Icon(icon, color: color, size: 28),
     );
+  }
+
+
+  Future<void> _uploadJsonFile(BuildContext context) async {
+    try {
+      final file = await pickTextFile(allowedExtensions: const <String>['json']);
+      if (file == null) {
+        return;
+      }
+      final imported = controller.importBackupJson(file.content, filename: file.name);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(imported
+              ? 'LL-Board-JSON wurde lokal geladen. Bitte dauerhaft speichern, um es ans Backend zu übertragen.'
+              : controller.lastStatus.value),
+        ),
+      );
+    } catch (e) {
+      controller.setError('JSON-Datei konnte nicht geladen werden: $e', topic: 'local/upload');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(controller.lastStatus.value)));
+    }
   }
 
   Future<void> _copyJsonToClipboard(BuildContext context) async {

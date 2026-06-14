@@ -912,6 +912,11 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
         label: Text(isMobile ? 'Herunterladen' : 'Download'),
       ),
       OutlinedButton.icon(
+        onPressed: () => _uploadJsonFile(context),
+        icon: const Icon(Icons.upload_file),
+        label: const Text('Upload'),
+      ),
+      OutlinedButton.icon(
         onPressed: controller.hasData ? () => _copyJsonToClipboard(context) : null,
         icon: const Icon(Icons.copy_outlined),
         label: const Text('Kopieren'),
@@ -1113,6 +1118,29 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Settings-JSON wurde in die Zwischenablage kopiert.')));
   }
 
+
+
+  Future<void> _uploadJsonFile(BuildContext context) async {
+    try {
+      final file = await pickTextFile(allowedExtensions: const <String>['json']);
+      if (file == null) {
+        return;
+      }
+      final imported = controller.importBackupJson(file.content, filename: file.name);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(imported
+              ? 'Settings-JSON wurde lokal geladen. Bitte dauerhaft speichern, um es ans Backend zu übertragen.'
+              : controller.lastStatus.value),
+        ),
+      );
+    } catch (e) {
+      controller.setError('JSON-Datei konnte nicht geladen werden: $e', topic: 'local/upload');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(controller.lastStatus.value)));
+    }
+  }
 
   void _copyTextToClipboard(String text) {
     Clipboard.setData(ClipboardData(text: text));

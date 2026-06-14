@@ -357,6 +357,87 @@ class MowerLogicSettingsController extends GetxController {
     lastUpdated.value = DateTime.now();
   }
 
+  bool importBackupJson(String jsonText, {String? filename}) {
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(jsonText);
+    } catch (e) {
+      setError('JSON-Datei ist ungültig: $e', topic: 'local/upload');
+      return false;
+    }
+    if (decoded is! Map) {
+      setError('JSON-Datei muss ein Objekt enthalten.', topic: 'local/upload');
+      return false;
+    }
+
+    final root = decoded['d'] is Map ? Map<String, dynamic>.from(decoded['d'] as Map) : Map<String, dynamic>.from(decoded);
+    final namespace = root['namespace']?.toString();
+    if (namespace != null && namespace.isNotEmpty && namespace != 'mower_logic') {
+      setError('JSON-Datei gehört zu „$namespace“ und nicht zu „mower_logic“.', topic: 'local/upload');
+      return false;
+    }
+    final rawSettings = root['settings'];
+    if (rawSettings is! Map) {
+      setError('JSON-Datei enthält kein gültiges settings-Objekt.', topic: 'local/upload');
+      return false;
+    }
+
+    final next = <String, Map<String, dynamic>>{};
+    rawSettings.forEach((key, value) {
+      final settingKey = key.toString();
+      if (settingKey.isEmpty || value is! Map) {
+        return;
+      }
+      next[settingKey] = Map<String, dynamic>.from(value);
+    });
+    if (next.isEmpty) {
+      setError('JSON-Datei enthält keine gültigen Einstellungen.', topic: 'local/upload');
+      return false;
+    }
+
+    _clearStatusResponseTimeout();
+    _clearActionResponseTimeout();
+    statusRefreshInProgress.value = false;
+    actionInProgress.value = false;
+    _syncWaitingState();
+
+    statusPayload
+      ..clear()
+      ..addAll(_deepCopy(root));
+    settings
+      ..clear()
+      ..addAll(next);
+
+    draftValues.clear();
+    groupDraftValues.clear();
+    expertDraftValues.clear();
+    dirtyKeys.clear();
+    dirtyGroupKeys.clear();
+    dirtyExpertKeys.clear();
+
+    for (final entry in settings.entries) {
+      draftValues[entry.key] = _seedValue(entry.value);
+      groupDraftValues[entry.key] = _groupSeed(entry.value);
+      expertDraftValues[entry.key] = _expertSeed(entry.value);
+      dirtyKeys.add(entry.key);
+      dirtyGroupKeys.add(entry.key);
+      dirtyExpertKeys.add(entry.key);
+    }
+
+    editorRevision.value++;
+    lastRemarks.assignAll(const <String>[
+      'Die Sicherung wurde lokal als Entwurf geladen.',
+      'Zum Wiederherstellen bitte die betroffenen Gruppen dauerhaft speichern.',
+    ]);
+    lastStatusOk.value = null;
+    lastStatus.value = filename == null || filename.isEmpty
+        ? 'Settings-JSON wurde lokal geladen.'
+        : 'Settings-JSON „$filename“ wurde lokal geladen.';
+    lastTopic.value = 'local/upload';
+    lastUpdated.value = DateTime.now();
+    return true;
+  }
+
   void setValidation(Map<String, dynamic> payload, {String topic = 'settings/mower_logic/validation/json'}) {
     final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
     final valid = _boolOrNull(root['valid']);
