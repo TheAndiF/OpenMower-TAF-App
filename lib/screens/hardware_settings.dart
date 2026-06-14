@@ -33,14 +33,24 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
     return Stack(
       children: [
         Obx(() {
+          final expertMode = settingsController.expertModeEnabled.value;
           return SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(16, 60, 16, 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildOverview(context),
+                _buildOverviewSection(context),
                 const SizedBox(height: 16),
-                _buildHardwareSettings(context),
+                _buildExpertModeSection(context),
+                const SizedBox(height: 16),
+                if (!controller.hasData)
+                  _buildEmptySettingsCard(context)
+                else
+                  ...controller.groupsForMode(expertModeEnabled: expertMode).expand((group) sync* {
+                    yield _buildGroupSection(context, group);
+                    yield const SizedBox(height: 16);
+                  }),
+                _buildJsonSection(context),
               ],
             ),
           );
@@ -55,7 +65,7 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
     );
   }
 
-  Widget _buildOverview(BuildContext context) {
+  Widget _buildOverviewSection(BuildContext context) {
     final color = Theme.of(context).primaryColor;
     final waiting = controller.waitingForResponse.value;
     return Card(
@@ -83,7 +93,7 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Grenzwerte und Schutzparameter des Low-Level-Boards verwalten',
+                            'Low-Level-Board-Parameter live testen oder dauerhaft speichern',
                             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor),
                           ),
                         ],
@@ -91,22 +101,30 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
                     ),
                   ],
                 );
-                final refresh = OutlinedButton.icon(
+                final refreshButton = OutlinedButton.icon(
                   onPressed: waiting ? null : controller.requestStatus,
                   icon: waiting
                       ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.refresh),
-                  label: const Text('Status neu laden'),
+                  label: const Text('LL-Board neu laden'),
                 );
                 if (isMobile) {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [header, const SizedBox(height: 12), refresh],
+                    children: [
+                      header,
+                      const SizedBox(height: 12),
+                      refreshButton,
+                    ],
                   );
                 }
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [Expanded(child: header), const SizedBox(width: 16), refresh],
+                  children: [
+                    Expanded(child: header),
+                    const SizedBox(width: 16),
+                    refreshButton,
+                  ],
                 );
               },
             ),
@@ -121,8 +139,10 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
                   spacing: 12,
                   runSpacing: 12,
                   children: [
-                    _overviewMetric(context, label: 'Parameter', value: controller.visibleKeys(expertModeEnabled: settingsController.expertModeEnabled.value).length.toString(), icon: Icons.list_alt),
+                    _overviewMetric(context, label: 'Parameter', value: controller.settingCount.toString(), icon: Icons.list_alt),
+                    _overviewMetric(context, label: 'Abweichungen', value: controller.differenceCount.toString(), icon: Icons.compare_arrows),
                     _overviewMetric(context, label: 'Entwürfe', value: controller.dirtyCount.toString(), icon: Icons.edit_note),
+                    _overviewMetric(context, label: 'Neustart-Hinweise', value: controller.restartRequiredCount.toString(), icon: Icons.restart_alt),
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -136,7 +156,7 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    '„Jetzt anwenden“ sendet nur value über session. „Dauerhaft speichern“ sendet value, group und/oder expert objektbasiert über persistent.',
+                    '„Jetzt anwenden“ verändert nur die laufende LL-Board-Session. „Dauerhaft speichern“ schreibt value und im Expertenmodus auch group/expert über settings/ll_board/set/persistent/json.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -148,29 +168,82 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
     );
   }
 
-  Widget _buildHardwareSettings(BuildContext context) {
+  Widget _buildExpertModeSection(BuildContext context) {
     final color = Theme.of(context).primaryColor;
-    final waiting = controller.waitingForResponse.value;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Obx(() => SwitchListTile(
+            secondary: Icon(Icons.admin_panel_settings_outlined, color: color),
+            title: Text(
+              'Expertenmodus',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text(
+              'Blendet erweiterte Low-Level-Board-Werte ein und zeigt editierbare JSON-Metadaten wie „group“ und „expert“. Die Gruppierung wird nach Speichern und Backend-Rückmeldung neu aufgebaut.',
+            ),
+            value: settingsController.expertModeEnabled.value,
+            onChanged: settingsController.setExpertModeEnabled,
+          )),
+    );
+  }
+
+  Widget _buildEmptySettingsCard(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Icon(Icons.cloud_download_outlined, size: 44, color: Theme.of(context).primaryColor),
+            const SizedBox(height: 10),
+            Text(
+              'Noch keine Hardware-Settings empfangen',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Sobald das Backend auf settings/ll_board/json publiziert, werden Gruppen und Einstellfelder wie im Software-Bereich aufgebaut.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupSection(BuildContext context, String group) {
+    final color = Theme.of(context).primaryColor;
+    final expertMode = settingsController.expertModeEnabled.value;
+    final keys = controller.keysForGroup(group, expertModeEnabled: expertMode);
+    final dirty = controller.dirtyCountForGroup(group, expertModeEnabled: expertMode);
+    final differences = controller.differenceCountForGroup(group, expertModeEnabled: expertMode);
+    final liveDirty = controller.sessionSupportedDirtyCountForGroup(group, expertModeEnabled: expertMode);
+    final metadataDirty = controller.metadataDirtyCountForGroup(group, expertModeEnabled: expertMode);
     return Card(
       margin: EdgeInsets.zero,
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          initiallyExpanded: true,
+          initiallyExpanded: group == 'll_board' || group == 'battery',
           backgroundColor: color.withOpacity(0.08),
           collapsedBackgroundColor: color.withOpacity(0.08),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          leading: Icon(Icons.battery_charging_full_outlined, color: color, size: 32),
+          leading: Icon(controller.groupIcon(group), color: color, size: 32),
           iconColor: color,
           collapsedIconColor: color,
-          title: Text('Low-Level Board', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
+          title: Text(controller.groupLabel(group), style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
           subtitle: Wrap(
             spacing: 10,
             runSpacing: 4,
             children: [
-              const Text('settings/ll_board'),
-              if (controller.dirtyCount > 0) Text('${controller.dirtyCount} lokale Änderung(en)'),
+              Text('${keys.length} Werte', style: Theme.of(context).textTheme.bodyMedium),
+              if (differences > 0) Text('$differences aktiv/gespeichert unterschiedlich', style: Theme.of(context).textTheme.bodyMedium),
+              if (dirty > 0) Text('$dirty lokale Änderung(en)', style: Theme.of(context).textTheme.bodyMedium),
+              if (metadataDirty > 0) Text('$metadataDirty Metadaten', style: Theme.of(context).textTheme.bodyMedium),
             ],
           ),
           children: [
@@ -181,91 +254,12 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.05),
-                      border: Border.all(color: color.withOpacity(0.18)),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      'Die Hardwarewerte werden über settings/ll_board/set/session/json als {key:{value:...}} live getestet. Metadaten group/expert werden ausschließlich über settings/ll_board/set/persistent/json gespeichert.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (!controller.hasData)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
-                        'Noch keine settings/ll_board/json-Daten empfangen.',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        textAlign: TextAlign.center,
-                      ),
-                    )
-                  else
-                    for (var i = 0; i < controller.visibleKeys(expertModeEnabled: settingsController.expertModeEnabled.value).length; i++) ...[
-                      if (i > 0) const SizedBox(height: 12),
-                      _buildValueCard(context, controller.visibleKeys(expertModeEnabled: settingsController.expertModeEnabled.value)[i]),
-                    ],
+                  for (var i = 0; i < keys.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 12),
+                    _buildValueCard(context, keys[i]),
+                  ],
                   const SizedBox(height: 14),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isMobile = constraints.maxWidth < 720;
-                      final actions = <Widget>[
-                        OutlinedButton.icon(
-                          onPressed: waiting ? null : controller.requestStatus,
-                          icon: waiting
-                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                              : const Icon(Icons.refresh),
-                          label: const Text('LL-Board neu laden'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: controller.dirtyCount == 0 || waiting ? null : controller.resetDrafts,
-                          icon: const Icon(Icons.undo),
-                          label: const Text('Änderungen verwerfen'),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: controller.dirtyCount == 0 || waiting ? null : controller.applySessionChanges,
-                          icon: const Icon(Icons.play_arrow),
-                          label: const Text('Jetzt anwenden'),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: controller.dirtyCount == 0 || waiting ? null : controller.savePersistentChanges,
-                          icon: const Icon(Icons.save_outlined),
-                          label: const Text('Dauerhaft speichern'),
-                        ),
-                      ];
-                      if (isMobile) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: actions.expand((button) => <Widget>[button, const SizedBox(height: 10)]).toList()..removeLast(),
-                        );
-                      }
-                      return Wrap(spacing: 10, runSpacing: 10, alignment: WrapAlignment.end, children: actions);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  ExpansionTile(
-                    tilePadding: EdgeInsets.zero,
-                    childrenPadding: EdgeInsets.zero,
-                    title: const Text('LL-Board JSON-Status'),
-                    subtitle: const Text('Rohdaten aus settings/ll_board/json'),
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Theme.of(context).dividerColor),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: SelectableText(
-                          controller.rawStatusJson,
-                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                        ),
-                      ),
-                    ],
-                  ),
+                  _buildGroupActions(context, group, dirty: dirty, liveDirty: liveDirty),
                 ],
               ),
             ),
@@ -282,6 +276,9 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
     final expertDirty = controller.dirtyExpertKeys.contains(key);
     final dirty = valueDirty || groupDirty || expertDirty;
     final unit = controller.unitFor(key);
+    final different = controller.isDifferent(key);
+    final sessionSupported = controller.sessionApplySupported(key);
+    final restartRequired = controller.restartRequired(key);
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -296,6 +293,7 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
                     child: Text(
@@ -329,31 +327,47 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
                 const SizedBox(height: 4),
                 Text(controller.rangeText(key), style: Theme.of(context).textTheme.bodySmall),
               ],
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  if (different) _smallBadge(context, 'Abweichung', Icons.compare_arrows, Colors.orange.shade800),
+                  if (sessionSupported) _smallBadge(context, 'Session-fähig', Icons.flash_on_outlined, Colors.green.shade700),
+                  if (restartRequired) _smallBadge(context, 'Neustart nötig', Icons.restart_alt, Colors.orange.shade800),
+                ],
+              ),
               const SizedBox(height: 10),
-              _valueChip(context, label: 'Aktiv', value: _withUnit(controller.activeText(key), unit), emphasis: dirty),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _valueChip(context, label: 'Aktiv', value: _withUnit(controller.activeText(key), unit), emphasis: dirty || different),
+                  if (controller.hasPersistentValue(key))
+                    _valueChip(context, label: 'Gespeichert', value: _withUnit(controller.persistentText(key), unit), emphasis: false),
+                ],
+              ),
             ],
           );
           final field = Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               TextFormField(
-                key: ValueKey('ll_board_${key}_${controller.editorRevision.value}'),
+                key: ValueKey('ll_board_$key_${controller.editorRevision.value}'),
                 initialValue: controller.draftText(key),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
                 inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,\.\-]'))],
                 onChanged: (value) => controller.updateDraftText(key, value),
                 decoration: InputDecoration(
-                  labelText: 'Neuer Wert',
+                  labelText: 'Entwurf',
                   suffixText: unit.isEmpty ? null : unit,
                   border: const OutlineInputBorder(),
-                  helperText: 'Wird als JSON-number gesendet.',
+                  helperText: 'Wird vor dem Senden als JSON-number geprüft.',
                 ),
               ),
               if (settingsController.expertModeEnabled.value) ...[
                 const SizedBox(height: 10),
-                _buildGroupMetadataEditor(context, key),
-                const SizedBox(height: 10),
-                _buildExpertMetadataEditor(context, key),
+                _buildMetadataEditor(context, key),
               ],
             ],
           );
@@ -366,42 +380,124 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
     );
   }
 
-
-  Widget _buildGroupMetadataEditor(BuildContext context, String key) {
+  Widget _buildMetadataEditor(BuildContext context, String key) {
     final groupDirty = controller.dirtyGroupKeys.contains(key);
-    return TextFormField(
-      key: ValueKey('ll-board-group-$key-${controller.editorRevision.value}'),
-      initialValue: controller.groupDraftText(key),
-      textInputAction: TextInputAction.done,
-      decoration: InputDecoration(
-        border: const OutlineInputBorder(),
-        labelText: 'JSON-Feld „group“',
-        helperText: groupDirty
-            ? 'Wird erst beim dauerhaften Speichern ans Backend gesendet'
-            : 'Expertenmodus: keine lokale Neusortierung während der Eingabe',
-        prefixIcon: const Icon(Icons.category_outlined),
-      ),
-      onChanged: (value) => controller.updateDraftGroup(key, value),
+    final expertDirty = controller.dirtyExpertKeys.contains(key);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextFormField(
+          key: ValueKey('ll-board-group-$key-${controller.editorRevision.value}'),
+          initialValue: controller.groupDraftText(key),
+          textInputAction: TextInputAction.done,
+          decoration: InputDecoration(
+            border: const OutlineInputBorder(),
+            labelText: 'JSON-Feld „group“',
+            helperText: groupDirty
+                ? 'Wird erst beim dauerhaften Speichern als group gesendet'
+                : 'String, nicht leer, maximal 80 Zeichen, keine Steuerzeichen',
+            prefixIcon: const Icon(Icons.category_outlined),
+          ),
+          onChanged: (value) => controller.updateDraftGroup(key, value),
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          key: ValueKey('ll-board-expert-$key-${controller.editorRevision.value}'),
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          secondary: const Icon(Icons.admin_panel_settings_outlined),
+          title: const Text('JSON-Feld „expert“'),
+          subtitle: Text(
+            expertDirty
+                ? 'Wird erst beim dauerhaften Speichern als Boolean gesendet'
+                : 'true blendet den Wert im Normalmodus aus',
+          ),
+          value: controller.expertDraftBool(key),
+          onChanged: (value) => controller.updateDraftExpert(key, value),
+        ),
+      ],
     );
   }
 
-  Widget _buildExpertMetadataEditor(BuildContext context, String key) {
-    final expertDirty = controller.dirtyExpertKeys.contains(key);
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: SwitchListTile(
-        value: controller.expertDraftBool(key),
-        onChanged: (value) => controller.updateDraftExpert(key, value),
-        title: const Text('JSON-Feld „expert“'),
-        subtitle: Text(
-          expertDirty
-              ? 'Wird erst beim dauerhaften Speichern ans Backend gesendet'
-              : 'Bei aktivem expert wird der Parameter im Normalmodus ausgeblendet',
-        ),
-        secondary: const Icon(Icons.admin_panel_settings_outlined),
+  Widget _buildGroupActions(BuildContext context, String group, {required int dirty, required int liveDirty}) {
+    final waiting = controller.waitingForResponse.value;
+    final isMobile = MediaQuery.of(context).size.width < 720;
+    final resetButton = OutlinedButton.icon(
+      onPressed: dirty == 0 || waiting
+          ? null
+          : () => controller.resetGroupDrafts(
+                group,
+                expertModeEnabled: settingsController.expertModeEnabled.value,
+              ),
+      icon: const Icon(Icons.undo),
+      label: const Text('Entwürfe zurücksetzen'),
+    );
+    final liveButton = ElevatedButton.icon(
+      onPressed: liveDirty == 0 || waiting
+          ? null
+          : () => controller.applySessionForGroup(
+                group,
+                expertModeEnabled: settingsController.expertModeEnabled.value,
+              ),
+      icon: const Icon(Icons.flash_on_outlined),
+      label: Text(liveDirty > 0 ? 'Jetzt anwenden ($liveDirty)' : 'Jetzt anwenden'),
+    );
+    final persistentButton = ElevatedButton.icon(
+      onPressed: dirty == 0 || waiting
+          ? null
+          : () => controller.savePersistentForGroup(
+                group,
+                expertModeEnabled: settingsController.expertModeEnabled.value,
+              ),
+      icon: const Icon(Icons.save_outlined),
+      label: Text(dirty > 0 ? 'Dauerhaft speichern ($dirty)' : 'Dauerhaft speichern'),
+    );
+
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          resetButton,
+          const SizedBox(height: 8),
+          liveButton,
+          const SizedBox(height: 8),
+          persistentButton,
+        ],
+      );
+    }
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        resetButton,
+        const SizedBox(width: 8),
+        liveButton,
+        const SizedBox(width: 8),
+        persistentButton,
+      ],
+    );
+  }
+
+  Widget _buildJsonSection(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: ExpansionTile(
+        title: const Text('LL-Board JSON-Status'),
+        subtitle: const Text('Rohdaten aus settings/ll_board/json'),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border.all(color: Theme.of(context).dividerColor),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: SelectableText(
+              controller.rawStatusJson,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/io/mqtt_connection.dart';
 
@@ -72,6 +73,9 @@ class LowLevelPowerSettingsController extends GetxController {
   Set<String> _pendingExpertKeys = <String>{};
 
   bool get hasData => activeValues.isNotEmpty;
+  int get settingCount => activeValues.length;
+  int get differenceCount => orderedKeys.where((key) => activeValues.containsKey(key) && isDifferent(key)).length;
+  int get restartRequiredCount => orderedKeys.where((key) => _boolOrFalse(settings[key]?['restart_required'])).length;
   int get dirtyCount => {...dirtyKeys, ...dirtyGroupKeys, ...dirtyExpertKeys}.length;
   int get sessionDirtyCount => dirtyKeys.length;
 
@@ -79,6 +83,82 @@ class LowLevelPowerSettingsController extends GetxController {
       .where((key) => activeValues.containsKey(key))
       .where((key) => expertModeEnabled || !expertOriginalBool(key))
       .toList(growable: false);
+
+
+  List<String> groupsForMode({required bool expertModeEnabled}) {
+    final groups = visibleKeys(expertModeEnabled: expertModeEnabled)
+        .map(groupOriginalText)
+        .toSet()
+        .toList(growable: false);
+    groups.sort((a, b) => _groupOrder(a).compareTo(_groupOrder(b)));
+    return groups;
+  }
+
+  List<String> keysForGroup(String group, {required bool expertModeEnabled}) => visibleKeys(expertModeEnabled: expertModeEnabled)
+      .where((key) => groupOriginalText(key) == group)
+      .toList(growable: false);
+
+  int dirtyCountForGroup(String group, {required bool expertModeEnabled}) => keysForGroup(group, expertModeEnabled: expertModeEnabled)
+      .where((key) => dirtyKeys.contains(key) || dirtyGroupKeys.contains(key) || dirtyExpertKeys.contains(key))
+      .length;
+
+  int differenceCountForGroup(String group, {required bool expertModeEnabled}) =>
+      keysForGroup(group, expertModeEnabled: expertModeEnabled).where(isDifferent).length;
+
+  int metadataDirtyCountForGroup(String group, {required bool expertModeEnabled}) => keysForGroup(group, expertModeEnabled: expertModeEnabled)
+      .where((key) => dirtyGroupKeys.contains(key) || dirtyExpertKeys.contains(key))
+      .length;
+
+  int sessionSupportedDirtyCountForGroup(String group, {required bool expertModeEnabled}) => keysForGroup(group, expertModeEnabled: expertModeEnabled)
+      .where((key) => dirtyKeys.contains(key) && sessionApplySupported(key))
+      .length;
+
+  String groupLabel(String group) {
+    switch (group) {
+      case 'll_board':
+        return 'Low-Level Board';
+      case 'battery':
+        return 'Akku';
+      case 'charge':
+      case 'charging':
+        return 'Laden';
+      case 'safety':
+        return 'Sicherheit';
+      default:
+        return group;
+    }
+  }
+
+  IconData groupIcon(String group) {
+    switch (group) {
+      case 'battery':
+        return Icons.battery_full_outlined;
+      case 'charge':
+      case 'charging':
+        return Icons.ev_station_outlined;
+      case 'safety':
+        return Icons.health_and_safety_outlined;
+      case 'll_board':
+      default:
+        return Icons.battery_charging_full_outlined;
+    }
+  }
+
+  int _groupOrder(String group) {
+    switch (group) {
+      case 'll_board':
+        return 0;
+      case 'battery':
+        return 10;
+      case 'charge':
+      case 'charging':
+        return 20;
+      case 'safety':
+        return 30;
+      default:
+        return 1000 + group.hashCode.abs() % 100000;
+    }
+  }
 
   String get rawStatusJson {
     if (statusPayload.isEmpty) {
@@ -277,6 +357,30 @@ class LowLevelPowerSettingsController extends GetxController {
     return 'Maximal ${_displayAny(max)}';
   }
 
+
+  String persistentText(String key) {
+    final persistent = _double(settings[key]?['persistent']);
+    return persistent == null ? '-' : _displayNumber(persistent);
+  }
+
+  bool hasPersistentValue(String key) => _double(settings[key]?['persistent']) != null;
+
+  bool isDifferent(String key) {
+    if (_boolOrFalse(settings[key]?['different'])) {
+      return true;
+    }
+    final active = activeValues[key];
+    final persistent = _double(settings[key]?['persistent']);
+    return active != null && persistent != null && active != persistent;
+  }
+
+  bool sessionApplySupported(String key) {
+    final raw = settings[key]?['session_apply_supported'];
+    return raw == null ? true : _boolOrFalse(raw);
+  }
+
+  bool restartRequired(String key) => _boolOrFalse(settings[key]?['restart_required']);
+
   void updateDraftText(String key, String rawValue) {
     draftTexts[key] = rawValue;
     final parsed = _double(rawValue);
@@ -324,10 +428,11 @@ class LowLevelPowerSettingsController extends GetxController {
     setInfo('Low-Level-Board-Entwürfe wurden zurückgesetzt.', topic: 'local/reset');
   }
 
-  Map<String, dynamic>? _payloadFromDrafts({required bool sessionOnly}) {
+  Map<String, dynamic>? _payloadFromDrafts({required bool sessionOnly, Iterable<String>? onlyKeys}) {
     final payload = <String, dynamic>{};
-    for (final key in orderedKeys) {
-      final valueDirty = dirtyKeys.contains(key);
+    final keys = onlyKeys ?? orderedKeys;
+    for (final key in keys) {
+      final valueDirty = dirtyKeys.contains(key) && (!sessionOnly || sessionApplySupported(key));
       final groupDirty = dirtyGroupKeys.contains(key);
       final expertDirty = dirtyExpertKeys.contains(key);
       if (!valueDirty && (!groupDirty || sessionOnly) && (!expertDirty || sessionOnly)) {
@@ -407,6 +512,54 @@ class LowLevelPowerSettingsController extends GetxController {
     _armResponseTimeout(
       'Keine Backend-Bestätigung für das dauerhafte Speichern der Low-Level-Board-Werte empfangen.',
     );
+    _rememberPendingAction(payload, sessionOnly: false);
+    Get.find<MqttConnection>().publishLowLevelPowerPersistentSettings(payload);
+  }
+
+  void resetGroupDrafts(String group, {required bool expertModeEnabled}) {
+    for (final key in keysForGroup(group, expertModeEnabled: expertModeEnabled)) {
+      final active = activeValues[key];
+      if (active != null) {
+        draftTexts[key] = _displayNumber(active);
+      }
+      groupDraftTexts[key] = groupOriginalText(key);
+      expertDraftValues[key] = expertOriginalBool(key);
+      dirtyKeys.remove(key);
+      dirtyGroupKeys.remove(key);
+      dirtyExpertKeys.remove(key);
+    }
+    editorRevision.value++;
+    setInfo('Entwürfe in „${groupLabel(group)}“ wurden zurückgesetzt.', topic: 'local/reset');
+  }
+
+  void applySessionForGroup(String group, {required bool expertModeEnabled}) {
+    final keys = keysForGroup(group, expertModeEnabled: expertModeEnabled);
+    final payload = _payloadFromDrafts(sessionOnly: true, onlyKeys: keys);
+    if (payload == null) {
+      return;
+    }
+    waitingForResponse.value = true;
+    lastStatusOk.value = null;
+    lastStatus.value = 'Low-Level-Board-Werte in „${groupLabel(group)}“ werden für die aktuelle Session gesendet ...';
+    lastTopic.value = 'settings/ll_board/set/session/json';
+    lastUpdated.value = DateTime.now();
+    _armResponseTimeout('Keine Backend-Bestätigung für die Low-Level-Board-Sessionänderung empfangen.');
+    _rememberPendingAction(payload, sessionOnly: true);
+    Get.find<MqttConnection>().publishLowLevelPowerSessionSettings(payload);
+  }
+
+  void savePersistentForGroup(String group, {required bool expertModeEnabled}) {
+    final keys = keysForGroup(group, expertModeEnabled: expertModeEnabled);
+    final payload = _payloadFromDrafts(sessionOnly: false, onlyKeys: keys);
+    if (payload == null) {
+      return;
+    }
+    waitingForResponse.value = true;
+    lastStatusOk.value = null;
+    lastStatus.value = 'Low-Level-Board-Werte und Metadaten in „${groupLabel(group)}“ werden dauerhaft gespeichert ...';
+    lastTopic.value = 'settings/ll_board/set/persistent/json';
+    lastUpdated.value = DateTime.now();
+    _armResponseTimeout('Keine Backend-Bestätigung für das dauerhafte Speichern der Low-Level-Board-Werte empfangen.');
     _rememberPendingAction(payload, sessionOnly: false);
     Get.find<MqttConnection>().publishLowLevelPowerPersistentSettings(payload);
   }
@@ -527,6 +680,8 @@ class LowLevelPowerSettingsController extends GetxController {
     }
     return parsed;
   }
+
+  bool _boolOrFalse(dynamic value) => _boolOrNull(value) ?? false;
 
   bool? _boolOrNull(dynamic value) {
     if (value is bool) return value;
