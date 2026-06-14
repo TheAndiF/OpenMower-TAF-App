@@ -353,7 +353,7 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               TextFormField(
-                key: ValueKey('ll_board_$key_${controller.editorRevision.value}'),
+                key: ValueKey('ll_board_${key}_${controller.editorRevision.value}'),
                 initialValue: controller.draftText(key),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
                 inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,\.\-]'))],
