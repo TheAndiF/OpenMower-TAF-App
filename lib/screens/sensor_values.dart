@@ -113,15 +113,42 @@ class SensorValues extends GetView<SensorsController> {
   Widget _buildGroupCard(BuildContext context, String group, {required bool expertModeEnabled}) {
     final sensors = controller.visibleSensorsForGroup(group, expertModeEnabled: expertModeEnabled);
     if (sensors.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    const sensorTextColor = Colors.black54;
     return Card(
       margin: EdgeInsets.zero,
+      color: theme.cardColor,
+      surfaceTintColor: Colors.transparent,
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(4),
+        side: BorderSide(color: theme.dividerColor.withOpacity(0.55)),
+      ),
       child: ExpansionTile(
         initiallyExpanded: true,
-        leading: Icon(controller.groupIcon(group)),
-        title: Text(controller.groupLabel(group)),
-        subtitle: Text('${sensors.length} Sensoren'),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        childrenPadding: EdgeInsets.zero,
+        iconColor: sensorTextColor,
+        collapsedIconColor: sensorTextColor,
+        textColor: sensorTextColor,
+        collapsedTextColor: sensorTextColor,
+        backgroundColor: theme.cardColor,
+        collapsedBackgroundColor: theme.cardColor,
+        leading: Icon(controller.groupIcon(group), color: sensorTextColor),
+        title: Text(
+          controller.groupLabel(group),
+          style: theme.textTheme.titleSmall?.copyWith(
+            color: sensorTextColor,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: Text(
+          '${sensors.length} Sensoren',
+          style: theme.textTheme.bodySmall?.copyWith(color: sensorTextColor),
+        ),
         children: [
-          Padding(
+          Container(
+            color: theme.cardColor,
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
             child: LayoutBuilder(
               builder: (context, constraints) {

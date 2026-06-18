@@ -1,10 +1,14 @@
-BS_Compact sensor overview header
+BS_Align sensor group colors with original cards
 Date: 2026-06-18
+
 Summary:
-- Reduced the sensor overview header to a compact single-row layout.
-- Kept the existing sensor tile appearance unchanged for the live-value view.
-- Moved the sensor counters into smaller inline metric chips with horizontal scrolling on narrow screens.
-- Kept sensor live values read-only and preserved the expert-only sensor settings workflow.
+- Adjusted the grouped sensor overview to use neutral colors matching the original sensor card appearance.
+- Removed the stronger primary-color emphasis from sensor group titles, icons and expand indicators.
+- Kept the existing sensor card widgets, live-value handling, MQTT topics and expert-only sensor settings behavior unchanged.
+- Updated the project documentation to version v0.5.
+
 Changed files:
 - lib/screens/sensor_values.dart
+- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.5.docx
+- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.5.pdf
 - commit_message.txt
