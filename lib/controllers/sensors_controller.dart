@@ -525,7 +525,6 @@ class SensorsController extends GetxController {
     } else {
       dirtyKeys.remove(key);
     }
-    editorRevision.value++;
   }
 
   dynamic _normalizeLiveValue(dynamic value) {

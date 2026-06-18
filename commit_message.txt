@@ -1,20 +1,16 @@
-BS_Restore dynamic sensor tile layout
+BS_Fix sensor settings text input focus
 
 Date: 2026-06-18
 
 Summary:
-- Restored the sensor tile grid to dynamic sizing based on the available width.
-- Kept the original tile impression by using square Material tiles with elevation 2 and default Material coloring.
-- Small displays show fewer larger tiles, while larger screens automatically show more tiles per row.
-- Kept the mow load factor inside the grouped sensor tile layout.
-- Moved the expert-only sensor settings menu entry so it appears directly after the software settings entry when expert mode is enabled.
-- Updated the documentation for the dynamic tile behavior and menu order.
+- Aligned the sensor settings draft input behavior with the software settings pattern.
+- Stopped increasing editorRevision on every typed character in sensor metadata fields.
+- Prevented TextFormField keys from changing after each onChanged event, so focus and cursor position are preserved while typing.
+- Kept editorRevision updates for reload/reset flows where fields should intentionally be reinitialized.
+- Did not change MQTT handling, persistence topics, sensor live values, tile layout or expert-mode visibility.
 
 Changed files:
-- lib/screens/sensor_values.dart
-- lib/views/sensor_widget.dart
-- lib/views/load_factor_status_widget.dart
-- lib/screens/main_screen.dart
-- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.8.docx
-- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.8.pdf
+- lib/controllers/sensors_controller.dart
+- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.9.docx
+- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.9.pdf
 - commit_message.txt
