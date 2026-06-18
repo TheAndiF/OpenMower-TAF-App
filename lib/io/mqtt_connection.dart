@@ -141,6 +141,11 @@ class MqttConnection  {
   static const String robotPoseJsonTopic = "robot_pose/json";
   static const String sensorsPoseJsonTopic = "sensors/pose/json";
   static const String sensorsStatusJsonTopic = "sensors/status/json";
+  static const String sensorSettingsJsonTopic = "sensors/settings/json";
+  static const String sensorSettingsBsonTopic = "sensors/settings/bson";
+  static const String sensorSettingsRenewJsonTopic = "sensors/settings/set/renew/json";
+  static const String sensorSettingsSetPersistentJsonTopic = "sensors/settings/set/persistent/json";
+  static const String sensorSettingsValidationJsonTopic = "sensors/settings/validation/json";
 
   List<int>? _payloadBytes(MqttPublishMessage payload) {
     return payload.payload.message?.toList(growable: false);
@@ -835,6 +840,24 @@ class MqttConnection  {
     } catch(e) {
       debugPrint("error publishing low level persistent settings via mqtt");
       lowLevelPowerSettingsController.setError("Low-Level-Board-Werte konnten nicht dauerhaft gespeichert werden.", topic: lowLevelPowerSetPersistentJsonTopic);
+    }
+  }
+
+  void requestSensorSettings() {
+    try {
+      _publishJson(sensorSettingsRenewJsonTopic, <String, dynamic>{});
+    } catch(e) {
+      debugPrint("error requesting sensor settings via mqtt");
+      sensorsController.setError("Sensor-Metadaten-Anfrage konnte nicht gesendet werden.", topic: sensorSettingsRenewJsonTopic);
+    }
+  }
+
+  void publishSensorPersistentSettings(Map<String, dynamic> settings) {
+    try {
+      _publishJson(sensorSettingsSetPersistentJsonTopic, settings, qos: MqttQos.exactlyOnce);
+    } catch(e) {
+      debugPrint("error publishing sensor metadata via mqtt");
+      sensorsController.setError("Sensor-Metadaten konnten nicht dauerhaft gespeichert werden.", topic: sensorSettingsSetPersistentJsonTopic);
     }
   }
 
@@ -1536,50 +1559,47 @@ class MqttConnection  {
     return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 
+  void parseSensorSettings(MqttPublishMessage payload, {bool bson = false}) {
+    try {
+      final map = _decodeMap(payload, bson: bson);
+      if (map == null) {
+        sensorsController.setError("Leere oder ungültige Sensor-Metadaten empfangen.", topic: bson ? sensorSettingsBsonTopic : sensorSettingsJsonTopic);
+        return;
+      }
+      sensorsController.setSettingsPayload(map, topic: bson ? sensorSettingsBsonTopic : sensorSettingsJsonTopic);
+    } catch (e) {
+      sensorsController.setError("Sensor-Metadaten konnten nicht gelesen werden: $e", topic: bson ? sensorSettingsBsonTopic : sensorSettingsJsonTopic);
+    }
+  }
+
+  void parseSensorSettingsValidation(MqttPublishMessage payload) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) {
+        sensorsController.setError("Leere oder ungültige Sensor-Validierung empfangen.", topic: sensorSettingsValidationJsonTopic);
+        return;
+      }
+      sensorsController.setValidation(map, topic: sensorSettingsValidationJsonTopic);
+    } catch (e) {
+      sensorsController.setError("Sensor-Validierung konnte nicht gelesen werden: $e", topic: sensorSettingsValidationJsonTopic);
+    }
+  }
+
   void parseSensorInfos(obj) {
     debugPrint("Got new sensor infos, refreshing");
-    for (final sensorInfo in obj["d"]) {
-      switch (sensorInfo["value_type"]) {
-        case "DOUBLE":
-          {
-            // Got a double sensor
-            final sensor = DoubleSensorState(
-                sensorInfo["sensor_name"],
-                sensorInfo["unit"] ?? '',
-                _sensorDoubleValue(sensorInfo["min_value"]),
-                _sensorDoubleValue(sensorInfo["max_value"]),
-                sensorInfo["has_min_max"] == 1,
-                _sensorDoubleValue(sensorInfo["lower_critical_value"]),
-                sensorInfo["has_critical_low"] == 1,
-                _sensorDoubleValue(sensorInfo["upper_critical_value"]),
-                sensorInfo["has_critical_high"] == 1);
-            sensorsController.sensorStates[sensorInfo["sensor_id"]] = sensor;
-          }
-          break;
-        case "STRING":
-          {
-            // Got a string/text sensor. These are displayed as text tiles
-            // without numeric gauges, min/max values, or warning bars.
-            final sensor = StringSensorState(
-              sensorInfo["sensor_name"],
-              sensorInfo["unit"] ?? '',
-            );
-            sensorsController.sensorStates[sensorInfo["sensor_id"]] = sensor;
-          }
-          break;
+    final infos = obj["d"];
+    if (infos is! Iterable) {
+      return;
+    }
+    for (final sensorInfo in infos) {
+      if (sensorInfo is Map) {
+        sensorsController.upsertSensorFromInfo(Map<String, dynamic>.from(sensorInfo));
       }
     }
-    sensorsController.sensorStates.refresh();
   }
 
   void parseSensorData(sensorId, obj) {
-    final sensor = sensorsController.sensorStates[sensorId];
-    if(sensor is DoubleSensorState) {
-      sensor.value = _sensorDoubleValue(obj["d"]);
-    } else if (sensor is StringSensorState) {
-      sensor.value = obj["d"]?.toString() ?? '';
-    }
-    sensorsController.sensorStates.refresh();
+    sensorsController.updateSensorValue(sensorId.toString(), obj["d"]);
   }
 
   void parseVersion(obj) {
@@ -1754,6 +1774,18 @@ class MqttConnection  {
               parseSensorsStatusJson(payload);
             }
             break;
+            case sensorSettingsJsonTopic: {
+              parseSensorSettings(payload);
+            }
+            break;
+            case sensorSettingsBsonTopic: {
+              parseSensorSettings(payload, bson: true);
+            }
+            break;
+            case sensorSettingsValidationJsonTopic: {
+              parseSensorSettingsValidation(payload);
+            }
+            break;
             case robotStateBsonTopic: {
               // Got the robot state
               final bytes = payload.payload.message?.toList(growable: false);
@@ -1825,6 +1857,9 @@ class MqttConnection  {
     client.subscribe(robotPoseJsonTopic, MqttQos.atMostOnce);
     client.subscribe(sensorsPoseJsonTopic, MqttQos.atMostOnce);
     client.subscribe(sensorsStatusJsonTopic, MqttQos.atMostOnce);
+    client.subscribe(sensorSettingsJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(sensorSettingsBsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(sensorSettingsValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe("sensors/+/bson", MqttQos.atMostOnce);
     client.subscribe("sensors/+/json", MqttQos.atMostOnce);
     client.subscribe("version", MqttQos.atLeastOnce);

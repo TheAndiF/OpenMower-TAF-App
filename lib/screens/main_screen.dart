@@ -9,6 +9,7 @@ import 'package:open_mower_app/controllers/settings_controller.dart';
 import 'package:open_mower_app/screens/dashboard.dart';
 import 'package:open_mower_app/screens/advanced_options.dart';
 import 'package:open_mower_app/screens/sensor_values.dart';
+import 'package:open_mower_app/screens/sensor_settings.dart';
 import 'package:open_mower_app/screens/timetable.dart';
 import 'package:open_mower_app/screens/mqtt_areas.dart';
 import 'package:open_mower_app/screens/status_transition_log.dart';
@@ -36,6 +37,7 @@ class MainScreen extends GetView<RobotStateController> {
       const MowerLogicSettingsScreen(),
       const Settings(),
       const AreaEditorScreen(),
+      const SensorSettingsScreen(),
     ];
   }
 
@@ -66,6 +68,7 @@ class MainScreen extends GetView<RobotStateController> {
     'Einstellungen Software',
     'Settings',
     'Flächeneditor',
+    'Sensor-Einstellungen',
   ];
 
   static final Uri _manualUri = Uri.parse('https://theandif.github.io/OpenMower-TAF-App/bedienungsanleitung/');
@@ -147,7 +150,7 @@ class MainScreen extends GetView<RobotStateController> {
         child: Obx(() {
           final selectedIndex = _index.value;
           final effectiveIndex =
-              selectedIndex == 1 && !settingsController.expertModeEnabled.value
+              !_isPageAvailable(selectedIndex)
                   ? 0
                   : selectedIndex;
 
@@ -319,6 +322,10 @@ class MainScreen extends GetView<RobotStateController> {
       return false;
     }
 
+    if (index == 10 && !settingsController.expertModeEnabled.value) {
+      return false;
+    }
+
     return true;
   }
 
@@ -461,6 +468,12 @@ class MainScreen extends GetView<RobotStateController> {
         title: 'Sensor Values',
         index: 2,
       ),
+      if (settingsController.expertModeEnabled.value)
+        _buildDrawerTile(
+          leading: n.Icon(Icons.sensors_outlined),
+          title: 'Sensor-Einstellungen',
+          index: 10,
+        ),
       _buildDrawerTile(
         leading: n.Icon(Icons.event_note),
         title: 'Timetable',

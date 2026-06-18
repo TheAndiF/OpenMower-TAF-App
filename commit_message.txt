@@ -1,0 +1,15 @@
+BS_Add sensor metadata settings page
+Date: 2026-06-18
+Summary:
+- Added an expert-mode-only Sensor-Einstellungen page for editing sensor metadata.
+- Reworked the sensor overview into grouped read-only live-value sections using sensors/settings metadata.
+- Added MQTT handling for sensors/settings/json, sensors/settings/bson, sensors/settings/set/renew/json, sensors/settings/set/persistent/json, and sensors/settings/validation/json.
+- Kept sensor live values read-only and separated from persistent sensor metadata.
+- Updated the navigation drawer so the sensor settings page is only visible in expert mode.
+Changed files:
+- lib/controllers/sensors_controller.dart
+- lib/io/mqtt_connection.dart
+- lib/models/sensor_state.dart
+- lib/screens/main_screen.dart
+- lib/screens/sensor_settings.dart
+- lib/screens/sensor_values.dart
