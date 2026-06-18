@@ -468,12 +468,6 @@ class MainScreen extends GetView<RobotStateController> {
         title: 'Sensor Values',
         index: 2,
       ),
-      if (settingsController.expertModeEnabled.value)
-        _buildDrawerTile(
-          leading: n.Icon(Icons.sensors_outlined),
-          title: 'Sensor-Einstellungen',
-          index: 10,
-        ),
       _buildDrawerTile(
         leading: n.Icon(Icons.event_note),
         title: 'Timetable',
@@ -503,6 +497,12 @@ class MainScreen extends GetView<RobotStateController> {
         title: 'Einstellungen Software',
         index: 7,
       ),
+      if (settingsController.expertModeEnabled.value)
+        _buildDrawerTile(
+          leading: n.Icon(Icons.sensors_outlined),
+          title: 'Sensor-Einstellungen',
+          index: 10,
+        ),
       _buildDrawerTile(
         leading: n.Icon(Icons.edit_location_alt_outlined),
         title: 'Flächeneditor',

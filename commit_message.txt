@@ -1,14 +1,15 @@
-BS_Make mobile sensor tiles four columns
+BS_Move sensor settings after software settings
 
 Date: 2026-06-18
 
 Summary:
-- Updated the grouped sensor grid to show four columns on narrow smartphone-sized layouts.
-- Changed the sensor tile grid to use square tiles so more sensor values fit vertically on small screens.
-- Reduced grid spacing slightly for better use of the available mobile width.
-- Kept wider tablet and desktop layouts adaptive.
-- Did not change MQTT handling, sensor metadata editing, expert mode behavior or persistence logic.
+- Moved the expert-only Sensor-Einstellungen drawer entry so it appears directly after Einstellungen Software when expert mode is enabled.
+- Kept the Sensor-Einstellungen page hidden when expert mode is disabled.
+- Left page indexes, target screen, MQTT handling, persistence and sensor live-value behavior unchanged.
+- Updated the project documentation to describe the new navigation order.
 
 Changed files:
-- lib/screens/sensor_values.dart
+- lib/screens/main_screen.dart
+- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.7.docx
+- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.7.pdf
 - commit_message.txt
