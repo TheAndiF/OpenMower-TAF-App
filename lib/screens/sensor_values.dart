@@ -24,8 +24,6 @@ class SensorValues extends GetView<SensorsController> {
             children: [
               _buildOverviewCard(context),
               const SizedBox(height: 12),
-              const LoadFactorStatusWidget(),
-              const SizedBox(height: 12),
               if (groups.isEmpty)
                 _buildEmptyCard(context)
               else
@@ -112,12 +110,15 @@ class SensorValues extends GetView<SensorsController> {
 
   Widget _buildGroupCard(BuildContext context, String group, {required bool expertModeEnabled}) {
     final sensors = controller.visibleSensorsForGroup(group, expertModeEnabled: expertModeEnabled);
-    if (sensors.isEmpty) return const SizedBox.shrink();
+    final includeLoadFactorTile = _shouldShowLoadFactorInGroup(group, expertModeEnabled: expertModeEnabled);
+    if (sensors.isEmpty && !includeLoadFactorTile) return const SizedBox.shrink();
     final theme = Theme.of(context);
     const sensorTextColor = Colors.black54;
+    final tileCount = sensors.length + (includeLoadFactorTile ? 1 : 0);
+
     return Card(
       margin: EdgeInsets.zero,
-      color: theme.cardColor,
+      color: const Color(0xFFF3F3F3),
       surfaceTintColor: Colors.transparent,
       elevation: 1,
       shape: RoundedRectangleBorder(
@@ -132,8 +133,8 @@ class SensorValues extends GetView<SensorsController> {
         collapsedIconColor: sensorTextColor,
         textColor: sensorTextColor,
         collapsedTextColor: sensorTextColor,
-        backgroundColor: theme.cardColor,
-        collapsedBackgroundColor: theme.cardColor,
+        backgroundColor: const Color(0xFFF3F3F3),
+        collapsedBackgroundColor: const Color(0xFFF3F3F3),
         leading: Icon(controller.groupIcon(group), color: sensorTextColor),
         title: Text(
           controller.groupLabel(group),
@@ -143,26 +144,33 @@ class SensorValues extends GetView<SensorsController> {
           ),
         ),
         subtitle: Text(
-          '${sensors.length} Sensoren',
+          '$tileCount Sensoren',
           style: theme.textTheme.bodySmall?.copyWith(color: sensorTextColor),
         ),
         children: [
           Container(
-            color: theme.cardColor,
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            color: const Color(0xFFF3F3F3),
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final columns = (constraints.maxWidth / 170).floor().clamp(1, 8);
+                final columns = (constraints.maxWidth / 182).floor().clamp(1, 8);
                 return GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: columns,
-                    crossAxisSpacing: 6,
-                    mainAxisSpacing: 6,
+                    crossAxisSpacing: 4,
+                    mainAxisSpacing: 4,
+                    childAspectRatio: 0.96,
                   ),
-                  itemCount: sensors.length,
-                  itemBuilder: (context, index) => SensorWidget(sensor: sensors[index].value),
+                  itemCount: tileCount,
+                  itemBuilder: (context, index) {
+                    if (includeLoadFactorTile && index == 0) {
+                      return const LoadFactorStatusWidget();
+                    }
+                    final sensorIndex = index - (includeLoadFactorTile ? 1 : 0);
+                    return SensorWidget(sensor: sensors[sensorIndex].value);
+                  },
                 );
               },
             ),
@@ -170,6 +178,25 @@ class SensorValues extends GetView<SensorsController> {
         ],
       ),
     );
+  }
+
+  bool _shouldShowLoadFactorInGroup(String group, {required bool expertModeEnabled}) {
+    final allSensors = controller.visibleSensorsForMode(expertModeEnabled: expertModeEnabled);
+    final hasDedicatedLoadFactor = allSensors.any(
+      (entry) => entry.key == 'mow_load_factor' || entry.key == 'om_mow_load_factor',
+    );
+    if (hasDedicatedLoadFactor || allSensors.isEmpty) {
+      return false;
+    }
+
+    final groups = controller.groupsForMode(expertModeEnabled: expertModeEnabled);
+    const preferredGroups = ['openmower', 'mowing_motor', 'general'];
+    for (final preferred in preferredGroups) {
+      if (groups.contains(preferred)) {
+        return group == preferred;
+      }
+    }
+    return groups.isNotEmpty && group == groups.first;
   }
 
   Widget _buildEmptyCard(BuildContext context) {

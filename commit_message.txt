@@ -1,14 +1,18 @@
-BS_Align sensor group colors with original cards
+BS_Adjust sensor tile tone and integrate load factor tile
+
 Date: 2026-06-18
 
 Summary:
-- Adjusted the grouped sensor overview to use neutral colors matching the original sensor card appearance.
-- Removed the stronger primary-color emphasis from sensor group titles, icons and expand indicators.
-- Kept the existing sensor card widgets, live-value handling, MQTT topics and expert-only sensor settings behavior unchanged.
-- Updated the project documentation to version v0.5.
+- Adjusted the grouped sensor page so the sensor tiles use a darker tone closer to the original tile appearance.
+- Reduced the visual size impact of the grouped sensor grid by tightening grid spacing and tile proportions.
+- Moved the mow load factor from the standalone status block into the grouped sensor grid as a regular tile-style card.
+- Kept the expert-only sensor settings subpage unchanged in behavior and continued using the software-settings-aligned edit flow.
+- Updated the documentation to describe the visual restoration and the new tile-style integration of the mow load factor.
 
 Changed files:
 - lib/screens/sensor_values.dart
-- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.5.docx
-- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.5.pdf
+- lib/views/load_factor_status_widget.dart
+- lib/views/sensor_widget.dart
+- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.6.docx
+- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.6.pdf
 - commit_message.txt

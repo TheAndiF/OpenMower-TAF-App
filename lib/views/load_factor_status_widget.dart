@@ -14,7 +14,9 @@ class LoadFactorStatusWidget extends StatelessWidget {
     final mowLoadFactorController = Get.find<MowLoadFactorSettingsController>();
 
     return Material(
-      elevation: 2,
+      color: const Color(0xFFEAEAEA),
+      elevation: 1,
+      surfaceTintColor: Colors.transparent,
       child: Obx(() {
         final robotState = robotStateController.robotState.value;
         final enabled = _enabledFromSettings(mowLoadFactorController.settings);

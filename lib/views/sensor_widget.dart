@@ -19,7 +19,9 @@ class SensorWidget extends StatelessWidget {
 
     if (sensor is StringSensorState) {
       return Material(
-        elevation: 2,
+        color: const Color(0xFFEAEAEA),
+        elevation: 1,
+        surfaceTintColor: Colors.transparent,
         child: n.Column([
           Expanded(
             child: Align(
@@ -54,7 +56,9 @@ class SensorWidget extends StatelessWidget {
 
     if (sensor is! DoubleSensorState) {
       return Material(
-        elevation: 2,
+        color: const Color(0xFFEAEAEA),
+        elevation: 1,
+        surfaceTintColor: Colors.transparent,
         child: n.Column([
           Expanded(
             child: Align(
@@ -85,7 +89,9 @@ class SensorWidget extends StatelessWidget {
     switch (sensor.unit.toUpperCase()) {
       case 'RPM':
         return Material(
-          elevation: 2,
+          color: const Color(0xFFEAEAEA),
+        elevation: 1,
+        surfaceTintColor: Colors.transparent,
           // RadialGauge Widget has issues with GaugeSegments when used in Column and most other widgets.
           // But ListView is working
           child: n.ListView.children([RpmGaugeWidget(sensor: sensor)])
@@ -96,7 +102,9 @@ class SensorWidget extends StatelessWidget {
       case 'V':
         // Vertical linear gauges
         return Material(
-          elevation: 2,
+          color: const Color(0xFFEAEAEA),
+        elevation: 1,
+        surfaceTintColor: Colors.transparent,
           child: n.Row([
             // 2 rows in 3/1 flex
             Expanded(
@@ -142,7 +150,9 @@ class SensorWidget extends StatelessWidget {
       default:
         // No, or horizontal gauge
         return Material(
-          elevation: 2,
+          color: const Color(0xFFEAEAEA),
+        elevation: 1,
+        surfaceTintColor: Colors.transparent,
           child: n.Column([
             // 3 columns, evenly distributed
             Expanded(
