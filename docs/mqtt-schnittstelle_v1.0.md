@@ -50,7 +50,9 @@ Die App verwendet unterschiedliche QoS-Stufen:
 | `sensors/status/json` | JSON | atMostOnce | Allgemeine Sensor-/Statusdaten. |
 | `sensors/+/json` | JSON | atMostOnce | Einzelne JSON-Sensorwerte. |
 | `sensors/+/bson` | BSON | atMostOnce | Einzelne BSON-Sensorwerte. |
-| `sensor_infos/bson` | BSON | atLeastOnce | Metadaten zu Sensoren. |
+| `sensors/settings/json` | JSON | atLeastOnce | Dynamische Sensor-Metadaten im settings_v2-Aufbau. |
+| `sensors/settings/bson` | BSON | atLeastOnce | Dynamische Sensor-Metadaten, BSON-kompatibel. |
+| `sensors/settings/validation/json` | JSON | atLeastOnce | Validierungsantwort für Sensor-Metadaten. |
 | `version` | BSON | atLeastOnce | Backend-/Softwareversion. |
 | `map/json` | JSON | atLeastOnce | Karte und Flächen. |
 | `map/bson` | BSON | atLeastOnce | Karte und Flächen, BSON-kompatibel. |
@@ -223,31 +225,33 @@ oder:
 { "value": 42.5 }
 ```
 
-### `sensor_infos/bson` und `sensors/+/bson`
+### `sensors/settings/json`, `sensors/settings/bson` und `sensors/+/data`
 
-`sensor_infos/bson` beschreibt dynamische Sensoren. Die App unterstützt hier aktuell `DOUBLE`-Sensoren.
+`sensors/settings/json` beschreibt dynamische Sensoren im settings_v2-nahen Aufbau. Die App nutzt diese Daten für die Sensor-Einstellungen und für die Gruppierung/Sortierung der Sensoransicht. Der eigentliche Livewert bleibt getrennt davon auf `sensors/<sensor_id>/data`.
 
 ```json
 {
-  "d": [
-    {
-      "sensor_id": "battery_voltage",
-      "sensor_name": "V Battery",
+  "namespace": "sensors",
+  "schema": "settings_v2",
+  "settings": {
+    "battery_voltage": {
+      "label": "Akkuspannung",
+      "description": "Batteriespannung des Mähers",
+      "group": "battery",
+      "order": 10,
+      "type": "number",
       "unit": "V",
-      "value_type": "DOUBLE",
-      "min_value": 0,
-      "max_value": 30,
-      "has_min_max": 1,
-      "lower_critical_value": 18,
-      "has_critical_low": 1,
-      "upper_critical_value": 29,
-      "has_critical_high": 1
+      "visible": true,
+      "expert": false,
+      "readonly": true,
+      "session_apply_supported": false,
+      "value_topic": "sensors/battery_voltage/data"
     }
-  ]
+  }
 }
 ```
 
-Der eigentliche Wert kommt anschließend auf `sensors/<sensor_id>/bson`, ebenfalls unter `d`.
+Die App kann Änderungen an Anzeige-Metadaten über `sensors/settings/set/persistent/json` senden. Das Backend bestätigt über `sensors/settings/validation/json`. Bearbeitet werden nur Metadaten wie `label`, `description`, `group`, `order`, `visible` und `expert`; Sensorwerte selbst bleiben readonly.
 
 ## Karte, Flächen und Editor
 

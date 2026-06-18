@@ -1,18 +1,15 @@
-BS_Adjust sensor tile tone and integrate load factor tile
-
+BS_Align sensor settings UI with software settings
 Date: 2026-06-18
-
 Summary:
-- Adjusted the grouped sensor page so the sensor tiles use a darker tone closer to the original tile appearance.
-- Reduced the visual size impact of the grouped sensor grid by tightening grid spacing and tile proportions.
-- Moved the mow load factor from the standalone status block into the grouped sensor grid as a regular tile-style card.
-- Kept the expert-only sensor settings subpage unchanged in behavior and continued using the software-settings-aligned edit flow.
-- Updated the documentation to describe the visual restoration and the new tile-style integration of the mow load factor.
-
+- Reworked the expert-only Sensor-Einstellungen page to match the visual structure and usage pattern of the existing Einstellungen Software page.
+- Added the same expert mode switch card, settings-style group expansion cards, two-column metadata cards, status badges, group actions and JSON view with copy/download support.
+- Kept sensor live values readonly and disabled session apply for sensor metadata while retaining persistent save via sensors/settings/set/persistent/json.
+- Removed the remaining legacy sensor_infos/bson subscription from the app-side MQTT connection.
+- Updated MQTT documentation to describe sensors/settings/json, sensors/settings/bson and sensors/settings/validation/json instead of sensor_infos/bson.
 Changed files:
-- lib/screens/sensor_values.dart
-- lib/views/load_factor_status_widget.dart
-- lib/views/sensor_widget.dart
-- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.6.docx
-- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.6.pdf
+- lib/screens/sensor_settings.dart
+- lib/io/mqtt_connection.dart
+- docs/mqtt-schnittstelle.md
+- docs/mqtt-schnittstelle_v1.0.md
+- README_Sensor_Settings_UI_Alignment.md
 - commit_message.txt

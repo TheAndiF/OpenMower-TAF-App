@@ -1821,16 +1821,6 @@ class MqttConnection  {
               parseRobotState(object);
             }
             break;
-            case "sensor_infos/bson": {
-              // Got the robot state
-              final bytes = payload.payload.message?.toList(growable: false);
-              if(bytes == null || bytes.isBlank == true) {
-                continue;
-              }
-              final object = BsonCodec.deserialize(BsonBinary.from(bytes));
-              parseSensorInfos(object);
-            }
-            break;
             default: {
               if(msg.topic != null) {
                 // It's probably some sensor data, get ID
@@ -1881,7 +1871,6 @@ class MqttConnection  {
     client.subscribe(mapOverlayBsonTopic, MqttQos.atMostOnce);
     client.subscribe(mapOverlayLegacyJsonTopic, MqttQos.atMostOnce);
     client.subscribe(mapOverlayLegacyBsonTopic, MqttQos.atMostOnce);
-    client.subscribe("sensor_infos/bson", MqttQos.atLeastOnce);
     client.subscribe(robotStateJsonTopic, MqttQos.atMostOnce);
     client.subscribe(robotStateBsonTopic, MqttQos.atMostOnce);
     client.subscribe(robotPoseJsonTopic, MqttQos.atMostOnce);
