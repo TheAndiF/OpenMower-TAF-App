@@ -1,11 +1,10 @@
-BS_Fix sensor live data subscription
+BS_Compact sensor overview header
 Date: 2026-06-18
 Summary:
-- Subscribe to sensors/<sensor_id>/data so the sensor page receives the current MQTT live-value structure.
-- Parse JSON, BSON, and plain-text payloads from sensor live-data topics.
-- Create sensor display states from sensors/settings/json metadata even before legacy sensor_infos data is received.
-- Keep sensor metadata editing separated from live values; live values remain read-only.
+- Reduced the sensor overview header to a compact single-row layout.
+- Kept the existing sensor tile appearance unchanged for the live-value view.
+- Moved the sensor counters into smaller inline metric chips with horizontal scrolling on narrow screens.
+- Kept sensor live values read-only and preserved the expert-only sensor settings workflow.
 Changed files:
-- lib/io/mqtt_connection.dart
-- lib/controllers/sensors_controller.dart
+- lib/screens/sensor_values.dart
 - commit_message.txt

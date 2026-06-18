@@ -46,65 +46,66 @@ class SensorValues extends GetView<SensorsController> {
   }
 
   Widget _buildOverviewCard(BuildContext context) {
-    final color = Theme.of(context).primaryColor;
+    final theme = Theme.of(context);
     return Card(
       margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final metricWidth = (constraints.maxWidth * 0.52).clamp(180.0, 520.0).toDouble();
+          final showDescription = constraints.maxWidth >= 760;
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
               children: [
                 _headerIcon(context, Icons.sensors_outlined, active: controller.sensorStates.isNotEmpty),
-                const SizedBox(width: 14),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
                       Text(
                         'Sensoren',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Livewerte bleiben reine Anzeige. Gruppierung, Reihenfolge und Sichtbarkeit kommen aus sensors/settings/json.',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor),
-                      ),
+                      if (showDescription) ...[
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            controller.hasSensorSettings
+                                ? 'Livewerte als Anzeige - Metadaten aus sensors/settings/json.'
+                                : 'Livewerte als Anzeige - Fallback-Gruppierung bis sensors/settings/json verfügbar ist.',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+                          ),
+                        ),
+                      ],
                     ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: metricWidth,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _overviewMetric(context, label: 'Sensoren', value: controller.sensorStates.length.toString(), icon: Icons.line_axis),
+                        const SizedBox(width: 6),
+                        _overviewMetric(context, label: 'Gruppen', value: controller.groupsForMode(expertModeEnabled: true).length.toString(), icon: Icons.folder_outlined),
+                        const SizedBox(width: 6),
+                        _overviewMetric(context, label: 'Ausgeblendet', value: controller.hiddenSensorCount.toString(), icon: Icons.visibility_off_outlined),
+                        const SizedBox(width: 6),
+                        _overviewMetric(context, label: 'Experten', value: controller.expertSensorCount.toString(), icon: Icons.admin_panel_settings_outlined),
+                      ],
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                _overviewMetric(context, label: 'Sensoren', value: controller.sensorStates.length.toString(), icon: Icons.line_axis),
-                _overviewMetric(context, label: 'Gruppen', value: controller.groupsForMode(expertModeEnabled: true).length.toString(), icon: Icons.folder_outlined),
-                _overviewMetric(context, label: 'Ausgeblendet', value: controller.hiddenSensorCount.toString(), icon: Icons.visibility_off_outlined),
-                _overviewMetric(context, label: 'Expertenwerte', value: controller.expertSensorCount.toString(), icon: Icons.admin_panel_settings_outlined),
-              ],
-            ),
-            if (!controller.hasSensorSettings) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.05),
-                  border: Border.all(color: color.withOpacity(0.18)),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  'Noch keine Sensor-Metadaten empfangen. Bis sensors/settings/json verfügbar ist, nutzt die App eine lokale Fallback-Gruppierung.',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-            ],
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -160,35 +161,38 @@ class SensorValues extends GetView<SensorsController> {
   Widget _headerIcon(BuildContext context, IconData icon, {required bool active}) {
     final color = active ? Theme.of(context).primaryColor : Theme.of(context).hintColor;
     return Container(
-      width: 44,
-      height: 44,
+      width: 34,
+      height: 34,
       decoration: BoxDecoration(
         color: color.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
       ),
-      child: Icon(icon, color: color),
+      child: Icon(icon, color: color, size: 20),
     );
   }
 
   Widget _overviewMetric(BuildContext context, {required String label, required String value, required IconData icon}) {
     return Container(
-      constraints: const BoxConstraints(minWidth: 150),
-      padding: const EdgeInsets.all(12),
+      width: 122,
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(7),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 20, color: Theme.of(context).primaryColor),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(value, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-              Text(label, style: Theme.of(context).textTheme.bodySmall),
-            ],
+          Icon(icon, size: 16, color: Theme.of(context).primaryColor),
+          const SizedBox(width: 7),
+          Text(value, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ),
         ],
       ),
