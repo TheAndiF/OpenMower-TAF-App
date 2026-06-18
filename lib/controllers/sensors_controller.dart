@@ -97,6 +97,7 @@ class SensorsController extends GetxController {
 
     for (final entry in sensorSettings.entries) {
       _seedDrafts(entry.key, entry.value, overwriteDirty: false);
+      _ensureSensorStateFromMetadata(entry.key, entry.value);
       sensorStates[entry.key]?.applyMetadata(entry.value);
     }
     _removeDraftsForMissingSensors();
@@ -165,12 +166,72 @@ class SensorsController extends GetxController {
     sensorStates.refresh();
   }
 
+  void _ensureSensorStateFromMetadata(String sensorId, Map<String, dynamic> metadata, {dynamic valueHint}) {
+    if (sensorStates.containsKey(sensorId)) {
+      sensorStates[sensorId]?.applyMetadata(metadata);
+      return;
+    }
+
+    final normalizedValue = _normalizeLiveValue(valueHint);
+    final type = _text(metadata['type'] ?? metadata['value_type']).toLowerCase();
+    final unit = _text(metadata['unit']);
+    final isNumeric = type == 'double' ||
+        type == 'float' ||
+        type == 'number' ||
+        type == 'int' ||
+        type == 'integer' ||
+        normalizedValue is num ||
+        (normalizedValue is String && double.tryParse(normalizedValue) != null && normalizedValue.trim().isNotEmpty);
+
+    final sensorName = _text(metadata['sensor_name'], fallback: sensorId);
+    if (isNumeric) {
+      sensorStates[sensorId] = DoubleSensorState(
+        sensorId,
+        sensorName,
+        unit,
+        _double(metadata['min_value']),
+        _double(metadata['max_value']),
+        _bool(metadata['has_min_max']),
+        _double(metadata['lower_critical_value']),
+        _bool(metadata['has_critical_low']),
+        _double(metadata['upper_critical_value']),
+        _bool(metadata['has_critical_high']),
+        label: _labelSeed(sensorId, metadata),
+        description: _descriptionSeed(metadata),
+        group: _groupSeed(metadata),
+        order: _int(metadata['order']) ?? _fallbackOrder(sensorId),
+        visible: _visibleSeed(metadata),
+        expert: _expertSeed(metadata),
+        valueTopic: _text(metadata['value_topic'], fallback: 'sensors/$sensorId/data'),
+      );
+    } else {
+      sensorStates[sensorId] = StringSensorState(
+        sensorId,
+        sensorName,
+        unit,
+        label: _labelSeed(sensorId, metadata),
+        description: _descriptionSeed(metadata),
+        group: _groupSeed(metadata),
+        order: _int(metadata['order']) ?? _fallbackOrder(sensorId),
+        visible: _visibleSeed(metadata),
+        expert: _expertSeed(metadata),
+        valueTopic: _text(metadata['value_topic'], fallback: 'sensors/$sensorId/data'),
+      );
+    }
+  }
+
+
   void updateSensorValue(String sensorId, dynamic value) {
+    if (sensorId.isEmpty) return;
+    final metadata = _metadataFor(sensorId);
+    _ensureSensorStateFromMetadata(sensorId, metadata, valueHint: value);
+
     final sensor = sensorStates[sensorId];
     if (sensor is DoubleSensorState) {
-      sensor.value = _double(value);
+      sensor.value = _double(_normalizeLiveValue(value));
     } else if (sensor is StringSensorState) {
-      sensor.value = value?.toString() ?? '';
+      final normalized = _normalizeLiveValue(value);
+      sensor.value = normalized?.toString() ?? '';
     }
     sensorStates.refresh();
   }
@@ -465,6 +526,15 @@ class SensorsController extends GetxController {
       dirtyKeys.remove(key);
     }
     editorRevision.value++;
+  }
+
+  dynamic _normalizeLiveValue(dynamic value) {
+    if (value is Map) {
+      if (value.containsKey('d')) return _normalizeLiveValue(value['d']);
+      if (value.containsKey('value')) return _normalizeLiveValue(value['value']);
+      if (value.containsKey('data')) return _normalizeLiveValue(value['data']);
+    }
+    return value;
   }
 
   Map<String, dynamic> _metadataFor(String sensorId, {Map<String, dynamic>? sensorInfo}) {

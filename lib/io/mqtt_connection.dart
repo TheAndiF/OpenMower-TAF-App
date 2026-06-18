@@ -58,8 +58,9 @@ class MqttConnection  {
   final LowLevelPowerSettingsController lowLevelPowerSettingsController = Get.find();
   final SatelliteLoggingController satelliteLoggingController = Get.find();
 
-  final RegExp exp = RegExp(r'sensors/(.*)/bson');
-  final RegExp expJson = RegExp(r'sensors/(.*)/json');
+  final RegExp exp = RegExp(r'^sensors/([^/]+)/bson$');
+  final RegExp expJson = RegExp(r'^sensors/([^/]+)/json$');
+  final RegExp expData = RegExp(r'^sensors/([^/]+)/data$');
 
   final client = mqttclient.get();
 
@@ -1599,7 +1600,31 @@ class MqttConnection  {
   }
 
   void parseSensorData(sensorId, obj) {
-    sensorsController.updateSensorValue(sensorId.toString(), obj["d"]);
+    final value = obj is Map ? (obj["d"] ?? obj["value"] ?? obj["data"] ?? obj[sensorId.toString()] ?? obj) : obj;
+    sensorsController.updateSensorValue(sensorId.toString(), value);
+  }
+
+  void parseSensorLiveData(String sensorId, MqttPublishMessage payload) {
+    final bytes = _payloadBytes(payload);
+    if (bytes == null || bytes.isEmpty) {
+      return;
+    }
+
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(utf8.decode(bytes));
+    } catch (_) {
+      try {
+        decoded = BsonCodec.deserialize(BsonBinary.from(bytes));
+      } catch (_) {
+        decoded = utf8.decode(bytes, allowMalformed: true).trim();
+      }
+    }
+
+    final value = decoded is Map
+        ? (decoded["d"] ?? decoded["value"] ?? decoded["data"] ?? decoded[sensorId] ?? decoded)
+        : decoded;
+    sensorsController.updateSensorValue(sensorId, value);
   }
 
   void parseVersion(obj) {
@@ -1809,21 +1834,26 @@ class MqttConnection  {
             default: {
               if(msg.topic != null) {
                 // It's probably some sensor data, get ID
-                final match = exp.firstMatch(msg.topic!);
-                if (match != null) {
-                  // Got sensor data bson
-                  final bytes = payload.payload.message?.toList(growable: false);
-                  if(bytes == null || bytes.isBlank == true) {
-                    continue;
-                  }
-                  final object = BsonCodec.deserialize(BsonBinary.from(bytes));
-                  parseSensorData(match[1], object);
+                final dataMatch = expData.firstMatch(msg.topic!);
+                if (dataMatch != null) {
+                  parseSensorLiveData(dataMatch[1]!, payload);
                 } else {
-                  final jsonMatch = expJson.firstMatch(msg.topic!);
-                  if (jsonMatch != null) {
-                    parseSensorJsonData(jsonMatch[1]!, payload);
+                  final match = exp.firstMatch(msg.topic!);
+                  if (match != null) {
+                    // Got sensor data bson
+                    final bytes = payload.payload.message?.toList(growable: false);
+                    if(bytes == null || bytes.isBlank == true) {
+                      continue;
+                    }
+                    final object = BsonCodec.deserialize(BsonBinary.from(bytes));
+                    parseSensorData(match[1], object);
                   } else {
-                    debugPrint("got unknown message on topic: ${msg.topic}");
+                    final jsonMatch = expJson.firstMatch(msg.topic!);
+                    if (jsonMatch != null) {
+                      parseSensorJsonData(jsonMatch[1]!, payload);
+                    } else {
+                      debugPrint("got unknown message on topic: ${msg.topic}");
+                    }
                   }
                 }
               }
@@ -1860,6 +1890,7 @@ class MqttConnection  {
     client.subscribe(sensorSettingsJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(sensorSettingsBsonTopic, MqttQos.atLeastOnce);
     client.subscribe(sensorSettingsValidationJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe("sensors/+/data", MqttQos.atMostOnce);
     client.subscribe("sensors/+/bson", MqttQos.atMostOnce);
     client.subscribe("sensors/+/json", MqttQos.atMostOnce);
     client.subscribe("version", MqttQos.atLeastOnce);

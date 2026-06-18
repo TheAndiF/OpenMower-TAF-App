@@ -1,15 +1,11 @@
-BS_Add sensor metadata settings page
+BS_Fix sensor live data subscription
 Date: 2026-06-18
 Summary:
-- Added an expert-mode-only Sensor-Einstellungen page for editing sensor metadata.
-- Reworked the sensor overview into grouped read-only live-value sections using sensors/settings metadata.
-- Added MQTT handling for sensors/settings/json, sensors/settings/bson, sensors/settings/set/renew/json, sensors/settings/set/persistent/json, and sensors/settings/validation/json.
-- Kept sensor live values read-only and separated from persistent sensor metadata.
-- Updated the navigation drawer so the sensor settings page is only visible in expert mode.
+- Subscribe to sensors/<sensor_id>/data so the sensor page receives the current MQTT live-value structure.
+- Parse JSON, BSON, and plain-text payloads from sensor live-data topics.
+- Create sensor display states from sensors/settings/json metadata even before legacy sensor_infos data is received.
+- Keep sensor metadata editing separated from live values; live values remain read-only.
 Changed files:
-- lib/controllers/sensors_controller.dart
 - lib/io/mqtt_connection.dart
-- lib/models/sensor_state.dart
-- lib/screens/main_screen.dart
-- lib/screens/sensor_settings.dart
-- lib/screens/sensor_values.dart
+- lib/controllers/sensors_controller.dart
+- commit_message.txt
