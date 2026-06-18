@@ -1,15 +1,14 @@
-BS_Align sensor settings UI with software settings
+BS_Make mobile sensor tiles four columns
+
 Date: 2026-06-18
+
 Summary:
-- Reworked the expert-only Sensor-Einstellungen page to match the visual structure and usage pattern of the existing Einstellungen Software page.
-- Added the same expert mode switch card, settings-style group expansion cards, two-column metadata cards, status badges, group actions and JSON view with copy/download support.
-- Kept sensor live values readonly and disabled session apply for sensor metadata while retaining persistent save via sensors/settings/set/persistent/json.
-- Removed the remaining legacy sensor_infos/bson subscription from the app-side MQTT connection.
-- Updated MQTT documentation to describe sensors/settings/json, sensors/settings/bson and sensors/settings/validation/json instead of sensor_infos/bson.
+- Updated the grouped sensor grid to show four columns on narrow smartphone-sized layouts.
+- Changed the sensor tile grid to use square tiles so more sensor values fit vertically on small screens.
+- Reduced grid spacing slightly for better use of the available mobile width.
+- Kept wider tablet and desktop layouts adaptive.
+- Did not change MQTT handling, sensor metadata editing, expert mode behavior or persistence logic.
+
 Changed files:
-- lib/screens/sensor_settings.dart
-- lib/io/mqtt_connection.dart
-- docs/mqtt-schnittstelle.md
-- docs/mqtt-schnittstelle_v1.0.md
-- README_Sensor_Settings_UI_Alignment.md
+- lib/screens/sensor_values.dart
 - commit_message.txt
