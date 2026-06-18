@@ -1,15 +1,20 @@
-BS_Move sensor settings after software settings
+BS_Restore dynamic sensor tile layout
 
 Date: 2026-06-18
 
 Summary:
-- Moved the expert-only Sensor-Einstellungen drawer entry so it appears directly after Einstellungen Software when expert mode is enabled.
-- Kept the Sensor-Einstellungen page hidden when expert mode is disabled.
-- Left page indexes, target screen, MQTT handling, persistence and sensor live-value behavior unchanged.
-- Updated the project documentation to describe the new navigation order.
+- Restored the sensor tile grid to dynamic sizing based on the available width.
+- Kept the original tile impression by using square Material tiles with elevation 2 and default Material coloring.
+- Small displays show fewer larger tiles, while larger screens automatically show more tiles per row.
+- Kept the mow load factor inside the grouped sensor tile layout.
+- Moved the expert-only sensor settings menu entry so it appears directly after the software settings entry when expert mode is enabled.
+- Updated the documentation for the dynamic tile behavior and menu order.
 
 Changed files:
+- lib/screens/sensor_values.dart
+- lib/views/sensor_widget.dart
+- lib/views/load_factor_status_widget.dart
 - lib/screens/main_screen.dart
-- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.7.docx
-- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.7.pdf
+- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.8.docx
+- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.8.pdf
 - commit_message.txt
