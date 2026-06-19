@@ -14,7 +14,7 @@ class SensorsController extends GetxController {
   final sensorStates = <String, SensorState>{}.obs;
   final settingsPayload = <String, dynamic>{}.obs;
   final sensorSettings = <String, Map<String, dynamic>>{}.obs;
-  final groupMetadata = <String, Map<String, dynamic>>{}.obs;
+  final groupSettings = <String, Map<String, dynamic>>{}.obs;
 
   final labelDraftValues = <String, String>{}.obs;
   final descriptionDraftValues = <String, String>{}.obs;
@@ -25,7 +25,7 @@ class SensorsController extends GetxController {
   final groupLabelDraftValues = <String, String>{}.obs;
   final groupOrderDraftValues = <String, int>{}.obs;
   final dirtyKeys = <String>{}.obs;
-  final dirtyGroupMetadataKeys = <String>{}.obs;
+  final dirtyGroupKeys = <String>{}.obs;
   final editorRevision = 0.obs;
 
   final lastRemarks = <String>[].obs;
@@ -40,7 +40,6 @@ class SensorsController extends GetxController {
   Timer? _statusResponseTimeout;
   Timer? _actionResponseTimeout;
   Set<String> _pendingKeys = <String>{};
-  Set<String> _pendingGroupKeys = <String>{};
   int _statusResponseWaitGeneration = 0;
   int _actionResponseWaitGeneration = 0;
 
@@ -49,15 +48,11 @@ class SensorsController extends GetxController {
   int get hiddenSensorCount => sensorSettings.entries.where((entry) => !_visibleSeed(entry.value)).length;
   int get expertSensorCount => sensorSettings.entries.where((entry) => _expertSeed(entry.value)).length;
   int get missingLiveValueCount => sensorSettings.keys.where((key) => !sensorStates.containsKey(key)).length;
-  int get dirtyCount => {...dirtyKeys, ...dirtyGroupMetadataKeys}.length;
+  int get dirtyCount => dirtyKeys.length + dirtyGroupKeys.length;
 
   String get rawSettingsJson {
     if (settingsPayload.isEmpty) return '{}';
-    final root = _deepCopy(settingsPayload);
-    if (groupMetadata.isNotEmpty) {
-      root['groups'] = _deepCopy(<String, dynamic>{...groupMetadata});
-    }
-    return const JsonEncoder.withIndent('  ').convert(root);
+    return const JsonEncoder.withIndent('  ').convert(settingsPayload);
   }
 
   void requestSensorSettings() {
@@ -77,21 +72,12 @@ class SensorsController extends GetxController {
   void setSettingsPayload(Map<String, dynamic> payload, {String topic = MqttConnection.sensorSettingsJsonTopic}) {
     final root = payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
     final rawSettings = root['settings'];
-    final rawGroups = root['groups'];
     if (rawSettings is! Map) {
       setError('Sensor-Metadaten enthalten kein gültiges settings-Objekt.', topic: topic);
       return;
     }
 
     final next = <String, Map<String, dynamic>>{};
-    final nextGroups = <String, Map<String, dynamic>>{};
-    if (rawGroups is Map) {
-      rawGroups.forEach((key, value) {
-        final groupKey = key.toString();
-        if (groupKey.isEmpty || value is! Map) return;
-        nextGroups[groupKey] = _normalizeGroupMetadata(groupKey, Map<String, dynamic>.from(value));
-      });
-    }
     rawSettings.forEach((key, value) {
       final sensorId = key.toString();
       if (sensorId.isEmpty || value is! Map) return;
@@ -106,27 +92,30 @@ class SensorsController extends GetxController {
       next[sensorId] = metadata;
     });
 
+    final nextGroups = _groupsFromRoot(root, next);
+    final normalizedRoot = _deepCopy(root);
+    normalizedRoot['groups'] = _deepCopyMap(nextGroups);
+
     settingsPayload
       ..clear()
-      ..addAll(_deepCopy(root));
+      ..addAll(normalizedRoot);
     sensorSettings
       ..clear()
       ..addAll(next);
-    for (final group in next.values.map((setting) => _groupSeed(setting)).toSet()) {
-      nextGroups.putIfAbsent(group, () => _normalizeGroupMetadata(group, const <String, dynamic>{}));
-    }
-    groupMetadata
+    groupSettings
       ..clear()
       ..addAll(nextGroups);
 
-    _seedGroupDrafts(overwriteDirty: false);
+    for (final entry in groupSettings.entries) {
+      _seedGroupDrafts(entry.key, entry.value, overwriteDirty: false);
+    }
     for (final entry in sensorSettings.entries) {
       _seedDrafts(entry.key, entry.value, overwriteDirty: false);
       _ensureSensorStateFromMetadata(entry.key, entry.value);
       sensorStates[entry.key]?.applyMetadata(entry.value);
     }
     _removeDraftsForMissingSensors();
-    _removeDraftsForMissingGroups();
+    _removeGroupDraftsForMissingGroups();
     sensorStates.refresh();
     editorRevision.value++;
 
@@ -188,6 +177,7 @@ class SensorsController extends GetxController {
         break;
     }
 
+    _ensureGroupMetadata(sensor.group);
     sensorStates[sensorId] = sensor;
     sensorStates.refresh();
   }
@@ -267,7 +257,7 @@ class SensorsController extends GetxController {
         .map((entry) => entry.value.group)
         .toSet()
         .toList();
-    groupNames.sort((a, b) => _groupOrder(a).compareTo(_groupOrder(b)));
+    groupNames.sort(_compareGroups);
     return groupNames;
   }
 
@@ -293,7 +283,10 @@ class SensorsController extends GetxController {
         .map((setting) => _groupSeed(setting))
         .toSet()
         .toList();
-    groupNames.sort((a, b) => _groupOrder(a).compareTo(_groupOrder(b)));
+    for (final group in groupNames) {
+      _ensureGroupMetadata(group);
+    }
+    groupNames.sort(_compareGroups);
     return groupNames;
   }
 
@@ -313,10 +306,36 @@ class SensorsController extends GetxController {
 
   int dirtyCountForGroup(String group, {required bool expertModeEnabled}) =>
       settingsForGroup(group, expertModeEnabled: expertModeEnabled).where((entry) => dirtyKeys.contains(entry.key)).length +
-      (dirtyGroupMetadataKeys.contains(group) ? 1 : 0);
+      (dirtyGroupKeys.contains(group) ? 1 : 0);
 
   String groupLabel(String group) {
-    return groupLabelDraftValues[group] ?? _groupLabelSeed(group);
+    final draft = groupLabelDraftValues[group];
+    if (draft != null && draft.trim().isNotEmpty) return draft.trim();
+    final configured = groupSettings[group]?['label']?.toString().trim();
+    if (configured != null && configured.isNotEmpty) return configured;
+    switch (group) {
+      case 'battery':
+        return 'Akku';
+      case 'charging':
+      case 'charge':
+        return 'Laden';
+      case 'mowing_motor':
+        return 'Mähmotor';
+      case 'drive':
+        return 'Antrieb';
+      case 'temperature':
+        return 'Temperatur';
+      case 'gps':
+        return 'GPS';
+      case 'host_system':
+        return 'Host-System';
+      case 'system':
+        return 'System';
+      case 'general':
+        return 'Allgemein';
+      default:
+        return group;
+    }
   }
 
   IconData groupIcon(String group) {
@@ -348,9 +367,9 @@ class SensorsController extends GetxController {
   int orderDraftInt(String key, Map<String, dynamic> setting) => orderDraftValues[key] ?? (_int(setting['order']) ?? _fallbackOrder(key));
   bool visibleDraftBool(String key, Map<String, dynamic> setting) => visibleDraftValues[key] ?? _visibleSeed(setting);
   bool expertDraftBool(String key, Map<String, dynamic> setting) => expertDraftValues[key] ?? _expertSeed(setting);
-  String groupLabelDraftText(String group) => groupLabelDraftValues[group] ?? _groupLabelSeed(group);
-  int groupOrderDraftInt(String group) => groupOrderDraftValues[group] ?? _groupOrderSeed(group);
-  bool groupMetadataDirty(String group) => dirtyGroupMetadataKeys.contains(group);
+
+  String groupLabelDraftText(String group) => groupLabelDraftValues[group] ?? _groupLabelSeed(group, groupSettings[group]);
+  int groupOrderDraftInt(String group) => groupOrderDraftValues[group] ?? _groupOrderSeed(group, groupSettings[group]);
 
   void updateDraftLabel(String key, Map<String, dynamic> setting, String value) {
     labelDraftValues[key] = value;
@@ -364,6 +383,14 @@ class SensorsController extends GetxController {
 
   void updateDraftGroup(String key, Map<String, dynamic> setting, String value) {
     groupDraftValues[key] = value;
+    final group = value.trim();
+    if (group.isNotEmpty) {
+      final existed = groupSettings.containsKey(group);
+      _ensureGroupMetadata(group);
+      if (!existed) {
+        dirtyGroupKeys.add(group);
+      }
+    }
     _updateDirtyState(key, setting);
   }
 
@@ -383,13 +410,15 @@ class SensorsController extends GetxController {
   }
 
   void updateGroupDraftLabel(String group, String value) {
+    _ensureGroupMetadata(group);
     groupLabelDraftValues[group] = value;
-    _updateGroupMetadataDirtyState(group);
+    _updateGroupDirtyState(group);
   }
 
   void updateGroupDraftOrder(String group, String value) {
+    _ensureGroupMetadata(group);
     groupOrderDraftValues[group] = int.tryParse(value.trim()) ?? groupOrderDraftInt(group);
-    _updateGroupMetadataDirtyState(group);
+    _updateGroupDirtyState(group);
   }
 
   void resetGroupDrafts(String group, {required bool expertModeEnabled}) {
@@ -397,8 +426,10 @@ class SensorsController extends GetxController {
       _seedDrafts(entry.key, entry.value, overwriteDirty: true);
       dirtyKeys.remove(entry.key);
     }
-    _seedGroupDraft(group, overwriteDirty: true);
-    dirtyGroupMetadataKeys.remove(group);
+    if (groupSettings.containsKey(group)) {
+      _seedGroupDrafts(group, groupSettings[group]!, overwriteDirty: true);
+      dirtyGroupKeys.remove(group);
+    }
     editorRevision.value++;
     setInfo('Entwürfe in „${groupLabel(group)}“ wurden zurückgesetzt.', topic: 'local/reset');
   }
@@ -415,8 +446,12 @@ class SensorsController extends GetxController {
     _armActionResponseTimeout(
       'Keine Backend-Bestätigung für das dauerhafte Speichern empfangen. Bitte Validation-Topic prüfen.',
     );
-    _pendingKeys = _pendingKeysFromPayload(payload);
-    _pendingGroupKeys = _pendingGroupKeysFromPayload(payload);
+    _pendingKeys = <String>{
+      ...settingsForGroup(group, expertModeEnabled: expertModeEnabled)
+          .where((entry) => dirtyKeys.contains(entry.key))
+          .map((entry) => entry.key),
+      ...dirtyGroupKeys.map((groupKey) => 'groups:$groupKey'),
+    };
     Get.find<MqttConnection>().publishSensorPersistentSettings(payload);
   }
 
@@ -434,6 +469,7 @@ class SensorsController extends GetxController {
         setError('Sensor „$key“ enthält ungültige Metadaten. Label und Gruppe dürfen nicht leer sein.', topic: 'local/validation');
         return null;
       }
+      _ensureGroupMetadata(groupValue);
 
       settingsPayload[key] = <String, dynamic>{
         'label': label,
@@ -445,33 +481,29 @@ class SensorsController extends GetxController {
       };
     }
 
-    final groupPayload = <String, dynamic>{};
-    if (dirtyGroupMetadataKeys.contains(group)) {
-      final label = groupLabelDraftText(group).trim();
-      if (label.isEmpty || label.length > 120 || _hasControlChars(label)) {
-        setError('Gruppe „$group“ enthält ungültige Metadaten. Der Anzeigename darf nicht leer sein.', topic: 'local/validation');
+    final groupsPayload = <String, dynamic>{};
+    for (final groupKey in dirtyGroupKeys) {
+      final groupLabel = groupLabelDraftText(groupKey).trim();
+      if (groupLabel.isEmpty || groupLabel.length > 120 || _hasControlChars(groupLabel)) {
+        setError('Gruppe „$groupKey“ enthält ungültige Metadaten. Label darf nicht leer sein.', topic: 'local/validation');
         return null;
       }
-      groupPayload[group] = <String, dynamic>{
-        'label': label,
-        'order': groupOrderDraftInt(group),
+      groupsPayload[groupKey] = <String, dynamic>{
+        'label': groupLabel,
+        'order': groupOrderDraftInt(groupKey),
       };
     }
 
-    if (settingsPayload.isEmpty && groupPayload.isEmpty) {
-      setInfo('In „${groupLabel(group)}“ gibt es keine geänderten Sensor-Metadaten.', topic: 'local/info');
+    if (settingsPayload.isEmpty && groupsPayload.isEmpty) {
+      setInfo('In „${groupLabel(group)}“ gibt es keine geänderten Sensor- oder Gruppen-Metadaten.', topic: 'local/info');
       return null;
-    }
-
-    if (groupPayload.isEmpty) {
-      return settingsPayload;
     }
 
     return <String, dynamic>{
       'namespace': 'sensors',
-      'schema': settingsPayload.isEmpty ? 'settings_v2' : (_text(this.settingsPayload['schema'], fallback: 'settings_v2')),
-      'settings': settingsPayload,
-      'groups': groupPayload,
+      'schema': 'settings_v2',
+      if (groupsPayload.isNotEmpty) 'groups': groupsPayload,
+      if (settingsPayload.isNotEmpty) 'settings': settingsPayload,
     };
   }
 
@@ -494,81 +526,14 @@ class SensorsController extends GetxController {
       setError('JSON-Datei gehört zu „$namespace“ und nicht zu „sensors“.', topic: 'local/upload');
       return false;
     }
-    final rawSettings = root['settings'];
-    if (rawSettings is! Map) {
+    if (root['settings'] is! Map) {
       setError('JSON-Datei enthält kein gültiges settings-Objekt.', topic: 'local/upload');
       return false;
     }
 
-    final next = <String, Map<String, dynamic>>{};
-    rawSettings.forEach((key, value) {
-      final sensorId = key.toString();
-      if (sensorId.isEmpty || value is! Map) return;
-      final metadata = Map<String, dynamic>.from(value);
-      metadata['sensor_id'] = metadata['sensor_id']?.toString() ?? sensorId;
-      metadata.putIfAbsent('group', () => _fallbackGroup(sensorId));
-      metadata.putIfAbsent('label', () => metadata['sensor_name']?.toString() ?? sensorId);
-      metadata.putIfAbsent('visible', () => !builtInHiddenSensorIds.contains(sensorId));
-      metadata.putIfAbsent('expert', () => false);
-      metadata.putIfAbsent('order', () => _fallbackOrder(sensorId));
-      metadata.putIfAbsent('value_topic', () => 'sensors/$sensorId/data');
-      next[sensorId] = metadata;
-    });
-    if (next.isEmpty) {
-      setError('JSON-Datei enthält keine gültigen Sensor-Metadaten.', topic: 'local/upload');
-      return false;
-    }
-
-    final nextGroups = <String, Map<String, dynamic>>{};
-    final rawGroups = root['groups'];
-    if (rawGroups is Map) {
-      rawGroups.forEach((key, value) {
-        final groupKey = key.toString();
-        if (groupKey.isEmpty || value is! Map) return;
-        nextGroups[groupKey] = _normalizeGroupMetadata(groupKey, Map<String, dynamic>.from(value));
-      });
-    }
-    for (final group in next.values.map((setting) => _groupSeed(setting)).toSet()) {
-      nextGroups.putIfAbsent(group, () => _normalizeGroupMetadata(group, const <String, dynamic>{}));
-    }
-
-    _clearStatusResponseTimeout();
-    _clearActionResponseTimeout();
-    statusRefreshInProgress.value = false;
-    actionInProgress.value = false;
-    _syncWaitingState();
-
-    settingsPayload
-      ..clear()
-      ..addAll(_deepCopy(root));
-    sensorSettings
-      ..clear()
-      ..addAll(next);
-    groupMetadata
-      ..clear()
-      ..addAll(nextGroups);
-
-    labelDraftValues.clear();
-    descriptionDraftValues.clear();
-    groupDraftValues.clear();
-    orderDraftValues.clear();
-    visibleDraftValues.clear();
-    expertDraftValues.clear();
-    groupLabelDraftValues.clear();
-    groupOrderDraftValues.clear();
-    dirtyKeys.clear();
-    dirtyGroupMetadataKeys.clear();
-
-    for (final entry in sensorSettings.entries) {
-      _seedDrafts(entry.key, entry.value, overwriteDirty: true);
-      dirtyKeys.add(entry.key);
-      _ensureSensorStateFromMetadata(entry.key, entry.value);
-      sensorStates[entry.key]?.applyMetadata(entry.value);
-    }
-    _seedGroupDrafts(overwriteDirty: true);
-    dirtyGroupMetadataKeys.addAll(groupMetadata.keys);
-    sensorStates.refresh();
-
+    setSettingsPayload(root, topic: 'local/upload');
+    dirtyKeys.addAll(sensorSettings.keys);
+    dirtyGroupKeys.addAll(groupSettings.keys);
     editorRevision.value++;
     lastRemarks.assignAll(const <String>[
       'Die Sicherung wurde lokal als Entwurf geladen.',
@@ -603,22 +568,22 @@ class SensorsController extends GetxController {
     if (accepted.isNotEmpty) {
       for (final key in accepted) {
         dirtyKeys.remove(key);
+        dirtyGroupKeys.remove(key);
+        if (key.startsWith('groups:')) {
+          dirtyGroupKeys.remove(key.substring('groups:'.length));
+        }
       }
     } else if (valid == true) {
       for (final key in _pendingKeys) {
-        dirtyKeys.remove(key);
-      }
-      for (final group in _pendingGroupKeys) {
-        dirtyGroupMetadataKeys.remove(group);
-        groupMetadata[group] = <String, dynamic>{
-          'label': groupLabelDraftText(group),
-          'order': groupOrderDraftInt(group),
-        };
+        if (key.startsWith('groups:')) {
+          dirtyGroupKeys.remove(key.substring('groups:'.length));
+        } else {
+          dirtyKeys.remove(key);
+        }
       }
     }
     if (valid == true || valid == false) {
       _pendingKeys = <String>{};
-      _pendingGroupKeys = <String>{};
     }
 
     if (valid == true) {
@@ -664,6 +629,32 @@ class SensorsController extends GetxController {
     }
   }
 
+  void _seedGroupDrafts(String group, Map<String, dynamic> setting, {required bool overwriteDirty}) {
+    if (overwriteDirty || !dirtyGroupKeys.contains(group)) {
+      groupLabelDraftValues[group] = _groupLabelSeed(group, setting);
+      groupOrderDraftValues[group] = _groupOrderSeed(group, setting);
+    }
+  }
+
+  void _ensureGroupMetadata(String group) {
+    final normalized = group.trim();
+    if (normalized.isEmpty || groupSettings.containsKey(normalized)) return;
+    final metadata = <String, dynamic>{
+      'label': _fallbackGroupLabel(normalized),
+      'order': _nextGroupOrder(),
+    };
+    groupSettings[normalized] = metadata;
+    _seedGroupDrafts(normalized, metadata, overwriteDirty: false);
+    final normalizedRoot = settingsPayload.isEmpty ? <String, dynamic>{'namespace': 'sensors', 'schema': 'settings_v2'} : Map<String, dynamic>.from(settingsPayload);
+    final rawGroups = normalizedRoot['groups'];
+    final groups = rawGroups is Map ? Map<String, dynamic>.from(rawGroups) : <String, dynamic>{};
+    groups[normalized] = metadata;
+    normalizedRoot['groups'] = groups;
+    settingsPayload
+      ..clear()
+      ..addAll(normalizedRoot);
+  }
+
   void _removeDraftsForMissingSensors() {
     labelDraftValues.removeWhere((key, value) => !sensorSettings.containsKey(key));
     descriptionDraftValues.removeWhere((key, value) => !sensorSettings.containsKey(key));
@@ -674,23 +665,10 @@ class SensorsController extends GetxController {
     dirtyKeys.removeWhere((key) => !sensorSettings.containsKey(key));
   }
 
-  void _seedGroupDrafts({required bool overwriteDirty}) {
-    for (final group in groupMetadata.keys) {
-      _seedGroupDraft(group, overwriteDirty: overwriteDirty);
-    }
-  }
-
-  void _seedGroupDraft(String group, {required bool overwriteDirty}) {
-    if (overwriteDirty || !dirtyGroupMetadataKeys.contains(group)) {
-      groupLabelDraftValues[group] = _groupLabelSeed(group);
-      groupOrderDraftValues[group] = _groupOrderSeed(group);
-    }
-  }
-
-  void _removeDraftsForMissingGroups() {
-    groupLabelDraftValues.removeWhere((key, value) => !groupMetadata.containsKey(key));
-    groupOrderDraftValues.removeWhere((key, value) => !groupMetadata.containsKey(key));
-    dirtyGroupMetadataKeys.removeWhere((key) => !groupMetadata.containsKey(key));
+  void _removeGroupDraftsForMissingGroups() {
+    groupLabelDraftValues.removeWhere((key, value) => !groupSettings.containsKey(key));
+    groupOrderDraftValues.removeWhere((key, value) => !groupSettings.containsKey(key));
+    dirtyGroupKeys.removeWhere((key) => !groupSettings.containsKey(key));
   }
 
   void _updateDirtyState(String key, Map<String, dynamic> setting) {
@@ -707,30 +685,17 @@ class SensorsController extends GetxController {
     }
   }
 
-  void _updateGroupMetadataDirtyState(String group) {
-    final dirty = groupLabelDraftText(group).trim() != _groupLabelSeed(group) ||
-        groupOrderDraftInt(group) != _groupOrderSeed(group);
+
+  void _updateGroupDirtyState(String group) {
+    final setting = groupSettings[group];
+    if (setting == null) return;
+    final dirty = groupLabelDraftText(group).trim() != _groupLabelSeed(group, setting) ||
+        groupOrderDraftInt(group) != _groupOrderSeed(group, setting);
     if (dirty) {
-      dirtyGroupMetadataKeys.add(group);
+      dirtyGroupKeys.add(group);
     } else {
-      dirtyGroupMetadataKeys.remove(group);
+      dirtyGroupKeys.remove(group);
     }
-  }
-
-  Set<String> _pendingKeysFromPayload(Map<String, dynamic> payload) {
-    final settings = payload['settings'];
-    if (settings is Map) {
-      return settings.keys.map((key) => key.toString()).toSet();
-    }
-    return payload.keys.map((key) => key.toString()).toSet();
-  }
-
-  Set<String> _pendingGroupKeysFromPayload(Map<String, dynamic> payload) {
-    final groups = payload['groups'];
-    if (groups is Map) {
-      return groups.keys.map((key) => key.toString()).toSet();
-    }
-    return <String>{};
   }
 
   dynamic _normalizeLiveValue(dynamic value) {
@@ -761,10 +726,42 @@ class SensorsController extends GetxController {
   }
 
   int _compareSensorEntries(MapEntry<String, SensorState> a, MapEntry<String, SensorState> b) {
-    final byGroup = _groupOrder(a.value.group).compareTo(_groupOrder(b.value.group));
+    final byGroup = _compareGroups(a.value.group, b.value.group);
     if (byGroup != 0) return byGroup;
     final byOrder = a.value.order.compareTo(b.value.order);
     return byOrder != 0 ? byOrder : a.key.compareTo(b.key);
+  }
+
+  int _compareGroups(String a, String b) {
+    final byOrder = groupOrderDraftInt(a).compareTo(groupOrderDraftInt(b));
+    return byOrder != 0 ? byOrder : groupLabel(a).compareTo(groupLabel(b));
+  }
+
+  Map<String, Map<String, dynamic>> _groupsFromRoot(Map<String, dynamic> root, Map<String, Map<String, dynamic>> settings) {
+    final groups = <String, Map<String, dynamic>>{};
+    final rawGroups = root['groups'];
+    if (rawGroups is Map) {
+      rawGroups.forEach((key, value) {
+        final group = key.toString().trim();
+        if (group.isEmpty) return;
+        final metadata = value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
+        metadata.putIfAbsent('label', () => _fallbackGroupLabel(group));
+        metadata.putIfAbsent('order', () => _groupOrder(group));
+        groups[group] = metadata;
+      });
+    }
+    for (final setting in settings.values) {
+      final group = _groupSeed(setting);
+      groups.putIfAbsent(group, () => <String, dynamic>{
+            'label': _fallbackGroupLabel(group),
+            'order': _groupOrder(group),
+          });
+    }
+    return groups;
+  }
+
+  Map<String, dynamic> _deepCopyMap(Map<String, Map<String, dynamic>> input) {
+    return jsonDecode(jsonEncode(input)) as Map<String, dynamic>;
   }
 
   String _fallbackGroup(String sensorId) {
@@ -801,125 +798,71 @@ class SensorsController extends GetxController {
     return index < 0 ? 999999 : (index + 1) * 10;
   }
 
-  int _groupOrder(String group) => groupOrderDraftValues[group] ?? _groupOrderSeed(group);
+  int _groupOrder(String group) {
+    switch (group) {
+      case 'battery':
+        return 100;
+      case 'charging':
+      case 'charge':
+        return 200;
+      case 'mowing_motor':
+        return 300;
+      case 'drive':
+        return 400;
+      case 'temperature':
+        return 500;
+      case 'gps':
+        return 600;
+      case 'host_system':
+      case 'system':
+        return 700;
+      case 'general':
+        return 900;
+      default:
+        return 999;
+    }
+  }
 
   String _labelSeed(String key, Map<String, dynamic> setting) => _text(setting['label'], fallback: _text(setting['sensor_name'], fallback: key));
   String _descriptionSeed(Map<String, dynamic> setting) => _text(setting['description']);
   String _groupSeed(Map<String, dynamic> setting) => _text(setting['group'], fallback: 'general');
-  String _groupLabelSeed(String group) {
-    final metaLabel = _text(groupMetadata[group]?['label']);
-    if (metaLabel.isNotEmpty) return metaLabel;
-    switch (group) {
-      case 'battery':
-        return 'Akku';
-      case 'charging':
-      case 'charge':
-        return 'Laden';
-      case 'mowing_motor':
-        return 'Mähmotor';
-      case 'drive':
-        return 'Antrieb';
-      case 'temperature':
-        return 'Temperatur';
-      case 'gps':
-        return 'GPS';
-      case 'host_system':
-        return 'Host-System';
-      case 'system':
-        return 'System';
-      case 'general':
-        return 'Allgemein';
-      default:
-        return group;
-    }
-  }
-
-  int _groupOrderSeed(String group) {
-    final metaOrder = _int(groupMetadata[group]?['order']);
-    if (metaOrder != null) return metaOrder;
-    switch (group) {
-      case 'battery':
-        return 100;
-      case 'charging':
-      case 'charge':
-        return 200;
-      case 'mowing_motor':
-        return 300;
-      case 'drive':
-        return 400;
-      case 'temperature':
-        return 500;
-      case 'gps':
-        return 600;
-      case 'host_system':
-      case 'system':
-        return 700;
-      case 'general':
-        return 900;
-      default:
-        return 999;
-    }
-  }
-
-  Map<String, dynamic> _normalizeGroupMetadata(String group, Map<String, dynamic> metadata) {
-    return <String, dynamic>{
-      'label': _text(metadata['label'], fallback: _groupLabelFallback(group)),
-      'order': _int(metadata['order']) ?? _groupOrderFallback(group),
-    };
-  }
-
-  String _groupLabelFallback(String group) {
-    switch (group) {
-      case 'battery':
-        return 'Akku';
-      case 'charging':
-      case 'charge':
-        return 'Laden';
-      case 'mowing_motor':
-        return 'Mähmotor';
-      case 'drive':
-        return 'Antrieb';
-      case 'temperature':
-        return 'Temperatur';
-      case 'gps':
-        return 'GPS';
-      case 'host_system':
-        return 'Host-System';
-      case 'system':
-        return 'System';
-      case 'general':
-        return 'Allgemein';
-      default:
-        return group;
-    }
-  }
-
-  int _groupOrderFallback(String group) {
-    switch (group) {
-      case 'battery':
-        return 100;
-      case 'charging':
-      case 'charge':
-        return 200;
-      case 'mowing_motor':
-        return 300;
-      case 'drive':
-        return 400;
-      case 'temperature':
-        return 500;
-      case 'gps':
-        return 600;
-      case 'host_system':
-      case 'system':
-        return 700;
-      case 'general':
-        return 900;
-      default:
-        return 999;
-    }
-  }
+  String _groupLabelSeed(String group, Map<String, dynamic>? setting) => _text(setting?['label'], fallback: _fallbackGroupLabel(group));
+  int _groupOrderSeed(String group, Map<String, dynamic>? setting) => _int(setting?['order']) ?? _groupOrder(group);
   bool _visibleSeed(Map<String, dynamic> setting) => _bool(setting['visible'], fallback: true);
   bool _expertSeed(Map<String, dynamic> setting) => _bool(setting['expert'], fallback: false);
+
+  String _fallbackGroupLabel(String group) {
+    switch (group) {
+      case 'battery':
+        return 'Akku';
+      case 'charging':
+      case 'charge':
+        return 'Laden';
+      case 'mowing_motor':
+        return 'Mähmotor';
+      case 'drive':
+        return 'Antrieb';
+      case 'temperature':
+        return 'Temperatur';
+      case 'gps':
+        return 'GPS';
+      case 'host_system':
+        return 'Host-System';
+      case 'system':
+        return 'System';
+      case 'general':
+        return 'Allgemein';
+      default:
+        return group;
+    }
+  }
+
+  int _nextGroupOrder() {
+    if (groupSettings.isEmpty) return 999;
+    final current = groupSettings.entries.map((entry) => _groupOrderSeed(entry.key, entry.value)).toList();
+    current.sort();
+    return current.last + 10;
+  }
 
   bool _hasControlChars(String value) => value.runes.any((rune) => rune < 32 && rune != 9 && rune != 10 && rune != 13);
 

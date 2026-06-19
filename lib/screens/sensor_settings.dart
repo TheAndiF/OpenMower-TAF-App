@@ -233,27 +233,18 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
           initiallyExpanded: group == 'general' || group == 'host_system' || group == 'system',
           backgroundColor: color.withOpacity(0.08),
           collapsedBackgroundColor: color.withOpacity(0.08),
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          leading: Icon(controller.groupIcon(group), color: color, size: 24),
+          leading: Icon(controller.groupIcon(group), color: color, size: 32),
           iconColor: color,
           collapsedIconColor: color,
-          title: Row(
+          title: Text(controller.groupLabel(group), style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
+          subtitle: Wrap(
+            spacing: 10,
+            runSpacing: 4,
             children: [
-              Flexible(
-                child: Text(
-                  controller.groupLabel(group),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(color: color, fontWeight: FontWeight.w600),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text('· ${groupEntries.length} Sensoren', style: Theme.of(context).textTheme.bodySmall),
-              if (dirty > 0) ...[
-                const SizedBox(width: 8),
-                Text('· $dirty Änderung(en)', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color)),
-              ],
+              Text('${groupEntries.length} Sensoren', style: Theme.of(context).textTheme.bodyMedium),
+              if (dirty > 0) Text('$dirty lokale Änderung(en)', style: Theme.of(context).textTheme.bodyMedium),
             ],
           ),
           children: [
@@ -264,7 +255,7 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 12),
-                  _buildGroupMetadataEditor(context, group),
+                  _buildGroupMetadataCard(context, group),
                   const SizedBox(height: 12),
                   for (var i = 0; i < groupEntries.length; i++) ...[
                     if (i > 0) const SizedBox(height: 12),
@@ -281,44 +272,12 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
     );
   }
 
-  Widget _buildGroupMetadataEditor(BuildContext context, String group) {
+  Widget _buildGroupMetadataCard(BuildContext context, String group) {
     final color = Theme.of(context).primaryColor;
-    final dirty = controller.groupMetadataDirty(group);
+    final dirty = controller.dirtyGroupKeys.contains(group);
     final revision = controller.editorRevision.value;
-
-    Widget labelField() => TextFormField(
-          key: ValueKey('sensor-group-label-$group-$revision'),
-          initialValue: controller.groupLabelDraftText(group),
-          textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(),
-            labelText: 'JSON-Feld „groups.label“',
-            helperText: 'Anzeigename der Gruppe',
-            prefixIcon: Icon(Icons.label_outline),
-          ),
-          onChanged: (value) => controller.updateGroupDraftLabel(group, value),
-        );
-
-    Widget orderField({double? width}) => SizedBox(
-          width: width,
-          child: TextFormField(
-            key: ValueKey('sensor-group-order-$group-$revision'),
-            initialValue: controller.groupOrderDraftInt(group).toString(),
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'-?\d*'))],
-            textInputAction: TextInputAction.done,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              labelText: 'JSON-Feld „groups.order“',
-              helperText: 'Sortierung der Gruppe',
-              prefixIcon: Icon(Icons.format_list_numbered),
-            ),
-            onChanged: (value) => controller.updateGroupDraftOrder(group, value),
-          ),
-        );
-
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: dirty ? color.withOpacity(0.05) : Theme.of(context).cardColor,
         border: Border.all(color: dirty ? color.withOpacity(0.45) : Theme.of(context).dividerColor),
@@ -326,38 +285,78 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isMobile = constraints.maxWidth < 720;
-          final title = Row(
+          final isMobile = constraints.maxWidth < 780;
+          final meta = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.view_list_outlined, color: color),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Gruppen-Metadaten',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      controller.groupLabelDraftText(group),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  if (dirty) _smallBadge(context, 'Gruppe geändert', Icons.edit_outlined, color),
+                ],
               ),
-              if (dirty) _smallBadge(context, 'Gruppe geändert', Icons.edit_outlined, color),
+              const SizedBox(height: 2),
+              Text('group key: $group', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor)),
+              const SizedBox(height: 4),
+              Text(
+                'JSON groups.$group.label/order · order: ${controller.groupOrderDraftInt(group)}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+              ),
+              const SizedBox(height: 10),
+              _smallBadge(context, 'Gruppenobjekt', Icons.account_tree_outlined, Theme.of(context).hintColor),
             ],
           );
-          return Column(
+
+          final editor = Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              title,
-              const SizedBox(height: 10),
-              if (isMobile)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [labelField(), const SizedBox(height: 8), orderField()],
-                )
-              else
-                Row(
-                  children: [
-                    Expanded(child: labelField()),
-                    const SizedBox(width: 12),
-                    orderField(width: 180),
-                  ],
+              TextFormField(
+                key: ValueKey('sensor-group-label-$group-$revision'),
+                initialValue: controller.groupLabelDraftText(group),
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'JSON-Feld „groups.label“',
+                  helperText: 'Anzeigename der Gruppe',
+                  prefixIcon: Icon(Icons.label_outline),
                 ),
+                onChanged: (value) => controller.updateGroupDraftLabel(group, value),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                key: ValueKey('sensor-group-order-$group-$revision'),
+                initialValue: controller.groupOrderDraftInt(group).toString(),
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'JSON-Feld „groups.order“',
+                  helperText: 'Kleinere Zahl zeigt die Gruppe weiter oben an',
+                  prefixIcon: Icon(Icons.format_list_numbered),
+                ),
+                onChanged: (value) => controller.updateGroupDraftOrder(group, value),
+              ),
+            ],
+          );
+
+          if (isMobile) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [meta, const SizedBox(height: 12), editor],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 3, child: meta),
+              const SizedBox(width: 20),
+              Expanded(flex: 2, child: editor),
             ],
           );
         },

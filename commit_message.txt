@@ -1,20 +1,19 @@
-BS_Add sensor settings upload and group ordering
+BS_Add compatible sensor group metadata object
 
 Date: 2026-06-18
 
 Summary:
-- Added an Upload action to the sensor settings JSON view, matching the software settings workflow.
-- Added sensor group metadata support with groups.<group>.label and groups.<group>.order.
-- Added a group metadata editor so group labels and group ordering can be changed from the expert sensor settings page.
-- Updated sensor and sensor-settings group headers to show the group name and sensor count in one compact line.
-- Kept sensor live values read-only and left MQTT live value handling unchanged.
-- Kept text field focus stable by avoiding editorRevision changes during normal typing.
-- Updated the project documentation to version v0.10.
+- Added optional sensors groups metadata support with label and order properties.
+- Kept existing sensor settings payloads compatible by deriving fallback group metadata from settings when groups is missing.
+- Added editable groups.label and groups.order fields to each sensor settings group.
+- Automatically creates local group metadata when a sensor is assigned to a new group.
+- Uses groups.order and groups.label for group sorting and display while preserving existing fallbacks.
+- Extended sensor settings JSON upload to import the compatible groups structure.
+- Updated project documentation for the new groups object.
 
 Changed files:
 - lib/controllers/sensors_controller.dart
 - lib/screens/sensor_settings.dart
-- lib/screens/sensor_values.dart
-- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.10.docx
-- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.10.pdf
+- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.11.docx
+- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.11.pdf
 - commit_message.txt
