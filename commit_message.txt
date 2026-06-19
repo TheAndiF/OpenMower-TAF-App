@@ -1,16 +1,20 @@
-BS_Fix sensor settings text input focus
+BS_Add sensor settings upload and group ordering
 
 Date: 2026-06-18
 
 Summary:
-- Aligned the sensor settings draft input behavior with the software settings pattern.
-- Stopped increasing editorRevision on every typed character in sensor metadata fields.
-- Prevented TextFormField keys from changing after each onChanged event, so focus and cursor position are preserved while typing.
-- Kept editorRevision updates for reload/reset flows where fields should intentionally be reinitialized.
-- Did not change MQTT handling, persistence topics, sensor live values, tile layout or expert-mode visibility.
+- Added an Upload action to the sensor settings JSON view, matching the software settings workflow.
+- Added sensor group metadata support with groups.<group>.label and groups.<group>.order.
+- Added a group metadata editor so group labels and group ordering can be changed from the expert sensor settings page.
+- Updated sensor and sensor-settings group headers to show the group name and sensor count in one compact line.
+- Kept sensor live values read-only and left MQTT live value handling unchanged.
+- Kept text field focus stable by avoiding editorRevision changes during normal typing.
+- Updated the project documentation to version v0.10.
 
 Changed files:
 - lib/controllers/sensors_controller.dart
-- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.9.docx
-- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.9.pdf
+- lib/screens/sensor_settings.dart
+- lib/screens/sensor_values.dart
+- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.10.docx
+- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.10.pdf
 - commit_message.txt

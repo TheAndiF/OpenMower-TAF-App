@@ -233,18 +233,27 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
           initiallyExpanded: group == 'general' || group == 'host_system' || group == 'system',
           backgroundColor: color.withOpacity(0.08),
           collapsedBackgroundColor: color.withOpacity(0.08),
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          leading: Icon(controller.groupIcon(group), color: color, size: 32),
+          leading: Icon(controller.groupIcon(group), color: color, size: 24),
           iconColor: color,
           collapsedIconColor: color,
-          title: Text(controller.groupLabel(group), style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
-          subtitle: Wrap(
-            spacing: 10,
-            runSpacing: 4,
+          title: Row(
             children: [
-              Text('${groupEntries.length} Sensoren', style: Theme.of(context).textTheme.bodyMedium),
-              if (dirty > 0) Text('$dirty lokale Änderung(en)', style: Theme.of(context).textTheme.bodyMedium),
+              Flexible(
+                child: Text(
+                  controller.groupLabel(group),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(color: color, fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text('· ${groupEntries.length} Sensoren', style: Theme.of(context).textTheme.bodySmall),
+              if (dirty > 0) ...[
+                const SizedBox(width: 8),
+                Text('· $dirty Änderung(en)', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color)),
+              ],
             ],
           ),
           children: [
@@ -254,6 +263,8 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const SizedBox(height: 12),
+                  _buildGroupMetadataEditor(context, group),
                   const SizedBox(height: 12),
                   for (var i = 0; i < groupEntries.length; i++) ...[
                     if (i > 0) const SizedBox(height: 12),
@@ -266,6 +277,90 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildGroupMetadataEditor(BuildContext context, String group) {
+    final color = Theme.of(context).primaryColor;
+    final dirty = controller.groupMetadataDirty(group);
+    final revision = controller.editorRevision.value;
+
+    Widget labelField() => TextFormField(
+          key: ValueKey('sensor-group-label-$group-$revision'),
+          initialValue: controller.groupLabelDraftText(group),
+          textInputAction: TextInputAction.next,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            labelText: 'JSON-Feld „groups.label“',
+            helperText: 'Anzeigename der Gruppe',
+            prefixIcon: Icon(Icons.label_outline),
+          ),
+          onChanged: (value) => controller.updateGroupDraftLabel(group, value),
+        );
+
+    Widget orderField({double? width}) => SizedBox(
+          width: width,
+          child: TextFormField(
+            key: ValueKey('sensor-group-order-$group-$revision'),
+            initialValue: controller.groupOrderDraftInt(group).toString(),
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'-?\d*'))],
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              labelText: 'JSON-Feld „groups.order“',
+              helperText: 'Sortierung der Gruppe',
+              prefixIcon: Icon(Icons.format_list_numbered),
+            ),
+            onChanged: (value) => controller.updateGroupDraftOrder(group, value),
+          ),
+        );
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: dirty ? color.withOpacity(0.05) : Theme.of(context).cardColor,
+        border: Border.all(color: dirty ? color.withOpacity(0.45) : Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isMobile = constraints.maxWidth < 720;
+          final title = Row(
+            children: [
+              Icon(Icons.view_list_outlined, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Gruppen-Metadaten',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              if (dirty) _smallBadge(context, 'Gruppe geändert', Icons.edit_outlined, color),
+            ],
+          );
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              title,
+              const SizedBox(height: 10),
+              if (isMobile)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [labelField(), const SizedBox(height: 8), orderField()],
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(child: labelField()),
+                    const SizedBox(width: 12),
+                    orderField(width: 180),
+                  ],
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -600,6 +695,11 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
         label: Text(isMobile ? 'Herunterladen' : 'Download'),
       ),
       OutlinedButton.icon(
+        onPressed: () => _uploadJsonFile(context),
+        icon: const Icon(Icons.upload_file),
+        label: const Text('Upload'),
+      ),
+      OutlinedButton.icon(
         onPressed: controller.hasSensorSettings ? () => _copyJsonToClipboard(context) : null,
         icon: const Icon(Icons.copy_outlined),
         label: const Text('Kopieren'),
@@ -690,6 +790,28 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
       return unit.isEmpty ? value : '$value $unit';
     }
     return '-';
+  }
+
+  Future<void> _uploadJsonFile(BuildContext context) async {
+    try {
+      final file = await pickTextFile(allowedExtensions: const <String>['json']);
+      if (file == null) {
+        return;
+      }
+      final imported = controller.importBackupJson(file.content, filename: file.name);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(imported
+              ? 'Sensor-Settings-JSON wurde lokal geladen. Bitte dauerhaft speichern, um es ans Backend zu übertragen.'
+              : controller.lastStatus.value),
+        ),
+      );
+    } catch (e) {
+      controller.setError('JSON-Datei konnte nicht geladen werden: $e', topic: 'local/upload');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(controller.lastStatus.value)));
+    }
   }
 
   void _copyJsonToClipboard(BuildContext context) {

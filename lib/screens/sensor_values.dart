@@ -127,7 +127,7 @@ class SensorValues extends GetView<SensorsController> {
       ),
       child: ExpansionTile(
         initiallyExpanded: true,
-        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
         childrenPadding: EdgeInsets.zero,
         iconColor: sensorTextColor,
         collapsedIconColor: sensorTextColor,
@@ -135,17 +135,26 @@ class SensorValues extends GetView<SensorsController> {
         collapsedTextColor: sensorTextColor,
         backgroundColor: const Color(0xFFF3F3F3),
         collapsedBackgroundColor: const Color(0xFFF3F3F3),
-        leading: Icon(controller.groupIcon(group), color: sensorTextColor),
-        title: Text(
-          controller.groupLabel(group),
-          style: theme.textTheme.titleSmall?.copyWith(
-            color: sensorTextColor,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        subtitle: Text(
-          '$tileCount Sensoren',
-          style: theme.textTheme.bodySmall?.copyWith(color: sensorTextColor),
+        leading: Icon(controller.groupIcon(group), color: sensorTextColor, size: 22),
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(
+                controller.groupLabel(group),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: sensorTextColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '· $tileCount Sensoren',
+              style: theme.textTheme.bodySmall?.copyWith(color: sensorTextColor),
+            ),
+          ],
         ),
         children: [
           Container(
