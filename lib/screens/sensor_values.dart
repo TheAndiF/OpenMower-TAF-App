@@ -160,26 +160,22 @@ class SensorValues extends GetView<SensorsController> {
           Container(
             color: theme.cardColor,
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final columns = (constraints.maxWidth / 170).floor().clamp(1, 8);
-                return GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columns,
-                    crossAxisSpacing: 6,
-                    mainAxisSpacing: 6,
-                  ),
-                  itemCount: tileCount,
-                  itemBuilder: (context, index) {
-                    if (includeLoadFactorTile && index == 0) {
-                      return const LoadFactorStatusWidget();
-                    }
-                    final sensorIndex = index - (includeLoadFactorTile ? 1 : 0);
-                    return SensorWidget(sensor: sensors[sensorIndex].value);
-                  },
-                );
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 180,
+                childAspectRatio: 1.0,
+                crossAxisSpacing: 6,
+                mainAxisSpacing: 6,
+              ),
+              itemCount: tileCount,
+              itemBuilder: (context, index) {
+                if (includeLoadFactorTile && index == 0) {
+                  return const LoadFactorStatusWidget();
+                }
+                final sensorIndex = index - (includeLoadFactorTile ? 1 : 0);
+                return SensorWidget(sensor: sensors[sensorIndex].value);
               },
             ),
           ),
