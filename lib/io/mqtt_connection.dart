@@ -655,8 +655,9 @@ class MqttConnection  {
     }
   }
 
+  String _requestId(String prefix) => "$prefix-${DateTime.now().millisecondsSinceEpoch}-$clientId";
 
-  void parseGpsState(MqttPublishMessage payload, {required int stateNumber, required String topic}) {
+  void parseGpsState(int stateNumber, MqttPublishMessage payload, {required String topic}) {
     try {
       final map = _decodeMap(payload);
       if (map == null) {
@@ -694,8 +695,6 @@ class MqttConnection  {
       gpsStateController.setError("GPS-State-Validierung konnte nicht gelesen werden: $e", topic: gpsStateValidationJsonTopic);
     }
   }
-
-  String _requestId(String prefix) => "$prefix-${DateTime.now().millisecondsSinceEpoch}-$clientId";
 
   void _publishJson(String topic, Map<String, dynamic> map, {MqttQos qos = MqttQos.atLeastOnce}) {
     final builder = MqttPayloadBuilder();
@@ -914,16 +913,6 @@ class MqttConnection  {
     }
   }
 
-  void publishMap(Map<String, dynamic> map) {
-    try {
-      _publishJson(mapSetJsonTopic, map, qos: MqttQos.exactlyOnce);
-    } catch(e) {
-      debugPrint("error publishing map to mqtt");
-      mqttAreasController.setError("Flächen konnten nicht gesendet werden.");
-    }
-  }
-
-
   void requestGpsState() {
     try {
       _publishJson(gpsStateRenewJsonTopic, <String, dynamic>{});
@@ -948,6 +937,15 @@ class MqttConnection  {
     } catch(e) {
       debugPrint("error publishing gps state persistent settings via mqtt");
       gpsStateController.setError("GPS-State-Werte konnten nicht dauerhaft gespeichert werden.", topic: gpsStateSetPersistentJsonTopic);
+    }
+  }
+
+  void publishMap(Map<String, dynamic> map) {
+    try {
+      _publishJson(mapSetJsonTopic, map, qos: MqttQos.exactlyOnce);
+    } catch(e) {
+      debugPrint("error publishing map to mqtt");
+      mqttAreasController.setError("Flächen konnten nicht gesendet werden.");
     }
   }
 
@@ -1840,28 +1838,20 @@ class MqttConnection  {
               parseMowerLogicSatelliteLoggingStatus(payload);
             }
             break;
-            case lowLevelPowerJsonTopic: {
-              parseLowLevelPowerSettings(payload);
-            }
-            break;
-            case lowLevelPowerValidationJsonTopic: {
-              parseLowLevelPowerSettingsValidation(payload);
-            }
-            break;
             case gpsState1Topic: {
-              parseGpsState(payload, stateNumber: 1, topic: gpsState1Topic);
+              parseGpsState(1, payload, topic: gpsState1Topic);
             }
             break;
             case gpsState2Topic: {
-              parseGpsState(payload, stateNumber: 2, topic: gpsState2Topic);
+              parseGpsState(2, payload, topic: gpsState2Topic);
             }
             break;
             case gpsState3Topic: {
-              parseGpsState(payload, stateNumber: 3, topic: gpsState3Topic);
+              parseGpsState(3, payload, topic: gpsState3Topic);
             }
             break;
             case gpsState4Topic: {
-              parseGpsState(payload, stateNumber: 4, topic: gpsState4Topic);
+              parseGpsState(4, payload, topic: gpsState4Topic);
             }
             break;
             case gpsStateSettingsJsonTopic: {
@@ -1870,6 +1860,14 @@ class MqttConnection  {
             break;
             case gpsStateValidationJsonTopic: {
               parseGpsStateValidation(payload);
+            }
+            break;
+            case lowLevelPowerJsonTopic: {
+              parseLowLevelPowerSettings(payload);
+            }
+            break;
+            case lowLevelPowerValidationJsonTopic: {
+              parseLowLevelPowerSettingsValidation(payload);
             }
             break;
             case mapOverlayJsonTopic:

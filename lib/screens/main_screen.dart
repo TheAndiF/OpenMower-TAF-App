@@ -508,7 +508,7 @@ class MainScreen extends GetView<RobotStateController> {
         ),
       if (settingsController.expertModeEnabled.value)
         _buildDrawerTile(
-          leading: n.Icon(Icons.gps_fixed),
+          leading: n.Icon(Icons.satellite_alt_outlined),
           title: 'GPS-State',
           index: 11,
         ),

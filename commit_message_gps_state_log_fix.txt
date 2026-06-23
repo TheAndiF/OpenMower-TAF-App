@@ -1,0 +1,18 @@
+BS_Add GPS state expert page and fix satellite table build error
+Date: 2026-06-23
+Summary:
+- Added a GPS-State expert page aligned with the existing light sensor-page UI.
+- Added a GPS-State controller for state1-state4 payloads, settings, validation, draft values and session/persistent commands.
+- Integrated gps_state MQTT topics, parsers, subscriptions and publish methods.
+- Added GPS-State to the drawer only when expert mode is enabled and kept it out of Android swipe navigation.
+- Addressed the build-log failure by using correctly closed DataCell(Text(...)) calls in the satellite tables.
+- Added PDF and DOCX documentation according to the project documentation rules.
+Changed files:
+- lib/controllers/gps_state_controller.dart
+- lib/screens/gps_state.dart
+- lib/io/mqtt_connection.dart
+- lib/main.dart
+- lib/screens/main_screen.dart
+- _Dokumentation/2026-06-23 - OpenMower-TAF-App - Änderungsdokumentation - GPS-State-Unterseite Log-Fix - v0.2.docx
+- _Dokumentation/2026-06-23 - OpenMower-TAF-App - Änderungsdokumentation - GPS-State-Unterseite Log-Fix - v0.2.pdf
+- commit_message_gps_state_log_fix.txt

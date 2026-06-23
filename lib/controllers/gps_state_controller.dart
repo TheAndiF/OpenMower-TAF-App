@@ -5,122 +5,72 @@ import 'package:get/get.dart';
 import 'package:open_mower_app/io/mqtt_connection.dart';
 
 class GpsStateController extends GetxController {
+  static const List<String> settingKeys = <String>[
+    'enabled',
+    'publish_rate_hz',
+    'publish_state1',
+    'publish_state2',
+    'publish_state3',
+    'publish_state4',
+    'weak_cn0_threshold',
+    'good_cn0_threshold',
+  ];
+
   final state1 = <String, dynamic>{}.obs;
   final state2 = <String, dynamic>{}.obs;
   final state3 = <String, dynamic>{}.obs;
   final state4 = <String, dynamic>{}.obs;
-  final settings = <String, dynamic>{}.obs;
+  final settingsPayload = <String, dynamic>{}.obs;
+  final validationPayload = <String, dynamic>{}.obs;
   final draftValues = <String, dynamic>{}.obs;
   final dirtyKeys = <String>{}.obs;
-  final validation = <String, dynamic>{}.obs;
+
   final lastStatus = ''.obs;
   final lastTopic = ''.obs;
+  final lastStatusOk = RxnBool();
   final lastUpdated = Rxn<DateTime>();
   final waitingForResponse = false.obs;
+  final editorRevision = 0.obs;
 
   Timer? _responseTimeout;
-  int _waitGeneration = 0;
+  int _responseWaitGeneration = 0;
 
-  bool get hasState1 => state1.isNotEmpty;
-  bool get hasState2 => state2.isNotEmpty;
-  bool get hasState3 => state3.isNotEmpty;
-  bool get hasState4 => state4.isNotEmpty;
-  bool get hasSettings => settings.isNotEmpty;
-
-  bool get available => _bool(_value(state1, 'available') ?? _value(state2, 'available'));
-  String get quality => _text(_value(state1, 'quality') ?? _value(state2, 'quality'));
-  int get visible => _int(_value(state1, 'visible') ?? _value(state2, 'visible'));
-  int get used => _int(_value(state1, 'used') ?? _value(state2, 'used'));
-  double get avgCn0 => _double(_value(state1, 'avg_cn0') ?? _value(state2, 'avg_cn0'));
-  double get minCn0 => _double(_value(state2, 'min_cn0'));
-  double get maxCn0 => _double(_value(state2, 'max_cn0'));
-  int get weakCount => _int(_value(state2, 'weak_count'));
-  int get goodCount => _int(_value(state2, 'good_count'));
-
-  List<Map<String, dynamic>> get usedSatellites => _satellitesFrom(state3);
-  List<Map<String, dynamic>> get allSatellites => _satellitesFrom(state4);
-  Map<String, dynamic> get systems => _map(_value(state2, 'systems'));
-
-  bool get publishState4Enabled => _bool(settingDraftValue('publish_state4', fallback: _value(settings, 'publish_state4')));
-
-  Duration? get dataAge {
-    final raw = _value(state1, 'updated_at') ?? _value(state2, 'updated_at');
-    final updated = _parseDate(raw);
-    if (updated == null) return null;
-    return DateTime.now().difference(updated);
-  }
-
-  bool get dataLooksStale {
-    final age = dataAge;
-    if (age == null) return false;
-    return age.inSeconds > 5;
-  }
+  bool get hasState => state1.isNotEmpty || state2.isNotEmpty || state3.isNotEmpty || state4.isNotEmpty;
+  bool get hasSettings => settingsPayload.isNotEmpty;
+  bool get state4Active => settingBool('publish_state4', fallback: state4.isNotEmpty);
 
   String get rawJson {
-    final payload = <String, dynamic>{
+    final data = <String, dynamic>{
       'state1': state1,
       'state2': state2,
       'state3': state3,
       'state4': state4,
-      'settings': settings,
-      'validation': validation,
+      'settings': settingsPayload,
+      'validation': validationPayload,
     };
-    return const JsonEncoder.withIndent('  ').convert(payload);
+    return const JsonEncoder.withIndent('  ').convert(data);
   }
 
-  dynamic settingDraftValue(String key, {dynamic fallback}) {
-    if (draftValues.containsKey(key)) {
-      return draftValues[key];
+  List<Map<String, dynamic>> satellitesForState(int stateNumber) {
+    final source = stateNumber == 4 ? state4 : state3;
+    final rawSatellites = source['satellites'];
+    if (rawSatellites is Iterable) {
+      return rawSatellites
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList(growable: false);
     }
-    return _settingValue(key, fallback: fallback);
+    return const <Map<String, dynamic>>[];
   }
 
-  void updateDraft(String key, dynamic value) {
-    draftValues[key] = value;
-    final current = _settingValue(key);
-    if (_normalized(value) == _normalized(current)) {
-      dirtyKeys.remove(key);
-    } else {
-      dirtyKeys.add(key);
-    }
-    draftValues.refresh();
-    dirtyKeys.refresh();
-  }
-
-  void resetDraft() {
-    draftValues.clear();
-    dirtyKeys.clear();
-  }
-
-  void requestRenew() {
+  void requestStatus() {
     waitingForResponse.value = true;
+    lastStatusOk.value = null;
     lastStatus.value = 'GPS-State wird neu angefordert ...';
     lastTopic.value = MqttConnection.gpsStateRenewJsonTopic;
     lastUpdated.value = DateTime.now();
     _armResponseTimeout('Keine GPS-State-Antwort empfangen. Bitte Topic gps_state/# prüfen.');
     Get.find<MqttConnection>().requestGpsState();
-  }
-
-  void publishSession() {
-    final payload = _dirtyPayload();
-    if (payload.isEmpty) return;
-    waitingForResponse.value = true;
-    lastStatus.value = 'GPS-State-Sessionwerte werden gesendet ...';
-    lastTopic.value = MqttConnection.gpsStateSetSessionJsonTopic;
-    lastUpdated.value = DateTime.now();
-    _armResponseTimeout('Keine GPS-State-Validierung empfangen. Bitte Status neu laden.');
-    Get.find<MqttConnection>().publishGpsStateSessionSettings(payload);
-  }
-
-  void publishPersistent() {
-    final payload = _dirtyPayload();
-    if (payload.isEmpty) return;
-    waitingForResponse.value = true;
-    lastStatus.value = 'GPS-State-Werte werden dauerhaft gespeichert ...';
-    lastTopic.value = MqttConnection.gpsStateSetPersistentJsonTopic;
-    lastUpdated.value = DateTime.now();
-    _armResponseTimeout('Keine GPS-State-Validierung empfangen. Bitte Status neu laden.');
-    Get.find<MqttConnection>().publishGpsStatePersistentSettings(payload);
   }
 
   void setStatePayload(int stateNumber, Map<String, dynamic> payload, {required String topic}) {
@@ -139,6 +89,7 @@ class GpsStateController extends GetxController {
         state4.assignAll(root);
         break;
     }
+    lastStatusOk.value = true;
     lastStatus.value = 'GPS-State $stateNumber empfangen.';
     lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
@@ -148,9 +99,12 @@ class GpsStateController extends GetxController {
 
   void setSettingsPayload(Map<String, dynamic> payload, {required String topic}) {
     final root = _root(payload);
-    settings.assignAll(root);
-    _refreshDraftFromSettings();
-    lastStatus.value = 'GPS-State-Einstellungen empfangen.';
+    settingsPayload.assignAll(_deepCopy(root));
+    draftValues.clear();
+    dirtyKeys.clear();
+    editorRevision.value++;
+    lastStatusOk.value = true;
+    lastStatus.value = 'GPS-State-Settings empfangen.';
     lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
     waitingForResponse.value = false;
@@ -159,131 +113,197 @@ class GpsStateController extends GetxController {
 
   void setValidation(Map<String, dynamic> payload, {required String topic}) {
     final root = _root(payload);
-    validation.assignAll(root);
+    validationPayload.assignAll(_deepCopy(root));
     final valid = _bool(root['valid'] ?? root['ok'] ?? root['success']);
-    lastStatus.value = valid ? 'GPS-State-Änderung akzeptiert.' : 'GPS-State-Änderung wurde abgelehnt.';
+    lastStatusOk.value = valid;
+    lastStatus.value = valid
+        ? 'GPS-State-Änderung wurde angenommen.'
+        : 'GPS-State-Änderung wurde abgelehnt.';
     lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
     waitingForResponse.value = false;
-    if (valid) {
-      dirtyKeys.clear();
-    }
     _clearResponseTimeout();
+    if (valid) {
+      draftValues.clear();
+      dirtyKeys.clear();
+      requestStatus();
+    }
   }
 
   void setError(String message, {String topic = 'local/error'}) {
     waitingForResponse.value = false;
+    lastStatusOk.value = false;
     lastStatus.value = message;
     lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
     _clearResponseTimeout();
   }
 
-  Map<String, dynamic> _dirtyPayload() {
-    final result = <String, dynamic>{};
+  void setDraftValue(String key, dynamic value) {
+    draftValues[key] = value;
+    dirtyKeys.add(key);
+  }
+
+  void applySession() {
+    _publishDraft(persistent: false);
+  }
+
+  void applyPersistent() {
+    _publishDraft(persistent: true);
+  }
+
+  void setState4Enabled(bool enabled) {
+    setDraftValue('publish_state4', enabled);
+    final payload = <String, dynamic>{
+      'publish_state4': <String, dynamic>{'value': enabled},
+    };
+    waitingForResponse.value = true;
+    lastStatusOk.value = null;
+    lastStatus.value = enabled
+        ? 'State4 wird temporär aktiviert ...'
+        : 'State4 wird temporär deaktiviert ...';
+    lastTopic.value = MqttConnection.gpsStateSetSessionJsonTopic;
+    lastUpdated.value = DateTime.now();
+    _armResponseTimeout('Keine Validierung für State4-Änderung empfangen.');
+    Get.find<MqttConnection>().publishGpsStateSessionSettings(payload);
+  }
+
+  void _publishDraft({required bool persistent}) {
+    if (dirtyKeys.isEmpty) {
+      requestStatus();
+      return;
+    }
+    final payload = <String, dynamic>{};
     for (final key in dirtyKeys) {
-      result[key] = <String, dynamic>{'value': draftValues[key]};
+      payload[key] = <String, dynamic>{'value': draftValues[key]};
     }
-    return result;
+    waitingForResponse.value = true;
+    lastStatusOk.value = null;
+    lastStatus.value = persistent
+        ? 'GPS-State-Settings werden dauerhaft gespeichert ...'
+        : 'GPS-State-Settings werden für die Session angewendet ...';
+    lastTopic.value = persistent
+        ? MqttConnection.gpsStateSetPersistentJsonTopic
+        : MqttConnection.gpsStateSetSessionJsonTopic;
+    lastUpdated.value = DateTime.now();
+    _armResponseTimeout('Keine GPS-State-Validierung empfangen.');
+    if (persistent) {
+      Get.find<MqttConnection>().publishGpsStatePersistentSettings(payload);
+    } else {
+      Get.find<MqttConnection>().publishGpsStateSessionSettings(payload);
+    }
   }
 
-  void _refreshDraftFromSettings() {
-    final next = <String, dynamic>{};
-    for (final key in gpsStateSettingKeys) {
-      final value = _settingValue(key);
-      if (value != null) next[key] = value;
+  bool settingBool(String key, {bool fallback = false}) => _bool(_settingValue(key), fallback: fallback);
+
+  double settingDouble(String key, {double fallback = 0.0}) => _double(_settingValue(key), fallback: fallback);
+
+  dynamic settingValue(String key) => draftValues.containsKey(key) ? draftValues[key] : _settingValue(key);
+
+  dynamic _settingValue(String key) {
+    if (draftValues.containsKey(key)) {
+      return draftValues[key];
     }
-    for (final entry in next.entries) {
-      if (!dirtyKeys.contains(entry.key)) {
-        draftValues[entry.key] = entry.value;
-      }
+    final direct = settingsPayload[key];
+    final fromSettings = settingsPayload['settings'];
+    dynamic item;
+    if (direct != null) {
+      item = direct;
+    } else if (fromSettings is Map) {
+      item = fromSettings[key];
     }
-    draftValues.refresh();
+    if (item is Map) {
+      if (item.containsKey('value')) return item['value'];
+      if (item.containsKey('session')) return item['session'];
+      if (item.containsKey('persistent')) return item['persistent'];
+      if (item.containsKey('default')) return item['default'];
+    }
+    return item;
   }
 
-  dynamic _settingValue(String key, {dynamic fallback}) {
-    final direct = settings[key];
-    if (direct is Map) {
-      if (direct.containsKey('value')) return direct['value'];
-      if (direct.containsKey('session')) return direct['session'];
-      if (direct.containsKey('persistent')) return direct['persistent'];
-      if (direct.containsKey('default')) return direct['default'];
+  String labelFor(String key) {
+    final item = _settingMeta(key);
+    final raw = item['label'] ?? item['name'] ?? item['title'];
+    if (raw != null && raw.toString().trim().isNotEmpty) {
+      return raw.toString();
     }
-    if (direct != null) return direct;
-
-    final values = settings['values'];
-    if (values is Map && values[key] != null) return values[key];
-
-    final items = settings['settings'];
-    if (items is Map) {
-      final entry = items[key];
-      if (entry is Map) {
-        if (entry.containsKey('value')) return entry['value'];
-        if (entry.containsKey('session')) return entry['session'];
-        if (entry.containsKey('persistent')) return entry['persistent'];
-        if (entry.containsKey('default')) return entry['default'];
-      }
-      if (entry != null) return entry;
+    switch (key) {
+      case 'enabled':
+        return 'GPS-State aktiviert';
+      case 'publish_rate_hz':
+        return 'Publish-Rate';
+      case 'publish_state1':
+        return 'State1 veröffentlichen';
+      case 'publish_state2':
+        return 'State2 veröffentlichen';
+      case 'publish_state3':
+        return 'State3 veröffentlichen';
+      case 'publish_state4':
+        return 'State4 veröffentlichen';
+      case 'weak_cn0_threshold':
+        return 'Schwellwert schwach';
+      case 'good_cn0_threshold':
+        return 'Schwellwert gut';
     }
-    if (items is List) {
-      for (final item in items) {
-        if (item is! Map) continue;
-        final itemKey = item['key'] ?? item['id'] ?? item['name'];
-        if (itemKey?.toString() != key) continue;
-        if (item.containsKey('value')) return item['value'];
-        if (item.containsKey('session')) return item['session'];
-        if (item.containsKey('persistent')) return item['persistent'];
-        if (item.containsKey('default')) return item['default'];
-      }
-    }
-    return fallback;
+    return key;
   }
 
-  Map<String, dynamic> _root(Map<String, dynamic> payload) {
-    final d = payload['d'];
-    if (d is Map) return Map<String, dynamic>.from(d);
-    return Map<String, dynamic>.from(payload);
+  String unitFor(String key) {
+    final item = _settingMeta(key);
+    final unit = item['unit'];
+    if (unit != null && unit.toString().trim().isNotEmpty) return unit.toString();
+    if (key == 'publish_rate_hz') return 'Hz';
+    if (key.endsWith('_cn0_threshold')) return 'dB-Hz';
+    return '';
   }
 
-  dynamic _value(Map<String, dynamic> map, String key) {
-    if (map.containsKey(key)) return map[key];
-    final d = map['d'];
-    if (d is Map && d.containsKey(key)) return d[key];
-    return null;
+  String descriptionFor(String key) {
+    final item = _settingMeta(key);
+    final raw = item['description'] ?? item['help'];
+    return raw?.toString() ?? '';
   }
 
-  List<Map<String, dynamic>> _satellitesFrom(Map<String, dynamic> map) {
-    final raw = _value(map, 'satellites');
-    if (raw is List) {
-      return raw.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList(growable: false);
+  Map<String, dynamic> _settingMeta(String key) {
+    final direct = settingsPayload[key];
+    final fromSettings = settingsPayload['settings'];
+    if (direct is Map) return Map<String, dynamic>.from(direct);
+    if (fromSettings is Map && fromSettings[key] is Map) {
+      return Map<String, dynamic>.from(fromSettings[key] as Map);
     }
-    return const <Map<String, dynamic>>[];
-  }
-
-  Map<String, dynamic> _map(dynamic value) {
-    if (value is Map) return Map<String, dynamic>.from(value);
     return const <String, dynamic>{};
   }
 
-  DateTime? _parseDate(dynamic raw) {
-    if (raw == null) return null;
-    if (raw is int) {
-      if (raw > 1000000000000) return DateTime.fromMillisecondsSinceEpoch(raw);
-      if (raw > 1000000000) return DateTime.fromMillisecondsSinceEpoch(raw * 1000);
+  Map<String, dynamic> _root(Map<String, dynamic> payload) {
+    if (payload['d'] is Map) {
+      return Map<String, dynamic>.from(payload['d'] as Map);
     }
-    if (raw is double) {
-      if (raw > 1000000000000) return DateTime.fromMillisecondsSinceEpoch(raw.round());
-      if (raw > 1000000000) return DateTime.fromMillisecondsSinceEpoch((raw * 1000).round());
-    }
-    return DateTime.tryParse(raw.toString());
+    return Map<String, dynamic>.from(payload);
+  }
+
+  Map<String, dynamic> _deepCopy(Map<String, dynamic> source) {
+    return jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
+  }
+
+  bool _bool(dynamic value, {bool fallback = false}) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final normalized = value?.toString().trim().toLowerCase() ?? '';
+    if (normalized.isEmpty || normalized == 'null') return fallback;
+    return normalized == 'true' || normalized == '1' || normalized == 'yes' || normalized == 'on';
+  }
+
+  double _double(dynamic value, {required double fallback}) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? fallback;
   }
 
   void _armResponseTimeout(String message) {
     _responseTimeout?.cancel();
-    final generation = ++_waitGeneration;
+    final generation = ++_responseWaitGeneration;
     _responseTimeout = Timer(const Duration(seconds: 8), () {
-      if (generation != _waitGeneration) return;
+      if (generation != _responseWaitGeneration) return;
       waitingForResponse.value = false;
+      lastStatusOk.value = null;
       lastStatus.value = message;
       lastUpdated.value = DateTime.now();
     });
@@ -292,42 +312,6 @@ class GpsStateController extends GetxController {
   void _clearResponseTimeout() {
     _responseTimeout?.cancel();
     _responseTimeout = null;
-    _waitGeneration++;
-  }
-
-  dynamic _normalized(dynamic value) {
-    if (value is num) return value.toDouble();
-    return value;
-  }
-
-  String _text(dynamic value) => value?.toString() ?? '';
-
-  int _int(dynamic value) {
-    if (value is int) return value;
-    if (value is num) return value.round();
-    return int.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
-  double _double(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0.0;
-  }
-
-  bool _bool(dynamic value) {
-    if (value is bool) return value;
-    if (value is num) return value != 0;
-    final normalized = value?.toString().trim().toLowerCase() ?? '';
-    return normalized == 'true' || normalized == '1' || normalized == 'yes' || normalized == 'on' || normalized == 'enabled';
+    _responseWaitGeneration++;
   }
 }
-
-const gpsStateSettingKeys = <String>[
-  'enabled',
-  'publish_rate_hz',
-  'publish_state1',
-  'publish_state2',
-  'publish_state3',
-  'publish_state4',
-  'weak_cn0_threshold',
-  'good_cn0_threshold',
-];
