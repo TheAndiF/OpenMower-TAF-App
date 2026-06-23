@@ -10,6 +10,7 @@ import 'package:open_mower_app/screens/dashboard.dart';
 import 'package:open_mower_app/screens/advanced_options.dart';
 import 'package:open_mower_app/screens/sensor_values.dart';
 import 'package:open_mower_app/screens/sensor_settings.dart';
+import 'package:open_mower_app/screens/gps_state.dart';
 import 'package:open_mower_app/screens/timetable.dart';
 import 'package:open_mower_app/screens/mqtt_areas.dart';
 import 'package:open_mower_app/screens/status_transition_log.dart';
@@ -38,6 +39,7 @@ class MainScreen extends GetView<RobotStateController> {
       const Settings(),
       const AreaEditorScreen(),
       const SensorSettingsScreen(),
+      const GpsStateScreen(),
     ];
   }
 
@@ -69,6 +71,7 @@ class MainScreen extends GetView<RobotStateController> {
     'Settings',
     'Flächeneditor',
     'Sensor-Einstellungen',
+    'GPS-State',
   ];
 
   static final Uri _manualUri = Uri.parse('https://theandif.github.io/OpenMower-TAF-App/bedienungsanleitung/');
@@ -322,7 +325,7 @@ class MainScreen extends GetView<RobotStateController> {
       return false;
     }
 
-    if (index == 10 && !settingsController.expertModeEnabled.value) {
+    if ((index == 10 || index == 11) && !settingsController.expertModeEnabled.value) {
       return false;
     }
 
@@ -502,6 +505,12 @@ class MainScreen extends GetView<RobotStateController> {
           leading: n.Icon(Icons.sensors_outlined),
           title: 'Sensor-Einstellungen',
           index: 10,
+        ),
+      if (settingsController.expertModeEnabled.value)
+        _buildDrawerTile(
+          leading: n.Icon(Icons.gps_fixed),
+          title: 'GPS-State',
+          index: 11,
         ),
       _buildDrawerTile(
         leading: n.Icon(Icons.edit_location_alt_outlined),

@@ -16,6 +16,7 @@ import 'package:open_mower_app/controllers/mower_logic_settings_controller.dart'
 import 'package:open_mower_app/controllers/mow_load_factor_settings_controller.dart';
 import 'package:open_mower_app/controllers/low_level_power_settings_controller.dart';
 import 'package:open_mower_app/controllers/satellite_logging_controller.dart';
+import 'package:open_mower_app/controllers/gps_state_controller.dart';
 import 'package:open_mower_app/io/mqtt_connection.dart';
 import 'package:open_mower_app/screens/main_screen.dart';
 
@@ -53,6 +54,7 @@ void main() async {
   Get.put(MowLoadFactorSettingsController());
   Get.put(LowLevelPowerSettingsController());
   Get.put(SatelliteLoggingController());
+  Get.put(GpsStateController());
 
   initServices();
   final MqttConnection mqttConnection = Get.find();

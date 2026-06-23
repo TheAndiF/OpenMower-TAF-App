@@ -1,19 +1,14 @@
-BS_Add compatible sensor group metadata object
-
-Date: 2026-06-18
-
+BS_Add GPS state expert page
+Date: 2026-06-23
 Summary:
-- Added optional sensors groups metadata support with label and order properties.
-- Kept existing sensor settings payloads compatible by deriving fallback group metadata from settings when groups is missing.
-- Added editable groups.label and groups.order fields to each sensor settings group.
-- Automatically creates local group metadata when a sensor is assigned to a new group.
-- Uses groups.order and groups.label for group sorting and display while preserving existing fallbacks.
-- Extended sensor settings JSON upload to import the compatible groups structure.
-- Updated project documentation for the new groups object.
-
+- Added a new expert-mode GPS-State page that follows the existing light sensor-page layout.
+- Displays gps_state/state1 through gps_state/state4 as one consolidated diagnostic subpage instead of separate state pages.
+- Added MQTT subscriptions, parsers and publish helpers for GPS-State states, settings, renew and validation topics.
+- Added session and persistent setting actions for GPS-State configuration, including temporary State4 activation.
+- Kept the Android swipe navigation limited to the existing main pages; GPS-State is available through the drawer only in expert mode.
 Changed files:
-- lib/controllers/sensors_controller.dart
-- lib/screens/sensor_settings.dart
-- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.11.docx
-- _Dokumentation/2026-06-18 - OpenMower-TAF-App - Dokumentation - Sensorseite und Sensor-Einstellungen - v0.11.pdf
-- commit_message.txt
+- lib/controllers/gps_state_controller.dart
+- lib/screens/gps_state.dart
+- lib/io/mqtt_connection.dart
+- lib/main.dart
+- lib/screens/main_screen.dart
