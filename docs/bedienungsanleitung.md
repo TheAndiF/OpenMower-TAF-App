@@ -14,7 +14,7 @@ Diese Anleitung bezieht sich auf folgenden Stand:
 
 - **App:** OpenMower-TAF-App `1.0.0+1`
 - **ROS:** OpenMower mit **ROS Noetic / ROS 1**
-- **Dokustand:** 08.06.2026
+- **Dokustand:** 24.06.2026
 
 Wenn App- oder ROS-Stand abweichen, können Bezeichnungen, Funktionen oder Positionen einzelner Bedienelemente leicht unterschiedlich sein.
 
@@ -120,6 +120,30 @@ Diese Seite dient der Diagnose. Sie zeigt zentrale Sensordaten des Mähers in ei
 - Die Seite ist eine Anzeige- und Diagnoseansicht; Werte werden hier normalerweise nicht geändert.
 
 ---
+
+
+## GPS-State
+
+**Wofür ist diese Seite gedacht?**
+
+Die GPS-State-Unterseite ist eine Diagnose- und Bedieneranzeige für GPS-Empfang, Satellitenqualität und Fahrfreigabe. Sie zeigt nicht nur, ob Satellitendaten vorhanden sind, sondern mit dem neuen State1-Bereich auch, ob die vom Backend ausgewertete GPS-/Pose-Lage aktuell zum Fahren ausreicht.
+
+**Wichtige Bedienelemente und Anzeigen**
+- `Status neu laden` fordert `gps_state/#` und die zugehörigen Einstellungen erneut vom Backend an.
+- `Übersicht (State1)` zeigt oben die Fahrfreigabe-Karte. Grün bedeutet, dass `gps_drive_ready=true` gemeldet wurde. Bei blockierter Fahrfreigabe werden Bedienertext, Grund und optional ein technischer Blockiergrund angezeigt.
+- In der State1-Karte werden zusätzlich `RTK`, Positionsgenauigkeit, Grenzwert, gültige Orientierung, aktuelle Pose, GPS-Timeout und Pose-Alter kompakt angezeigt.
+- `Signalqualität (State2)` zeigt weiterhin C/N0-Minimum, C/N0-Maximum, schwache/gute Satelliten und die Systemverteilung.
+- Wenn das Backend `drive_diagnostics` liefert, blendet State2 eine technische Fahrfreigabe-Diagnose mit Entscheidungsquelle, RTK-Quelle, Low-Level-GPS-Werten, Pose-Alter, Timeout und Grace-Zeit ein.
+- `Verwendete Satelliten (State3)` listet die vom Backend verwendeten Satelliten.
+- `Alle Satelliten (State4)` kann temporär aktiviert werden. Diese vollständige Liste erzeugt mehr MQTT-Daten und ist daher vor allem für Diagnose gedacht.
+- `Raw JSON / Debug` zeigt die zuletzt empfangenen GPS-State-Payloads gesammelt und kann zur Fehlersuche kopiert werden.
+
+**Typische Bedienung**
+- Vor einer Fehlersuche zuerst `Status neu laden` drücken und prüfen, ob State1 eine aktuelle Fahrfreigabe-Aussage anzeigt.
+- Bei `GPS reicht nicht zum Fahren aus` zuerst `gps_drive_reason` und `gps_drive_block_reason` lesen.
+- Danach in State2 prüfen, ob RTK Fixed fehlt, die Pose zu alt ist, die Genauigkeit oberhalb des Grenzwerts liegt oder ein GPS-Timeout angezeigt wird.
+- State4 nur vorübergehend einschalten, wenn eine vollständige Satellitenliste wirklich benötigt wird.
+
 
 ## Timetable
 

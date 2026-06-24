@@ -1,0 +1,24 @@
+BS_GPS-State Fahrfreigabe in App-Anzeige ergänzen
+
+Datum: 2026-06-24
+
+Zusammenfassung:
+- GPS-State-Unterseite um eine neue State1-Fahrfreigabe-Karte erweitert.
+- Neue Backend-Felder gps_drive_ready, gps_drive_state, gps_drive_label, gps_drive_reason, gps_drive_block_reason, rtk_state, position_accuracy_m, max_position_accuracy_m, orientation_valid, recent_absolute_pose, gps_timeout und age_ms in der Anzeige sichtbar gemacht.
+- State2 um eine optionale technische Diagnosegruppe für drive_diagnostics ergänzt.
+- Anzeige bleibt abwärtskompatibel, wenn ein Backend die neuen Felder noch nicht liefert.
+- Bedienungsanleitung und MQTT-Schnittstellendokumentation um GPS-State-Fahrfreigabe, State1-/State2-Payloads und Testhinweise erweitert.
+- Versionierte Änderungsdokumentation als PDF und DOCX ergänzt.
+
+Geänderte / neue Dateien:
+- lib/screens/gps_state.dart
+- docs/bedienungsanleitung.md
+- docs/mqtt-schnittstelle.md
+- _Dokumentation/2026-06-24 - OpenMower-TAF-App - Änderungsdokumentation - GPS-State Fahrfreigabe Anzeige - v0.3.docx
+- _Dokumentation/2026-06-24 - OpenMower-TAF-App - Änderungsdokumentation - GPS-State Fahrfreigabe Anzeige - v0.3.pdf
+- commit_message_gps_state_drive_ready_app.txt
+
+Prüfung:
+- lib/screens/gps_state.dart strukturell geprüft; runde, eckige und geschweifte Klammern sind ausgeglichen.
+- DOCX gerendert, PDF erzeugt und alle gerenderten Seiten als PNG visuell geprüft.
+- Flutter/Dart-Build konnte in dieser Umgebung nicht ausgeführt werden, da Flutter/Dart nicht installiert ist.

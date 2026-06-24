@@ -100,7 +100,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Live-Daten der GPS-Satelliten und Empfangsqualität aus gps_state/#.',
+                        'Live-Daten der GPS-Satelliten, Empfangsqualität und Fahrfreigabe aus gps_state/#.',
                         style: theme.textTheme.bodyMedium?.copyWith(color: theme.hintColor),
                       ),
                       if (controller.lastStatus.value.isNotEmpty) ...[
@@ -149,11 +149,13 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       icon: Icons.gps_fixed_outlined,
       title: 'Übersicht (State1)',
       subtitle: state.isEmpty ? 'Noch keine Daten empfangen' : null,
-      active: _bool(state['available']),
+      active: _bool(state['gps_drive_ready'] ?? state['available']),
       initiallyExpanded: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _buildDriveReadinessCard(context, state),
+          const SizedBox(height: 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -206,6 +208,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
             )
           else
             Text('Keine Systemverteilung empfangen.', style: Theme.of(context).textTheme.bodySmall),
+          _buildDriveDiagnosticsSection(context, state),
           const SizedBox(height: 10),
           Text(
             'Schwellen: schwach < ${controller.settingDouble('weak_cn0_threshold', fallback: 20).toStringAsFixed(1)} dB-Hz, gut ≥ ${controller.settingDouble('good_cn0_threshold', fallback: 30).toStringAsFixed(1)} dB-Hz',
@@ -213,6 +216,115 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDriveReadinessCard(BuildContext context, Map<String, dynamic> state) {
+    final theme = Theme.of(context);
+    final hasDriveFields = state.containsKey('gps_drive_ready') ||
+        state.containsKey('gps_drive_state') ||
+        state.containsKey('gps_drive_label') ||
+        state.containsKey('gps_drive_reason');
+    final ready = _boolNullable(state['gps_drive_ready']);
+    final effectiveReady = ready ?? false;
+    final label = _text(
+      state['gps_drive_label'],
+      fallback: hasDriveFields
+          ? (effectiveReady ? 'GPS reicht zum Fahren aus' : 'GPS reicht nicht zum Fahren aus')
+          : 'Fahrfreigabe noch nicht vom Backend geliefert',
+    );
+    final reason = _text(
+      state['gps_drive_reason'],
+      fallback: hasDriveFields
+          ? 'Kein Detailgrund angegeben.'
+          : 'Erwartet werden die additiven State1-Felder gps_drive_ready, gps_drive_label und gps_drive_reason.',
+    );
+    final blockReason = _text(state['gps_drive_block_reason']);
+    final color = hasDriveFields
+        ? (effectiveReady ? Colors.green.shade700 : Colors.orange.shade700)
+        : theme.hintColor;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withOpacity(0.30)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(effectiveReady ? Icons.check_circle_outline : Icons.block_outlined, color: color),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: color)),
+                    const SizedBox(height: 3),
+                    Text(reason, style: theme.textTheme.bodyMedium),
+                    if (blockReason.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text('Blockiergrund: $blockReason', style: theme.textTheme.bodySmall?.copyWith(color: color, fontWeight: FontWeight.w600)),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _compactStatusChip(context, 'Status', _text(state['gps_drive_state'], fallback: hasDriveFields ? (effectiveReady ? 'ready' : 'blocked') : '-'), accent: effectiveReady),
+              _compactStatusChip(context, 'RTK', _text(state['rtk_state'], fallback: '-'), accent: _text(state['rtk_state']).toLowerCase() == 'fixed'),
+              _compactStatusChip(context, 'Genauigkeit', _metersText(state['position_accuracy_m']), accent: _accuracyOk(state['position_accuracy_m'], state['max_position_accuracy_m'])),
+              _compactStatusChip(context, 'Grenzwert', _metersText(state['max_position_accuracy_m'])),
+              _compactStatusChip(context, 'Orientierung', _boolText(state['orientation_valid']), accent: _boolNullable(state['orientation_valid']) == true, warning: _boolNullable(state['orientation_valid']) == false),
+              _compactStatusChip(context, 'Pose aktuell', _boolText(state['recent_absolute_pose']), accent: _boolNullable(state['recent_absolute_pose']) == true, warning: _boolNullable(state['recent_absolute_pose']) == false),
+              _compactStatusChip(context, 'GPS Timeout', _boolText(state['gps_timeout']), accent: _boolNullable(state['gps_timeout']) == false, warning: _boolNullable(state['gps_timeout']) == true),
+              _compactStatusChip(context, 'Pose-Alter', _millisecondsText(state['age_ms'])),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDriveDiagnosticsSection(BuildContext context, Map<String, dynamic> state) {
+    final rawDiagnostics = state['drive_diagnostics'];
+    if (rawDiagnostics is! Map || rawDiagnostics.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final diagnostics = Map<String, dynamic>.from(rawDiagnostics);
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 12),
+        Text('Fahrfreigabe-Diagnose', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _compactStatusChip(context, 'Entscheidung', _text(diagnostics['decision_source'], fallback: '-')),
+            _compactStatusChip(context, 'RTK-Quelle', _text(diagnostics['rtk_source'], fallback: '-')),
+            _compactStatusChip(context, 'LL RTK fixed', _boolText(diagnostics['ll_gps_rtk_fixed']), accent: _boolNullable(diagnostics['ll_gps_rtk_fixed']) == true, warning: _boolNullable(diagnostics['ll_gps_rtk_fixed']) == false),
+            _compactStatusChip(context, 'LL Genauigkeit', _metersText(diagnostics['ll_gps_position_accuracy_m'])),
+            _compactStatusChip(context, 'XB Genauigkeit OK', _boolText(diagnostics['xb_pose_accuracy_ok_for_mower_logic']), accent: _boolNullable(diagnostics['xb_pose_accuracy_ok_for_mower_logic']) == true, warning: _boolNullable(diagnostics['xb_pose_accuracy_ok_for_mower_logic']) == false),
+            _compactStatusChip(context, 'XB Pose-Alter', _millisecondsText(diagnostics['xb_pose_age_ms'])),
+            _compactStatusChip(context, 'Letzte Freigabe', _millisecondsText(diagnostics['last_drive_ready_age_ms'])),
+            _compactStatusChip(context, 'Timeout', _secondsText(diagnostics['mower_logic_gps_timeout_s'])),
+            _compactStatusChip(context, 'Grace', _secondsText(diagnostics['mower_logic_gps_grace_remaining_s'])),
+          ],
+        ),
+      ],
     );
   }
 
@@ -489,6 +601,32 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     );
   }
 
+  Widget _compactStatusChip(BuildContext context, String label, String value, {bool accent = false, bool warning = false}) {
+    final theme = Theme.of(context);
+    final color = warning
+        ? Colors.orange.shade700
+        : accent
+            ? Colors.green.shade700
+            : theme.textTheme.bodySmall?.color;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFAFA),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: theme.dividerColor.withOpacity(0.7)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
+          const SizedBox(height: 2),
+          Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700, color: color)),
+        ],
+      ),
+    );
+  }
+
   Widget _satelliteTable(BuildContext context, List<Map<String, dynamic>> satellites, {required bool showUsed}) {
     if (satellites.isEmpty) {
       return Text('Keine Satellitenliste empfangen.', style: Theme.of(context).textTheme.bodyMedium);
@@ -557,6 +695,45 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       ),
       child: Icon(icon, color: color, size: 22),
     );
+  }
+
+  String _metersText(dynamic value) {
+    if (value == null || value.toString().trim().isEmpty || value.toString().trim().toLowerCase() == 'null') return '-';
+    return '${_fmt(value)} m';
+  }
+
+  String _millisecondsText(dynamic value) {
+    if (value == null || value.toString().trim().isEmpty || value.toString().trim().toLowerCase() == 'null') return '-';
+    final numeric = _double(value);
+    if (numeric >= 1000) return '${(numeric / 1000).toStringAsFixed(1)} s';
+    return '${_fmt(value)} ms';
+  }
+
+  String _secondsText(dynamic value) {
+    if (value == null || value.toString().trim().isEmpty || value.toString().trim().toLowerCase() == 'null') return '-';
+    return '${_fmt(value)} s';
+  }
+
+  String _boolText(dynamic value) {
+    final parsed = _boolNullable(value);
+    if (parsed == null) return '-';
+    return parsed ? 'Ja' : 'Nein';
+  }
+
+  bool? _boolNullable(dynamic value) {
+    if (value == null) return null;
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final text = value.toString().trim().toLowerCase();
+    if (text.isEmpty || text == 'null' || text == '-') return null;
+    if (text == 'true' || text == '1' || text == 'yes' || text == 'on' || text == 'ja') return true;
+    if (text == 'false' || text == '0' || text == 'no' || text == 'off' || text == 'nein') return false;
+    return null;
+  }
+
+  bool _accuracyOk(dynamic accuracy, dynamic limit) {
+    if (accuracy == null || limit == null) return false;
+    return _double(accuracy) >= 0 && _double(accuracy) <= _double(limit);
   }
 
   String _satText(Map<String, dynamic> satellite, List<String> keys) {

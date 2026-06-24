@@ -12,10 +12,10 @@ Diese Seite beschreibt die MQTT-Schnittstelle, die von der OpenMower TAF App ver
 
 | Punkt | Stand |
 |---|---|
-| Dokumentversion | `MQTT-API-Doku 1.0` |
+| Dokumentversion | `MQTT-API-Doku 1.1 GPS-State Fahrfreigabe` |
 | App | `OpenMower-TAF-App 1.0.0+1` |
 | ROS / Backend | OpenMower mit `ROS Noetic / ROS 1` |
-| Doku-Stand | `08.06.2026` |
+| Doku-Stand | `24.06.2026` |
 | Quelle | aktuelles App-Paket, Datei `lib/io/mqtt_connection.dart` und Controller unter `lib/controllers/` |
 
 Wenn App oder Backend in einem anderen Release-Stand betrieben werden, können einzelne Topics oder Payload-Felder abweichen. Die App ist JSON-first ausgelegt, akzeptiert an einigen Stellen aber weiterhin BSON- oder Legacy-Topics.
@@ -83,6 +83,12 @@ Die App verwendet unterschiedliche QoS-Stufen:
 | `settings/mower_logic/validation/json` | JSON | atLeastOnce | Validierung der Software-Einstellungen. |
 | `settings/ll_board/json` | JSON | atLeastOnce | Hardware-/Low-Level-Board-Einstellungen. |
 | `settings/ll_board/validation/json` | JSON | atLeastOnce | Validierung der Hardware-Einstellungen. |
+| `gps_state/state1` | JSON | atLeastOnce | Kompakte GPS-Übersicht und Fahrfreigabe-Aussage für die Anzeige. |
+| `gps_state/state2` | JSON | atLeastOnce | Erweiterte Signalqualität und technische Fahrfreigabe-Diagnose. |
+| `gps_state/state3` | JSON | atMostOnce | Liste der verwendeten Satelliten. |
+| `gps_state/state4` | JSON | atMostOnce | Optionale vollständige Satellitenliste; standardmäßig ressourcenschonend deaktivierbar. |
+| `gps_state/settings/json` | JSON | atLeastOnce | GPS-State-Einstellungen und Metadaten. |
+| `gps_state/settings/validation/json` | JSON | atLeastOnce | Validierungsantwort für GPS-State-Einstellungen. |
 
 ### Von der App veröffentlichte Topics
 
@@ -104,6 +110,9 @@ Die App verwendet unterschiedliche QoS-Stufen:
 | `settings/ll_board/set/renew/json` | JSON | atLeastOnce | Hardwarewerte neu anfordern. |
 | `settings/ll_board/set/session/json` | JSON | exactlyOnce | Hardwarewerte live für die Session setzen. |
 | `settings/ll_board/set/persistent/json` | JSON | exactlyOnce | Hardwarewerte dauerhaft speichern. |
+| `gps_state/settings/set/renew/json` | JSON | atLeastOnce | GPS-State-Daten und Einstellungen neu anfordern. |
+| `gps_state/settings/set/session/json` | JSON | exactlyOnce | GPS-State-Einstellungen für die laufende Session setzen. |
+| `gps_state/settings/set/persistent/json` | JSON | exactlyOnce | GPS-State-Einstellungen dauerhaft speichern. |
 
 ## Actions
 
@@ -252,6 +261,85 @@ oder:
 ```
 
 Die App kann Änderungen an Anzeige-Metadaten über `sensors/settings/set/persistent/json` senden. Das Backend bestätigt über `sensors/settings/validation/json`. Bearbeitet werden nur Metadaten wie `label`, `description`, `group`, `order`, `visible` und `expert`; Sensorwerte selbst bleiben readonly.
+
+
+## GPS-State und Fahrfreigabe
+
+Die GPS-State-Unterseite liest die Topics `gps_state/state1` bis `gps_state/state4` sowie die zugehörigen Settings. Die Payloads dürfen direkt als JSON-Objekt oder unter `d` gekapselt gesendet werden. Die App wertet die neuen Fahrfreigabe-Felder additiv aus; ältere Backends ohne diese Felder bleiben weiterhin darstellbar.
+
+### `gps_state/state1`
+
+State1 ist die kompakte Bedieneransicht. Neben den bisherigen Feldern für Verfügbarkeit, Qualität und Satellitenzahlen kann das Backend die direkte Fahrfreigabe-Aussage liefern.
+
+```json
+{
+  "available": true,
+  "quality": "very_good",
+  "visible": 28,
+  "used": 18,
+  "avg_cn0": 38.5,
+  "gps_drive_ready": true,
+  "gps_drive_state": "ready",
+  "gps_drive_label": "GPS reicht zum Fahren aus",
+  "gps_drive_reason": "RTK Fixed, Pose aktuell, Genauigkeit ausreichend",
+  "gps_drive_block_reason": null,
+  "rtk_state": "fixed",
+  "position_accuracy_m": 0.04,
+  "max_position_accuracy_m": 0.2,
+  "orientation_valid": true,
+  "recent_absolute_pose": true,
+  "gps_timeout": false,
+  "age_ms": 420,
+  "updated_at": "2026-06-24T12:00:00Z"
+}
+```
+
+| Feld | Verwendung in der App |
+|---|---|
+| `gps_drive_ready` | Steuert die obere Fahrfreigabe-Karte: grün bei `true`, Warn-/Blockzustand bei `false`. |
+| `gps_drive_state` | Kompakter Maschinenstatus, z. B. `ready` oder `blocked`. |
+| `gps_drive_label` | Bedienertext in der Anzeige. |
+| `gps_drive_reason` | Kurzbegründung unter dem Bedienertext. |
+| `gps_drive_block_reason` | Technischer Blockiergrund, sofern vorhanden. |
+| `rtk_state` | Anzeige des RTK-Zustands, z. B. `fixed`, `float`, `rtk`, `none` oder `unknown`. |
+| `position_accuracy_m` | Von OpenMower verwendete Positionsgenauigkeit in Metern. |
+| `max_position_accuracy_m` | Grenzwert aus der Mäherlogik. |
+| `orientation_valid` | Anzeige, ob die Orientierung gültig ist. |
+| `recent_absolute_pose` | Anzeige, ob eine aktuelle Sensor-Fusion-Pose vorhanden ist. |
+| `gps_timeout` | Anzeige, ob aus Sicht des Backend-Monitorings ein GPS-Timeout erreicht ist. |
+| `age_ms` | Alter der zuletzt ausgewerteten Pose. |
+
+### `gps_state/state2`
+
+State2 bleibt die erweiterte Signal- und Diagnoseansicht. Wenn `drive_diagnostics` vorhanden ist, blendet die App zusätzlich eine technische Diagnosegruppe ein.
+
+```json
+{
+  "min_cn0": 18.0,
+  "max_cn0": 44.0,
+  "weak_count": 1,
+  "good_count": 17,
+  "systems": { "GPS": 10, "GALILEO": 8 },
+  "drive_diagnostics": {
+    "decision_source": "/xbot_positioning/xb_pose",
+    "rtk_source": "/ll/position/gps",
+    "ll_gps_rtk_fixed": true,
+    "ll_gps_position_accuracy_m": 0.03,
+    "xb_pose_accuracy_ok_for_mower_logic": true,
+    "xb_pose_age_ms": 420,
+    "last_drive_ready_age_ms": 420,
+    "mower_logic_gps_timeout_s": 5.0,
+    "mower_logic_gps_grace_remaining_s": 4.6
+  }
+}
+```
+
+Die App zeigt daraus die Quellen der Entscheidung, RTK-Fixed-Status, Low-Level-GPS-Genauigkeit, Pose-Alter, letzte Fahrfreigabe, Timeout und verbleibende Grace-Zeit. Fehlt das Objekt, wird keine leere Diagnosekarte angezeigt.
+
+### `gps_state/state3` und `gps_state/state4`
+
+State3 enthält die verwendeten Satelliten. State4 enthält optional alle sichtbaren Satelliten und sollte nur bei Diagnose aktiviert werden, da die vollständige Liste mehr MQTT-Daten erzeugt. Die App kann State4 über `gps_state/settings/set/session/json` temporär aktivieren oder deaktivieren.
+
 
 ## Karte, Flächen und Editor
 
