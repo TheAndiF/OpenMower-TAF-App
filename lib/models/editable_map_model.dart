@@ -20,15 +20,20 @@ class EditableMapArea {
     required this.sourceIndex,
     required this.outline,
     this.name = '',
+    this.active = true,
+    this.description = '',
   });
 
   final String id;
   final String type;
-  final int sourceIndex;
+  int sourceIndex;
   final String name;
   final List<EditableMapPoint> outline;
+  bool active;
+  String description;
 
   bool get isSupported => type == 'mow' || type == 'nav' || type == 'obstacle';
+  bool get isObstacle => type == 'obstacle';
 
   String get displayName {
     final trimmedName = name.trim();
@@ -43,6 +48,8 @@ class EditableMapArea {
         type: type,
         sourceIndex: sourceIndex,
         name: name,
+        active: active,
+        description: description,
         outline: outline.map((point) => point.copy()).toList(growable: true),
       );
 }

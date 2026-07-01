@@ -1196,6 +1196,23 @@ class MqttConnection  {
     return lower != "false" && lower != "0" && lower != "disabled";
   }
 
+  bool parseAreaActive(dynamic value) {
+    if (value == null) {
+      return true;
+    }
+
+    if (value is bool) {
+      return value;
+    }
+
+    if (value is num) {
+      return value != 0;
+    }
+
+    final lower = value.toString().trim().toLowerCase();
+    return lower != "false" && lower != "0" && lower != "disabled" && lower != "inactive";
+  }
+
   Map<String, dynamic> _mapRootForParser(Map<String, dynamic> obj) {
     return obj["d"] is Map ? obj : <String, dynamic>{"d": obj};
   }
@@ -1277,21 +1294,29 @@ class MqttConnection  {
 
   void parseMap(obj) {
     final mapModel = MapModel();
+    final areas = obj["d"]["areas"] ?? [];
 
-    // calculate bounds of areas
-    if (obj["d"]["areas"].isNotEmpty) {
-      double minX = double.infinity;
-      double maxX = double.negativeInfinity;
-      double minY = double.infinity;
-      double maxY = double.negativeInfinity;
-      for (final area in obj["d"]["areas"]) {
-        for (final pt in area["outline"]) {
-          minX = min(minX, pt["x"]);
-          maxX = max(maxX, pt["x"]);
-          minY = min(minY, pt["y"]);
-          maxY = max(maxY, pt["y"]);
-        }
+    // calculate bounds of active map data used by the normal map view
+    var hasBounds = false;
+    double minX = double.infinity;
+    double maxX = double.negativeInfinity;
+    double minY = double.infinity;
+    double maxY = double.negativeInfinity;
+    for (final area in areas) {
+      final properties = area["properties"] ?? {};
+      final type = properties["type"];
+      if (type == "obstacle" && !parseAreaActive(properties["active"] ?? area["active"])) {
+        continue;
       }
+      for (final pt in area["outline"] ?? []) {
+        minX = min(minX, pt["x"]);
+        maxX = max(maxX, pt["x"]);
+        minY = min(minY, pt["y"]);
+        maxY = max(maxY, pt["y"]);
+        hasBounds = true;
+      }
+    }
+    if (hasBounds) {
       mapModel.width = maxX - minX;
       mapModel.height = maxY - minY;
       mapModel.centerX = (minX + maxX) / 2;
@@ -1313,7 +1338,7 @@ class MqttConnection  {
       mapModel.dockHeading = 0;
     }
 
-    for (final area in obj["d"]["areas"]) {
+    for (final area in areas) {
       final properties = area["properties"] ?? {};
       final type = properties["type"];
       if (type == "mow") {
@@ -1327,12 +1352,14 @@ class MqttConnection  {
       } else if (type == "nav") {
         mapModel.navigationAreas.add(convertJsonPolygon(area["outline"]));
       } else if (type == "obstacle") {
-        mapModel.obstacles.add(convertJsonPolygon(area["outline"]));
+        if (parseAreaActive(properties["active"] ?? area["active"])) {
+          mapModel.obstacles.add(convertJsonPolygon(area["outline"]));
+        }
       }
     }
 
     debugPrint(
-        "Got a map with ${mapModel.mowingAreas.length} mowing areas and ${mapModel.navigationAreas.length} navigation areas. Size: ${mapModel.width} x ${mapModel.height}. Docking pos: ${mapModel.dockX}, ${mapModel.dockY}");
+        "Got a map with ${mapModel.mowingAreas.length} mowing areas, ${mapModel.navigationAreas.length} navigation areas and ${mapModel.obstacles.length} active obstacles. Size: ${mapModel.width} x ${mapModel.height}. Docking pos: ${mapModel.dockX}, ${mapModel.dockY}");
 
     final RobotStateController robotStateController = Get.find();
     robotStateController.map.value = mapModel;

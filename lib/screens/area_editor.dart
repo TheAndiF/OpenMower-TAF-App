@@ -78,7 +78,7 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Polygone separat bearbeiten – ohne die Flächenübersicht zu blockieren.',
+                        'Polygone, Obstacles und Ersatzgeometrien separat bearbeiten.',
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ],
@@ -107,8 +107,11 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
       final status = mapEditorController.editorStatus.value;
       final editMode = mapEditorController.editMode.value;
       final hasChanges = mapEditorController.hasUnsavedChanges.value;
+      final hasPreview = mapEditorController.hasReplacementPreview;
       final selectedType = selectedArea?.type ?? '-';
       final selectedName = selectedArea?.displayName ?? 'Keine Fläche ausgewählt';
+      final selectedIsObstacle = selectedArea?.isObstacle == true;
+      final selectedObstacleActive = selectedArea?.active ?? true;
       final selectedPointText = selectedPointCount == 0
           ? '-'
           : selectedPointCount == 1 && selectedPoint != null
@@ -116,6 +119,8 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
               : '$selectedPointCount Punkte ausgewählt';
       final editableAreas = mapEditorController.editableAreas.toList(growable: false);
       final selectedAreaIndex = mapEditorController.selectedAreaIndex.value;
+      final canUseObstacleTools = editMode && selectedIsObstacle;
+      final canScaleGeometry = editMode && (hasPreview || selectedIsObstacle);
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -140,26 +145,34 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
                 label: const Text('Verwerfen'),
               ),
               ElevatedButton.icon(
-                onPressed: hasChanges ? mapEditorController.writeBackAndSend : null,
+                onPressed: hasChanges && !hasPreview ? mapEditorController.writeBackAndSend : null,
                 icon: const Icon(Icons.save_outlined),
                 label: const Text('Speichern'),
               ),
               OutlinedButton.icon(
-                onPressed: editMode ? mapEditorController.toggleMultiPointSelectionMode : null,
+                onPressed: editMode && !hasPreview ? mapEditorController.toggleMultiPointSelectionMode : null,
                 icon: Icon(mapEditorController.multiPointSelectionMode.value ? Icons.check_box : Icons.check_box_outline_blank),
                 label: Text(mapEditorController.multiPointSelectionMode.value ? 'Mehrfachauswahl an' : 'Mehrfachauswahl'),
               ),
               OutlinedButton.icon(
-                onPressed: selectedPointCount == 0 ? null : mapEditorController.clearPointSelection,
+                onPressed: selectedPointCount == 0 || hasPreview ? null : mapEditorController.clearPointSelection,
                 icon: const Icon(Icons.deselect),
                 label: const Text('Punkte abwählen'),
               ),
               OutlinedButton.icon(
-                onPressed: selectedPointCount == 0 ? null : () => mapEditorController.deleteSelectedPoint(),
+                onPressed: selectedPointCount == 0 || hasPreview ? null : () => mapEditorController.deleteSelectedPoint(),
                 icon: const Icon(Icons.delete_outline),
                 label: Text(selectedPointCount > 1 ? 'Punkte löschen' : 'Punkt löschen'),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          _buildObstacleToolBar(
+            context,
+            canUseObstacleTools: canUseObstacleTools,
+            canScaleGeometry: canScaleGeometry,
+            hasPreview: hasPreview,
+            selectedObstacleActive: selectedObstacleActive,
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<int?>(
@@ -179,12 +192,12 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
                 DropdownMenuItem<int?>(
                   value: i,
                   child: Text(
-                    '${editableAreas[i].displayName} · ${editableAreas[i].type} · ${editableAreas[i].outline.length} Punkte',
+                    _areaDropdownText(editableAreas[i]),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
             ],
-            onChanged: editableAreas.isEmpty ? null : mapEditorController.selectAreaByIndex,
+            onChanged: editableAreas.isEmpty || hasPreview ? null : mapEditorController.selectAreaByIndex,
           ),
           const SizedBox(height: 8),
           Container(
@@ -201,8 +214,10 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
                 _editorMetaText(context, 'Status', hasChanges ? 'Lokal geändert' : 'Synchron'),
                 _editorMetaText(context, 'Fläche', selectedName),
                 _editorMetaText(context, 'Typ', selectedType),
+                _editorMetaText(context, 'Aktiv', selectedArea == null ? '-' : (selectedArea.active ? 'Ja' : 'Nein')),
                 _editorMetaText(context, 'Punkte', '${selectedArea?.outline.length ?? 0}'),
                 _editorMetaText(context, 'Auswahl', selectedPointText),
+                _editorMetaText(context, 'Vorschau', hasPreview ? 'An' : 'Aus'),
                 _editorMetaText(context, 'Mehrfachauswahl', mapEditorController.multiPointSelectionMode.value ? 'An' : 'Aus'),
                 _editorMetaText(context, 'Raster', mapEditorController.showGrid.value ? 'An' : 'Aus'),
               ],
@@ -216,9 +231,11 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
           const Expanded(child: MapEditorWidget()),
           const SizedBox(height: 6),
           Text(
-            editMode
-                ? 'Fläche wählen oder anklicken. Punkte ziehen: Grenze verschieben. Plus-Marker: Punkt einfügen. Mehrfachauswahl: mehrere Punkte gemeinsam ziehen/löschen.'
-                : 'Bearbeiten aktiviert ausschließlich diesen Editor.',
+            hasPreview
+                ? 'Vorschau-Modus: Alte und neue Kontur vergleichen. Vorschau per Drag verschieben, mit Faktor skalieren und anschließend übernehmen oder verwerfen.'
+                : editMode
+                    ? 'Fläche wählen oder anklicken. Punkte ziehen: Grenze verschieben. Obstacle-Werkzeuge erzeugen und bearbeiten Ersatzgeometrien.'
+                    : 'Bearbeiten aktiviert ausschließlich diesen Editor.',
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall,
@@ -226,6 +243,117 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
         ],
       );
     });
+  }
+
+  Widget _buildObstacleToolBar(
+    BuildContext context, {
+    required bool canUseObstacleTools,
+    required bool canScaleGeometry,
+    required bool hasPreview,
+    required bool selectedObstacleActive,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.8)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text('Obstacle-Werkzeuge', style: Theme.of(context).textTheme.labelLarge),
+          OutlinedButton.icon(
+            onPressed: canUseObstacleTools && !hasPreview ? mapEditorController.toggleSelectedObstacleActive : null,
+            icon: Icon(selectedObstacleActive ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+            label: Text(selectedObstacleActive ? 'Obstacle deaktivieren' : 'Obstacle aktivieren'),
+          ),
+          OutlinedButton.icon(
+            onPressed: canUseObstacleTools && !hasPreview ? () => mapEditorController.createReplacementPreview() : null,
+            icon: const Icon(Icons.auto_fix_high),
+            label: const Text('Ersatz Auto'),
+          ),
+          OutlinedButton.icon(
+            onPressed: canUseObstacleTools ? () => mapEditorController.createReplacementPreview(shape: 'circle') : null,
+            icon: const Icon(Icons.radio_button_unchecked),
+            label: const Text('Kreis'),
+          ),
+          OutlinedButton.icon(
+            onPressed: canUseObstacleTools ? () => mapEditorController.createReplacementPreview(shape: 'capsule') : null,
+            icon: const Icon(Icons.crop_16_9),
+            label: const Text('Langloch'),
+          ),
+          OutlinedButton.icon(
+            onPressed: hasPreview ? mapEditorController.acceptReplacementPreview : null,
+            icon: const Icon(Icons.check),
+            label: const Text('Vorschau übernehmen'),
+          ),
+          OutlinedButton.icon(
+            onPressed: hasPreview ? mapEditorController.discardReplacementPreview : null,
+            icon: const Icon(Icons.close),
+            label: const Text('Vorschau verwerfen'),
+          ),
+          OutlinedButton.icon(
+            onPressed: canScaleGeometry ? () => mapEditorController.scaleActiveObstacleGeometry(0.95) : null,
+            icon: const Icon(Icons.remove),
+            label: const Text('-5 %'),
+          ),
+          OutlinedButton.icon(
+            onPressed: canScaleGeometry ? () => mapEditorController.scaleActiveObstacleGeometry(1.05) : null,
+            icon: const Icon(Icons.add),
+            label: const Text('+5 %'),
+          ),
+          OutlinedButton.icon(
+            onPressed: canScaleGeometry ? () => _showScaleFactorDialog(context) : null,
+            icon: const Icon(Icons.tune),
+            label: const Text('Faktor'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _areaDropdownText(dynamic area) {
+    final activeSuffix = area.isObstacle && !area.active ? ' · inaktiv' : '';
+    return '${area.displayName} · ${area.type}$activeSuffix · ${area.outline.length} Punkte';
+  }
+
+  Future<void> _showScaleFactorDialog(BuildContext context) async {
+    final factorController = TextEditingController(text: '1.05');
+    final result = await showDialog<double>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Skalierungsfaktor anwenden'),
+          content: TextField(
+            controller: factorController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false),
+            decoration: const InputDecoration(
+              labelText: 'Faktor',
+              helperText: 'Beispiele: 1.05 größer, 0.95 kleiner',
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Abbrechen'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final parsed = double.tryParse(factorController.text.trim().replaceAll(',', '.'));
+                Navigator.of(context).pop(parsed);
+              },
+              child: const Text('Anwenden'),
+            ),
+          ],
+        );
+      },
+    );
+    factorController.dispose();
+    if (result == null) return;
+    mapEditorController.scaleActiveObstacleGeometry(result);
   }
 
   Widget _editorMetaText(BuildContext context, String label, String value) {

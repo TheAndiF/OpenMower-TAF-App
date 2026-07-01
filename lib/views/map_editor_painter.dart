@@ -71,6 +71,8 @@ class MapEditorPainter extends CustomPainter {
     required this.viewerScale,
     required this.showGrid,
     required this.repaintTick,
+    this.replacementPreview,
+    this.replacementSourceIndex,
   });
 
   final List<EditableMapArea> areas;
@@ -78,6 +80,8 @@ class MapEditorPainter extends CustomPainter {
   final bool editMode;
   final int? selectedAreaIndex;
   final Set<int> selectedPointIndices;
+  final EditableMapArea? replacementPreview;
+  final int? replacementSourceIndex;
   final double viewerScale;
   final bool showGrid;
   final int repaintTick;
@@ -102,17 +106,38 @@ class MapEditorPainter extends CustomPainter {
   final Paint _obstacleFillPaint = Paint()
     ..color = const Color.fromRGBO(55, 55, 55, 0.90)
     ..style = PaintingStyle.fill;
+  final Paint _inactiveObstacleFillPaint = Paint()
+    ..color = const Color.fromRGBO(120, 120, 120, 0.22)
+    ..style = PaintingStyle.fill;
   final Paint _selectedAreaFillPaint = Paint()
     ..color = Colors.cyanAccent.withOpacity(0.34)
+    ..style = PaintingStyle.fill;
+  final Paint _replacementPreviewFillPaint = Paint()
+    ..color = Colors.deepPurpleAccent.withOpacity(0.26)
     ..style = PaintingStyle.fill;
   final Paint _outlinePaint = Paint()
     ..color = const Color.fromRGBO(55, 55, 55, 1)
     ..strokeWidth = 2
     ..strokeJoin = StrokeJoin.round
     ..style = PaintingStyle.stroke;
+  final Paint _inactiveObstacleOutlinePaint = Paint()
+    ..color = const Color.fromRGBO(120, 120, 120, 0.95)
+    ..strokeWidth = 2
+    ..strokeJoin = StrokeJoin.round
+    ..style = PaintingStyle.stroke;
   final Paint _selectedOutlinePaint = Paint()
     ..color = Colors.orange.shade800
     ..strokeWidth = 3.2
+    ..strokeJoin = StrokeJoin.round
+    ..style = PaintingStyle.stroke;
+  final Paint _replacementPreviewOutlinePaint = Paint()
+    ..color = Colors.deepPurple.shade700
+    ..strokeWidth = 3.2
+    ..strokeJoin = StrokeJoin.round
+    ..style = PaintingStyle.stroke;
+  final Paint _replacementSourceOutlinePaint = Paint()
+    ..color = Colors.blueGrey.shade700
+    ..strokeWidth = 2.2
     ..strokeJoin = StrokeJoin.round
     ..style = PaintingStyle.stroke;
   final Paint _vertexPaint = Paint()
@@ -132,6 +157,13 @@ class MapEditorPainter extends CustomPainter {
     ..color = Colors.orange.shade700
     ..strokeWidth = 1.6
     ..style = PaintingStyle.stroke;
+  final Paint _previewCenterPaint = Paint()
+    ..color = Colors.deepPurple.shade700
+    ..style = PaintingStyle.fill;
+  final Paint _previewCenterBorderPaint = Paint()
+    ..color = Colors.white
+    ..strokeWidth = 1.4
+    ..style = PaintingStyle.stroke;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -143,15 +175,29 @@ class MapEditorPainter extends CustomPainter {
     }
 
     for (var i = 0; i < areas.length; i++) {
-      final path = _pathFor(areas[i]);
-      canvas.drawPath(path, _fillPaintFor(areas[i].type));
+      final area = areas[i];
+      final path = _pathFor(area);
+      final isReplacementSource = replacementPreview != null && area.sourceIndex == replacementSourceIndex;
+      canvas.drawPath(path, _fillPaintFor(area));
       if (i == selectedAreaIndex) {
         canvas.drawPath(path, _selectedAreaFillPaint);
       }
-      canvas.drawPath(path, i == selectedAreaIndex ? _selectedOutlinePaint : _outlinePaint);
+      canvas.drawPath(
+        path,
+        isReplacementSource
+            ? _replacementSourceOutlinePaint
+            : i == selectedAreaIndex
+                ? _selectedOutlinePaint
+                : _outlinePaintFor(area),
+      );
     }
 
-    if (!editMode || selectedAreaIndex == null || selectedAreaIndex! < 0 || selectedAreaIndex! >= areas.length) {
+    final preview = replacementPreview;
+    if (preview != null) {
+      _drawReplacementPreview(canvas, preview);
+    }
+
+    if (!editMode || replacementPreview != null || selectedAreaIndex == null || selectedAreaIndex! < 0 || selectedAreaIndex! >= areas.length) {
       return;
     }
 
@@ -165,7 +211,11 @@ class MapEditorPainter extends CustomPainter {
     _gridPaint.strokeWidth = 1.0 / scale;
     _axisPaint.strokeWidth = 1.4 / scale;
     _outlinePaint.strokeWidth = 2.0 / scale;
+    _inactiveObstacleOutlinePaint.strokeWidth = 2.0 / scale;
     _selectedOutlinePaint.strokeWidth = 3.2 / scale;
+    _replacementPreviewOutlinePaint.strokeWidth = 3.2 / scale;
+    _replacementSourceOutlinePaint.strokeWidth = 2.2 / scale;
+    _previewCenterBorderPaint.strokeWidth = 1.4 / scale;
   }
 
   void _drawGrid(Canvas canvas) {
@@ -204,10 +254,59 @@ class MapEditorPainter extends CustomPainter {
     return path;
   }
 
-  Paint _fillPaintFor(String type) {
-    if (type == 'nav') return _navFillPaint;
-    if (type == 'obstacle') return _obstacleFillPaint;
+  Paint _fillPaintFor(EditableMapArea area) {
+    if (area.type == 'nav') return _navFillPaint;
+    if (area.type == 'obstacle' && !area.active) return _inactiveObstacleFillPaint;
+    if (area.type == 'obstacle') return _obstacleFillPaint;
     return _mowFillPaint;
+  }
+
+  Paint _outlinePaintFor(EditableMapArea area) {
+    if (area.type == 'obstacle' && !area.active) return _inactiveObstacleOutlinePaint;
+    return _outlinePaint;
+  }
+
+  void _drawReplacementPreview(Canvas canvas, EditableMapArea preview) {
+    final path = _pathFor(preview);
+    canvas.drawPath(path, _replacementPreviewFillPaint);
+    canvas.drawPath(path, _replacementPreviewOutlinePaint);
+    _drawPreviewVertices(canvas, preview);
+    _drawPreviewCenter(canvas, preview);
+  }
+
+  void _drawPreviewVertices(Canvas canvas, EditableMapArea area) {
+    final scale = _safeViewerScale;
+    final borderWidth = 1.0 / scale;
+    _vertexBorderPaint.strokeWidth = borderWidth;
+    final radius = 4.5 / scale;
+    for (final point in area.outline) {
+      final center = viewport.worldToCanvas(point.displayOffset);
+      canvas.drawCircle(center, radius, _previewCenterPaint);
+      canvas.drawCircle(center, radius, _vertexBorderPaint);
+    }
+  }
+
+  void _drawPreviewCenter(Canvas canvas, EditableMapArea area) {
+    if (area.outline.isEmpty) return;
+    var minX = double.infinity;
+    var minY = double.infinity;
+    var maxX = double.negativeInfinity;
+    var maxY = double.negativeInfinity;
+    for (final point in area.outline) {
+      minX = math.min(minX, point.x);
+      minY = math.min(minY, point.y);
+      maxX = math.max(maxX, point.x);
+      maxY = math.max(maxY, point.y);
+    }
+    final displayCenter = Offset((minX + maxX) / 2, -(minY + maxY) / 2);
+    final center = viewport.worldToCanvas(displayCenter);
+    final scale = _safeViewerScale;
+    final radius = 7.0 / scale;
+    final crossHalf = 11.0 / scale;
+    canvas.drawCircle(center, radius, _previewCenterPaint);
+    canvas.drawCircle(center, radius, _previewCenterBorderPaint);
+    canvas.drawLine(center.translate(-crossHalf, 0), center.translate(crossHalf, 0), _replacementPreviewOutlinePaint);
+    canvas.drawLine(center.translate(0, -crossHalf), center.translate(0, crossHalf), _replacementPreviewOutlinePaint);
   }
 
   void _drawVertices(Canvas canvas, EditableMapArea area) {
@@ -249,6 +348,8 @@ class MapEditorPainter extends CustomPainter {
         oldDelegate.selectedAreaIndex != selectedAreaIndex ||
         oldDelegate.selectedPointIndices.length != selectedPointIndices.length ||
         !oldDelegate.selectedPointIndices.containsAll(selectedPointIndices) ||
+        oldDelegate.replacementPreview != replacementPreview ||
+        oldDelegate.replacementSourceIndex != replacementSourceIndex ||
         oldDelegate.viewerScale != viewerScale ||
         oldDelegate.showGrid != showGrid ||
         oldDelegate.repaintTick != repaintTick;

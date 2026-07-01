@@ -62,7 +62,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
                   minScale: _minViewerScale,
                   maxScale: _maxViewerScale,
                   boundaryMargin: const EdgeInsets.all(56),
-                  panEnabled: !controller.isDraggingPoint.value,
+                  panEnabled: !controller.isDraggingPoint.value && !controller.isDraggingReplacementPreview.value,
                   scaleEnabled: true,
                   trackpadScrollCausesScale: true,
                   onInteractionUpdate: (_) => _syncViewerScale(),
@@ -78,8 +78,8 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
                       onTapUp: controller.editMode.value ? (details) => _handleTap(details.localPosition, viewport) : null,
                       onPanStart: controller.editMode.value ? (details) => _handlePanStart(details.localPosition, viewport) : null,
                       onPanUpdate: controller.editMode.value ? (details) => _handlePanUpdate(details.localPosition, viewport) : null,
-                      onPanEnd: controller.editMode.value ? (_) => controller.finishPointDrag() : null,
-                      onPanCancel: controller.editMode.value ? controller.finishPointDrag : null,
+                      onPanEnd: controller.editMode.value ? (_) => _finishActiveDrag() : null,
+                      onPanCancel: controller.editMode.value ? _finishActiveDrag : null,
                         child: CustomPaint(
                           painter: MapEditorPainter(
                             areas: areas,
@@ -87,6 +87,8 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
                             editMode: controller.editMode.value,
                             selectedAreaIndex: controller.selectedAreaIndex.value,
                             selectedPointIndices: controller.selectedPointIndices.toSet(),
+                            replacementPreview: controller.replacementPreview.value,
+                            replacementSourceIndex: controller.replacementPreviewSourceIndex.value,
                             viewerScale: _viewerScale,
                             showGrid: controller.showGrid.value,
                             repaintTick: controller.editorRepaintTick.value,
@@ -313,6 +315,10 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
   void _handlePanStart(Offset canvasPoint, MapEditorViewport viewport) {
     final worldPoint = viewport.canvasToWorld(canvasPoint);
     final toleranceWorld = 16 / (viewport.scale * _safeViewerScale);
+    if (controller.startReplacementPreviewDrag(worldPoint, toleranceWorld)) {
+      _refreshEditorPaint();
+      return;
+    }
     final hitAreaIndex = controller.areaIndexAt(worldPoint);
     final currentAreaIndex = controller.selectedAreaIndex.value;
 
@@ -335,9 +341,19 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
   }
 
   void _handlePanUpdate(Offset canvasPoint, MapEditorViewport viewport) {
+    if (controller.isDraggingReplacementPreview.value) {
+      controller.updateReplacementPreviewDrag(viewport.canvasToWorld(canvasPoint));
+      if (mounted) setState(() {});
+      return;
+    }
     if (!controller.isDraggingPoint.value) return;
     controller.updateDraggedPoint(viewport.canvasToWorld(canvasPoint));
     if (mounted) setState(() {});
+  }
+
+  void _finishActiveDrag() {
+    controller.finishReplacementPreviewDrag();
+    controller.finishPointDrag();
   }
 
   double get _safeViewerScale => math.max(_viewerScale, _minViewerScale);
