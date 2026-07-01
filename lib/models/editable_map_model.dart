@@ -22,6 +22,8 @@ class EditableMapArea {
     this.name = '',
     this.active = true,
     this.description = '',
+    this.mowingEnabled,
+    this.mowingOrder,
   });
 
   final String id;
@@ -31,8 +33,11 @@ class EditableMapArea {
   final List<EditableMapPoint> outline;
   bool active;
   String description;
+  bool? mowingEnabled;
+  int? mowingOrder;
 
   bool get isSupported => type == 'mow' || type == 'nav' || type == 'obstacle';
+  bool get isMow => type == 'mow';
   bool get isObstacle => type == 'obstacle';
 
   String get displayName {
@@ -50,6 +55,8 @@ class EditableMapArea {
         name: name,
         active: active,
         description: description,
+        mowingEnabled: mowingEnabled,
+        mowingOrder: mowingOrder,
         outline: outline.map((point) => point.copy()).toList(growable: true),
       );
 }

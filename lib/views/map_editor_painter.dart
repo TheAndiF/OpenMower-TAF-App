@@ -100,6 +100,9 @@ class MapEditorPainter extends CustomPainter {
   final Paint _mowFillPaint = Paint()
     ..color = Colors.lightGreen.withOpacity(0.70)
     ..style = PaintingStyle.fill;
+  final Paint _inactiveMowFillPaint = Paint()
+    ..color = Colors.lightGreen.withOpacity(0.20)
+    ..style = PaintingStyle.fill;
   final Paint _navFillPaint = Paint()
     ..color = Colors.white.withOpacity(0.92)
     ..style = PaintingStyle.fill;
@@ -122,6 +125,11 @@ class MapEditorPainter extends CustomPainter {
     ..style = PaintingStyle.stroke;
   final Paint _inactiveObstacleOutlinePaint = Paint()
     ..color = const Color.fromRGBO(120, 120, 120, 0.95)
+    ..strokeWidth = 2
+    ..strokeJoin = StrokeJoin.round
+    ..style = PaintingStyle.stroke;
+  final Paint _inactiveMowOutlinePaint = Paint()
+    ..color = const Color.fromRGBO(80, 130, 80, 0.90)
     ..strokeWidth = 2
     ..strokeJoin = StrokeJoin.round
     ..style = PaintingStyle.stroke;
@@ -212,6 +220,7 @@ class MapEditorPainter extends CustomPainter {
     _axisPaint.strokeWidth = 1.4 / scale;
     _outlinePaint.strokeWidth = 2.0 / scale;
     _inactiveObstacleOutlinePaint.strokeWidth = 2.0 / scale;
+    _inactiveMowOutlinePaint.strokeWidth = 2.0 / scale;
     _selectedOutlinePaint.strokeWidth = 3.2 / scale;
     _replacementPreviewOutlinePaint.strokeWidth = 3.2 / scale;
     _replacementSourceOutlinePaint.strokeWidth = 2.2 / scale;
@@ -263,9 +272,10 @@ class MapEditorPainter extends CustomPainter {
   }
 
   int _paintLayer(EditableMapArea area) {
-    if (area.type == 'obstacle' && area.active) return 3;
-    if (area.type == 'obstacle') return 2;
-    if (area.type == 'nav') return 1;
+    if (area.type == 'obstacle' && area.active) return 4;
+    if (area.type == 'obstacle') return 3;
+    if (area.type == 'nav') return 2;
+    if (area.type == 'mow' && area.active) return 1;
     return 0;
   }
 
@@ -298,11 +308,13 @@ class MapEditorPainter extends CustomPainter {
     if (area.type == 'nav') return _navFillPaint;
     if (area.type == 'obstacle' && !area.active) return _inactiveObstacleFillPaint;
     if (area.type == 'obstacle') return _obstacleFillPaint;
+    if (area.type == 'mow' && !area.active) return _inactiveMowFillPaint;
     return _mowFillPaint;
   }
 
   Paint _outlinePaintFor(EditableMapArea area) {
     if (area.type == 'obstacle' && !area.active) return _inactiveObstacleOutlinePaint;
+    if (area.type == 'mow' && !area.active) return _inactiveMowOutlinePaint;
     return _outlinePaint;
   }
 

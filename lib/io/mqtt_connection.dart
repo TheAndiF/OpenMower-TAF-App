@@ -1305,7 +1305,7 @@ class MqttConnection  {
     for (final area in areas) {
       final properties = area["properties"] ?? {};
       final type = properties["type"];
-      if (type == "obstacle" && !parseAreaActive(properties["active"] ?? area["active"])) {
+      if (!parseAreaActive(properties["active"] ?? area["active"])) {
         continue;
       }
       for (final pt in area["outline"] ?? []) {
@@ -1341,6 +1341,9 @@ class MqttConnection  {
     for (final area in areas) {
       final properties = area["properties"] ?? {};
       final type = properties["type"];
+      if (!parseAreaActive(properties["active"] ?? area["active"])) {
+        continue;
+      }
       if (type == "mow") {
         mapModel.mowingAreas.add(MapArea(
           outline: convertJsonPolygon(area["outline"]),
@@ -1352,9 +1355,7 @@ class MqttConnection  {
       } else if (type == "nav") {
         mapModel.navigationAreas.add(convertJsonPolygon(area["outline"]));
       } else if (type == "obstacle") {
-        if (parseAreaActive(properties["active"] ?? area["active"])) {
-          mapModel.obstacles.add(convertJsonPolygon(area["outline"]));
-        }
+        mapModel.obstacles.add(convertJsonPolygon(area["outline"]));
       }
     }
 

@@ -25,6 +25,7 @@ class MapEditorController extends GetxController {
   final replacementPreview = Rxn<EditableMapArea>();
   final replacementPreviewShape = ''.obs;
   final replacementPreviewSourceIndex = RxnInt();
+  final replacementCornerAngleDeg = 45.0.obs;
 
   final List<List<EditableMapArea>> _undoStack = <List<EditableMapArea>>[];
   Offset? _dragStartWorldPoint;
@@ -54,6 +55,8 @@ class MapEditorController extends GetxController {
   bool get canUndo => _undoStack.isNotEmpty;
   bool get hasPointSelection => selectedPointIndices.isNotEmpty || selectedPointIndex.value != null;
   bool get hasReplacementPreview => replacementPreview.value != null;
+  bool get replacementPreviewIsObstacle => replacementPreview.value?.type == 'obstacle';
+  bool get replacementPreviewIsAreaLine => replacementPreviewShape.value == 'area_line';
   int get selectedPointCount => selectedPointIndices.isNotEmpty ? selectedPointIndices.length : (selectedPointIndex.value == null ? 0 : 1);
 
   EditableMapArea? get selectedArea {
@@ -94,6 +97,8 @@ class MapEditorController extends GetxController {
           name: (properties['name'] ?? area['name'] ?? '').toString(),
           active: _parseActive(properties['active'] ?? area['active'], defaultValue: true),
           description: (properties['description'] ?? area['description'] ?? '').toString(),
+          mowingEnabled: _parseMowingEnabled(properties['mowing_enabled']),
+          mowingOrder: _parseInt(properties['mowing_order']),
           outline: outline,
         ));
       }
@@ -123,7 +128,7 @@ class MapEditorController extends GetxController {
       }
       editMode.value = true;
       editorStatus.value = hasEditableAreas
-          ? 'Bearbeitungsmodus aktiv. Fläche auswählen, Punkt verschieben oder Obstacle-Werkzeuge nutzen.'
+          ? 'Bearbeitungsmodus aktiv. Fläche auswählen, Punkt verschieben oder Flächen-/Obstacle-Werkzeuge nutzen.'
           : 'Bearbeitungsmodus aktiv, aber es sind keine editierbaren Flächen vorhanden.';
       requestEditorRepaint();
       return;
@@ -166,7 +171,7 @@ class MapEditorController extends GetxController {
     selectedAreaIndex.value = index;
     _clearPointSelectionOnly();
     final area = editableAreas[index];
-    final activeSuffix = area.isObstacle ? (area.active ? ' Aktiv.' : ' Inaktiv.') : '';
+    final activeSuffix = area.active ? ' Aktiv.' : ' Inaktiv.';
     editorStatus.value = '${area.displayName} ausgewählt.$activeSuffix';
     requestEditorRepaint();
   }
@@ -429,6 +434,62 @@ class MapEditorController extends GetxController {
     return true;
   }
 
+  void increaseReplacementCornerAngle() {
+    setReplacementCornerAngle(replacementCornerAngleDeg.value + 5);
+  }
+
+  void decreaseReplacementCornerAngle() {
+    setReplacementCornerAngle(replacementCornerAngleDeg.value - 5);
+  }
+
+  void setReplacementCornerAngle(double nextValue) {
+    final clamped = nextValue.clamp(20.0, 90.0).toDouble();
+    replacementCornerAngleDeg.value = clamped;
+    editorStatus.value = 'Eckenerkennung ab ${clamped.toStringAsFixed(0)}° Winkeländerung.';
+    if (replacementPreviewIsAreaLine) {
+      createAreaLineReplacementPreview();
+    } else {
+      requestEditorRepaint();
+    }
+  }
+
+  bool createAreaLineReplacementPreview() {
+    if (!editMode.value) return false;
+    final area = selectedArea;
+    if (area == null || !area.isMow) {
+      editorStatus.value = 'Bitte zuerst eine Mähfläche auswählen.';
+      return false;
+    }
+    if (area.outline.length < 6) {
+      editorStatus.value = 'Für eine Flächen-Ersatzlinie benötigt die Fläche mindestens sechs Punkte.';
+      return false;
+    }
+
+    final proposal = _buildAreaLineReplacementProposal(area.outline, replacementCornerAngleDeg.value);
+    if (proposal == null) {
+      editorStatus.value = 'Keine sichere Ersatzlinie gefunden. Winkelwert ändern oder Fläche manuell bearbeiten.';
+      requestEditorRepaint();
+      return false;
+    }
+
+    replacementPreview.value = EditableMapArea(
+      id: 'area_line_preview',
+      type: area.type,
+      sourceIndex: -1,
+      name: 'Flächen-Ersatzlinie Vorschau',
+      active: true,
+      mowingEnabled: area.mowingEnabled,
+      mowingOrder: area.mowingOrder,
+      outline: proposal.previewOutline,
+    );
+    replacementPreviewShape.value = 'area_line';
+    replacementPreviewSourceIndex.value = area.sourceIndex;
+    _clearPointSelectionOnly();
+    editorStatus.value = 'Flächen-Ersatzlinie als Vorschau erzeugt: Ecke ${proposal.startIndex + 1} bis ${proposal.endIndex + 1}, Winkel ab ${replacementCornerAngleDeg.value.toStringAsFixed(0)}°.';
+    requestEditorRepaint();
+    return true;
+  }
+
   bool acceptReplacementPreview() {
     final preview = replacementPreview.value;
     final sourceIndex = replacementPreviewSourceIndex.value;
@@ -442,14 +503,22 @@ class MapEditorController extends GetxController {
       return false;
     }
     final sourceArea = editableAreas[sourceAreaIndex];
-    if (!sourceArea.isObstacle) {
-      editorStatus.value = 'Ersatzgeometrien können nur für Obstacles übernommen werden.';
-      return false;
+
+    if (replacementPreviewIsAreaLine) {
+      return _acceptAreaLinePreview(preview, sourceArea);
+    }
+    if (sourceArea.isObstacle) {
+      return _acceptObstacleReplacementPreview(preview, sourceArea);
     }
 
+    editorStatus.value = 'Diese Vorschau kann nur für Obstacles oder Flächen-Ersatzlinien übernommen werden.';
+    return false;
+  }
+
+  bool _acceptObstacleReplacementPreview(EditableMapArea preview, EditableMapArea sourceArea) {
     _pushUndoSnapshot();
     final date = _todayIsoDate();
-    final newId = _newReplacementObstacleId(sourceArea.id);
+    final newId = _newReplacementId(sourceArea.id);
     final shapeLabel = replacementPreviewShape.value == 'capsule' ? 'capsule' : 'circle';
     final replacement = EditableMapArea(
       id: newId,
@@ -457,11 +526,15 @@ class MapEditorController extends GetxController {
       sourceIndex: -1,
       name: newId,
       active: true,
+      mowingEnabled: false,
+      mowingOrder: 0,
       description: 'Generated replacement geometry from obstacle ${sourceArea.id} on $date. Shape: $shapeLabel.',
       outline: preview.outline.map((point) => point.copy()).toList(growable: true),
     );
 
     sourceArea.active = false;
+    sourceArea.mowingEnabled = false;
+    sourceArea.mowingOrder = 0;
     sourceArea.description = _appendDescriptionLine(
       sourceArea.description,
       'Inactive source geometry. Replaced by obstacle $newId on $date.',
@@ -478,6 +551,52 @@ class MapEditorController extends GetxController {
     return true;
   }
 
+  bool _acceptAreaLinePreview(EditableMapArea preview, EditableMapArea sourceArea) {
+    if (!sourceArea.isMow) {
+      editorStatus.value = 'Flächen-Ersatzlinien können nur für Mähflächen übernommen werden.';
+      return false;
+    }
+
+    _pushUndoSnapshot();
+    final date = _todayIsoDate();
+    final newId = _newReplacementId(sourceArea.id);
+    final originalOrder = sourceArea.mowingOrder ?? 0;
+    final originalEnabled = sourceArea.mowingEnabled ?? true;
+    final inactiveOrder = _maxMowingOrder() + 10;
+    final sourceDisplayName = sourceArea.displayName.trim();
+    final newName = sourceDisplayName.isEmpty ? newId : '${sourceDisplayName}_re${_replacementNumberSuffix(newId)}';
+
+    final replacement = EditableMapArea(
+      id: newId,
+      type: sourceArea.type,
+      sourceIndex: -1,
+      name: newName,
+      active: true,
+      mowingEnabled: originalEnabled,
+      mowingOrder: originalOrder,
+      description: 'Generated replacement area from area ${sourceArea.id} on $date. Corner threshold: ${replacementCornerAngleDeg.value.toStringAsFixed(0)} deg.',
+      outline: preview.outline.map((point) => point.copy()).toList(growable: true),
+    );
+
+    sourceArea.active = false;
+    sourceArea.mowingEnabled = false;
+    sourceArea.mowingOrder = inactiveOrder;
+    sourceArea.description = _appendDescriptionLine(
+      sourceArea.description,
+      'Inactive source area. Replaced by area $newId on $date. Mowing order moved to $inactiveOrder.',
+    );
+
+    editableAreas.add(replacement);
+    selectedAreaIndex.value = editableAreas.length - 1;
+    _clearPointSelectionOnly();
+    _clearReplacementPreviewOnly();
+    editableAreas.refresh();
+    hasUnsavedChanges.value = true;
+    editorStatus.value = 'Flächen-Ersatzlinie übernommen. Neue Fläche ist aktiv und übernimmt die Mähreihenfolge $originalOrder.';
+    requestEditorRepaint();
+    return true;
+  }
+
   void discardReplacementPreview() {
     if (!hasReplacementPreview) return;
     _clearReplacementPreviewOnly();
@@ -490,6 +609,10 @@ class MapEditorController extends GetxController {
 
     final preview = replacementPreview.value;
     if (preview != null) {
+      if (!replacementPreviewIsObstacle) {
+        editorStatus.value = 'Skalieren ist nur für Obstacle-Vorschauen aktiv.';
+        return false;
+      }
       _scaleOutline(preview.outline, factor);
       replacementPreview.refresh();
       editorStatus.value = 'Ersatzgeometrie-Vorschau mit Faktor ${factor.toStringAsFixed(3)} skaliert.';
@@ -517,6 +640,10 @@ class MapEditorController extends GetxController {
 
     final preview = replacementPreview.value;
     if (preview != null) {
+      if (!replacementPreviewIsObstacle) {
+        editorStatus.value = 'Verschieben ist nur für Obstacle-Vorschauen aktiv.';
+        return false;
+      }
       _moveOutline(preview.outline, dx, dy);
       replacementPreview.refresh();
       editorStatus.value = 'Ersatzgeometrie-Vorschau um x ${dx.toStringAsFixed(3)} / y ${dy.toStringAsFixed(3)} m verschoben.';
@@ -541,7 +668,7 @@ class MapEditorController extends GetxController {
 
   bool startReplacementPreviewDrag(Offset worldPoint, double toleranceWorld) {
     final preview = replacementPreview.value;
-    if (!editMode.value || preview == null) return false;
+    if (!editMode.value || preview == null || !replacementPreviewIsObstacle) return false;
     final center = _displayCenterOf(preview.outline);
     final hitCenter = (center - worldPoint).distance <= toleranceWorld * 1.4;
     final hitPreview = _pathFor(preview).contains(worldPoint);
@@ -725,8 +852,9 @@ class MapEditorController extends GetxController {
   }
 
   int _hitTestLayer(EditableMapArea area) {
-    if (area.type == 'obstacle' && area.active) return 4;
-    if (area.type == 'obstacle') return 3;
+    if (area.type == 'obstacle' && area.active) return 5;
+    if (area.type == 'obstacle') return 4;
+    if (area.type == 'mow' && area.active) return 3;
     if (area.type == 'mow') return 2;
     if (area.type == 'nav') return 1;
     return 0;
@@ -845,6 +973,13 @@ class MapEditorController extends GetxController {
       properties['name'] = area.name;
     }
     properties['active'] = area.active;
+    if (area.isMow) {
+      properties['mowing_enabled'] = area.mowingEnabled ?? area.active;
+      properties['mowing_order'] = area.mowingOrder ?? 0;
+    } else if (area.isObstacle) {
+      properties['mowing_enabled'] = false;
+      properties['mowing_order'] = 0;
+    }
     if (area.description.trim().isNotEmpty) {
       properties['description'] = area.description.trim();
     } else {
@@ -859,7 +994,10 @@ class MapEditorController extends GetxController {
       'name': area.name.trim().isNotEmpty ? area.name : area.id,
       'active': area.active,
     };
-    if (area.isObstacle) {
+    if (area.isMow) {
+      properties['mowing_enabled'] = area.mowingEnabled ?? area.active;
+      properties['mowing_order'] = area.mowingOrder ?? 0;
+    } else if (area.isObstacle) {
       properties['mowing_enabled'] = false;
       properties['mowing_order'] = 0;
     }
@@ -889,11 +1027,266 @@ class MapEditorController extends GetxController {
     return defaultValue;
   }
 
+  bool? _parseMowingEnabled(dynamic value) {
+    if (value == null) return null;
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final normalized = value.toString().trim().toLowerCase();
+    if (normalized == 'true' || normalized == 'yes' || normalized == '1' || normalized == 'enabled') return true;
+    if (normalized == 'false' || normalized == 'no' || normalized == '0' || normalized == 'disabled') return false;
+    return null;
+  }
+
+  int? _parseInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.round();
+    return int.tryParse(value.toString().trim());
+  }
+
   double? _toDouble(dynamic value) {
     if (value is double) return value;
     if (value is int) return value.toDouble();
     if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '');
+  }
+
+  _AreaLineProposal? _buildAreaLineReplacementProposal(List<EditableMapPoint> outline, double cornerAngleDeg) {
+    final corners = _detectCornerIndices(outline, cornerAngleDeg);
+    if (corners.length < 2) return null;
+
+    _AreaLineProposal? best;
+    var bestScore = double.negativeInfinity;
+    for (var i = 0; i < corners.length; i++) {
+      final startIndex = corners[i];
+      final endIndex = corners[(i + 1) % corners.length];
+      if (startIndex == endIndex) continue;
+      final oldArc = _arcPointsBetween(outline, startIndex, endIndex);
+      if (oldArc.length < 4) continue;
+      final oldArcLength = _polylineLength(oldArc);
+      final directDistance = _distance(outline[startIndex], outline[endIndex]);
+      if (directDistance < 0.35 || oldArcLength < 0.65) continue;
+      if (oldArcLength / directDistance < 1.05) continue;
+
+      final replacementLine = _safeReplacementLineBetween(outline, startIndex, endIndex);
+      if (replacementLine == null || replacementLine.length < 2) continue;
+      final previewOutline = _outlineWithReplacementSegment(outline, startIndex, endIndex, replacementLine);
+      if (previewOutline.length < 3) continue;
+
+      final score = oldArcLength - directDistance;
+      if (score > bestScore) {
+        bestScore = score;
+        best = _AreaLineProposal(
+          startIndex: startIndex,
+          endIndex: endIndex,
+          previewOutline: previewOutline,
+          replacementLine: replacementLine,
+        );
+      }
+    }
+    return best;
+  }
+
+  List<int> _detectCornerIndices(List<EditableMapPoint> outline, double thresholdDeg) {
+    if (outline.length < 6) return <int>[];
+    final candidates = <_CornerCandidate>[];
+    const lookDistance = 0.55;
+    for (var i = 0; i < outline.length; i++) {
+      final previousIndex = _indexBeforeAtDistance(outline, i, lookDistance);
+      final nextIndex = _indexAfterAtDistance(outline, i, lookDistance);
+      if (previousIndex == i || nextIndex == i || previousIndex == nextIndex) continue;
+      final angle = _angleChangeDeg(outline[previousIndex], outline[i], outline[nextIndex]);
+      if (angle >= thresholdDeg) {
+        candidates.add(_CornerCandidate(index: i, angleDeg: angle));
+      }
+    }
+    if (candidates.isEmpty) return <int>[];
+
+    candidates.sort((a, b) => b.angleDeg.compareTo(a.angleDeg));
+    final selected = <_CornerCandidate>[];
+    for (final candidate in candidates) {
+      final tooClose = selected.any((other) =>
+          _cyclicIndexDistance(candidate.index, other.index, outline.length) < 8 ||
+          _distance(outline[candidate.index], outline[other.index]) < 0.85);
+      if (!tooClose) selected.add(candidate);
+      if (selected.length >= 18) break;
+    }
+    selected.sort((a, b) => a.index.compareTo(b.index));
+    return selected.map((candidate) => candidate.index).toList(growable: false);
+  }
+
+  int _indexBeforeAtDistance(List<EditableMapPoint> outline, int startIndex, double minDistance) {
+    var distance = 0.0;
+    var index = startIndex;
+    for (var steps = 0; steps < outline.length - 1; steps++) {
+      final previous = (index - 1 + outline.length) % outline.length;
+      distance += _distance(outline[index], outline[previous]);
+      index = previous;
+      if (distance >= minDistance) return index;
+    }
+    return index;
+  }
+
+  int _indexAfterAtDistance(List<EditableMapPoint> outline, int startIndex, double minDistance) {
+    var distance = 0.0;
+    var index = startIndex;
+    for (var steps = 0; steps < outline.length - 1; steps++) {
+      final next = (index + 1) % outline.length;
+      distance += _distance(outline[index], outline[next]);
+      index = next;
+      if (distance >= minDistance) return index;
+    }
+    return index;
+  }
+
+  double _angleChangeDeg(EditableMapPoint previous, EditableMapPoint current, EditableMapPoint next) {
+    final ax = current.x - previous.x;
+    final ay = current.y - previous.y;
+    final bx = next.x - current.x;
+    final by = next.y - current.y;
+    final lenA = math.sqrt(ax * ax + ay * ay);
+    final lenB = math.sqrt(bx * bx + by * by);
+    if (lenA <= 0.000001 || lenB <= 0.000001) return 0;
+    final dot = ((ax * bx + ay * by) / (lenA * lenB)).clamp(-1.0, 1.0).toDouble();
+    return math.acos(dot) * 180 / math.pi;
+  }
+
+  int _cyclicIndexDistance(int a, int b, int length) {
+    final forward = (a - b).abs();
+    return math.min(forward, length - forward);
+  }
+
+  List<EditableMapPoint> _arcPointsBetween(List<EditableMapPoint> outline, int startIndex, int endIndex) {
+    final points = <EditableMapPoint>[];
+    var index = startIndex;
+    for (var guard = 0; guard <= outline.length; guard++) {
+      points.add(outline[index]);
+      if (index == endIndex) break;
+      index = (index + 1) % outline.length;
+    }
+    return points;
+  }
+
+  List<EditableMapPoint>? _safeReplacementLineBetween(List<EditableMapPoint> outline, int startIndex, int endIndex) {
+    final start = outline[startIndex];
+    final end = outline[endIndex];
+    final center = _interiorReferencePoint(outline);
+    final offsets = <double>[0.0, 0.05, 0.10, 0.20, 0.35, 0.60, 1.00];
+    for (final offset in offsets) {
+      final line = _replacementLinePoints(start, end, center, offset);
+      if (_replacementLineInside(outline, line)) return line;
+    }
+    return null;
+  }
+
+  List<EditableMapPoint> _replacementLinePoints(EditableMapPoint start, EditableMapPoint end, Offset center, double offset) {
+    final count = offset <= 0 ? 2 : 7;
+    final points = <EditableMapPoint>[];
+    for (var i = 0; i < count; i++) {
+      final t = count == 1 ? 0.0 : i / (count - 1);
+      var x = start.x + (end.x - start.x) * t;
+      var y = start.y + (end.y - start.y) * t;
+      if (offset > 0 && i > 0 && i < count - 1) {
+        final toCenterX = center.dx - x;
+        final toCenterY = center.dy - y;
+        final length = math.sqrt(toCenterX * toCenterX + toCenterY * toCenterY);
+        if (length > 0.000001) {
+          final weight = math.sin(math.pi * t);
+          x += toCenterX / length * offset * weight;
+          y += toCenterY / length * offset * weight;
+        }
+      }
+      points.add(EditableMapPoint(x: _rounded(x), y: _rounded(y)));
+    }
+    return points;
+  }
+
+  bool _replacementLineInside(List<EditableMapPoint> outline, List<EditableMapPoint> line) {
+    if (line.length < 2) return false;
+    final path = _pathForOutline(outline);
+    for (var i = 0; i < line.length - 1; i++) {
+      final a = line[i];
+      final b = line[i + 1];
+      for (var sample = 1; sample <= 4; sample++) {
+        final t = sample / 5.0;
+        final x = a.x + (b.x - a.x) * t;
+        final y = a.y + (b.y - a.y) * t;
+        if (!path.contains(Offset(x, -y))) return false;
+      }
+    }
+    return true;
+  }
+
+  Path _pathForOutline(List<EditableMapPoint> outline) {
+    final path = Path();
+    if (outline.isEmpty) return path;
+    final first = outline.first.displayOffset;
+    path.moveTo(first.dx, first.dy);
+    for (var i = 1; i < outline.length; i++) {
+      final point = outline[i].displayOffset;
+      path.lineTo(point.dx, point.dy);
+    }
+    path.close();
+    return path;
+  }
+
+  Offset _interiorReferencePoint(List<EditableMapPoint> outline) {
+    final path = _pathForOutline(outline);
+    final centroid = _polygonCentroid(outline);
+    if (path.contains(Offset(centroid.dx, -centroid.dy))) return centroid;
+    final boundsCenter = _coordinateCenterOf(outline);
+    if (path.contains(Offset(boundsCenter.dx, -boundsCenter.dy))) return boundsCenter;
+    return centroid;
+  }
+
+  Offset _polygonCentroid(List<EditableMapPoint> outline) {
+    if (outline.length < 3) return _coordinateCenterOf(outline);
+    var twiceArea = 0.0;
+    var centroidX = 0.0;
+    var centroidY = 0.0;
+    for (var i = 0; i < outline.length; i++) {
+      final current = outline[i];
+      final next = outline[(i + 1) % outline.length];
+      final cross = current.x * next.y - next.x * current.y;
+      twiceArea += cross;
+      centroidX += (current.x + next.x) * cross;
+      centroidY += (current.y + next.y) * cross;
+    }
+    if (twiceArea.abs() < 0.000001) return _coordinateCenterOf(outline);
+    return Offset(centroidX / (3 * twiceArea), centroidY / (3 * twiceArea));
+  }
+
+  List<EditableMapPoint> _outlineWithReplacementSegment(
+    List<EditableMapPoint> outline,
+    int startIndex,
+    int endIndex,
+    List<EditableMapPoint> replacementLine,
+  ) {
+    final next = <EditableMapPoint>[outline[startIndex].copy()];
+    for (var i = 1; i < replacementLine.length; i++) {
+      next.add(replacementLine[i].copy());
+    }
+    var index = (endIndex + 1) % outline.length;
+    while (index != startIndex) {
+      next.add(outline[index].copy());
+      index = (index + 1) % outline.length;
+      if (next.length > outline.length + replacementLine.length + 2) break;
+    }
+    return next;
+  }
+
+  double _polylineLength(List<EditableMapPoint> points) {
+    var length = 0.0;
+    for (var i = 0; i < points.length - 1; i++) {
+      length += _distance(points[i], points[i + 1]);
+    }
+    return length;
+  }
+
+  double _distance(EditableMapPoint a, EditableMapPoint b) {
+    final dx = a.x - b.x;
+    final dy = a.y - b.y;
+    return math.sqrt(dx * dx + dy * dy);
   }
 
   bool _looksLikeCapsule(List<EditableMapPoint> outline) {
@@ -1052,7 +1445,7 @@ class MapEditorController extends GetxController {
     return index < 0 ? null : index;
   }
 
-  String _newReplacementObstacleId(String sourceId) {
+  String _newReplacementId(String sourceId) {
     final trimmedSourceId = sourceId.trim();
     final rootId = trimmedSourceId.isEmpty
         ? 'obstacle'
@@ -1068,6 +1461,20 @@ class MapEditorController extends GetxController {
     return '${rootId}_re$timestamp';
   }
 
+  String _replacementNumberSuffix(String replacementId) {
+    final match = RegExp(r'_re(\d{2})$').firstMatch(replacementId.trim());
+    return match?.group(1) ?? '01';
+  }
+
+  int _maxMowingOrder() {
+    var maxOrder = 0;
+    for (final area in editableAreas) {
+      final order = area.mowingOrder;
+      if (order != null) maxOrder = math.max(maxOrder, order);
+    }
+    return maxOrder;
+  }
+
   String _appendDescriptionLine(String existing, String nextLine) {
     final trimmedExisting = existing.trim();
     if (trimmedExisting.isEmpty) return nextLine;
@@ -1081,6 +1488,27 @@ class MapEditorController extends GetxController {
   }
 
   double _rounded(double value) => double.parse(value.toStringAsFixed(6));
+}
+
+class _AreaLineProposal {
+  _AreaLineProposal({
+    required this.startIndex,
+    required this.endIndex,
+    required this.previewOutline,
+    required this.replacementLine,
+  });
+
+  final int startIndex;
+  final int endIndex;
+  final List<EditableMapPoint> previewOutline;
+  final List<EditableMapPoint> replacementLine;
+}
+
+class _CornerCandidate {
+  _CornerCandidate({required this.index, required this.angleDeg});
+
+  final int index;
+  final double angleDeg;
 }
 
 class _AxisStats {

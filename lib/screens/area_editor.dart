@@ -110,9 +110,12 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
       final editMode = mapEditorController.editMode.value;
       final hasChanges = mapEditorController.hasUnsavedChanges.value;
       final hasPreview = mapEditorController.hasReplacementPreview;
+      final hasObstaclePreview = mapEditorController.replacementPreviewIsObstacle;
+      final hasAreaPreview = mapEditorController.replacementPreviewIsAreaLine;
       final selectedType = selectedArea?.type ?? '-';
       final selectedName = selectedArea?.displayName ?? 'Keine Fläche ausgewählt';
       final selectedIsObstacle = selectedArea?.isObstacle == true;
+      final selectedIsMow = selectedArea?.isMow == true;
       final selectedObstacleActive = selectedArea?.active ?? true;
       final selectedPointText = selectedPointCount == 0
           ? '-'
@@ -122,7 +125,8 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
       final editableAreas = mapEditorController.editableAreas.toList(growable: false);
       final selectedAreaIndex = mapEditorController.selectedAreaIndex.value;
       final canUseObstacleTools = editMode && selectedIsObstacle;
-      final canScaleGeometry = editMode && (hasPreview || selectedIsObstacle);
+      final canUseAreaTools = editMode && selectedIsMow;
+      final canScaleGeometry = editMode && (hasObstaclePreview || selectedIsObstacle);
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -173,8 +177,14 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
             context,
             canUseObstacleTools: canUseObstacleTools,
             canScaleGeometry: canScaleGeometry,
-            hasPreview: hasPreview,
+            hasPreview: hasObstaclePreview,
             selectedObstacleActive: selectedObstacleActive,
+          ),
+          const SizedBox(height: 8),
+          _buildAreaToolBar(
+            context,
+            canUseAreaTools: canUseAreaTools,
+            hasPreview: hasAreaPreview,
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<int?>(
@@ -234,9 +244,9 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
           const SizedBox(height: 6),
           Text(
             hasPreview
-                ? 'Vorschau-Modus: Alte und neue Kontur vergleichen. Vorschau per Drag oder X/Y-Tasten verschieben, mit Faktor skalieren und anschließend übernehmen oder verwerfen.'
+                ? 'Vorschau-Modus: Alte und neue Kontur vergleichen. Obstacle-Vorschauen können verschoben/skaliert werden; Flächen-Vorschauen werden über den Winkel neu berechnet.'
                 : editMode
-                    ? 'Fläche wählen oder anklicken. Punkte ziehen: Grenze verschieben. Obstacle-Werkzeuge erzeugen und bearbeiten Ersatzgeometrien.'
+                    ? 'Fläche wählen oder anklicken. Punkte ziehen: Grenze verschieben. Flächen- und Obstacle-Werkzeuge erzeugen sichere Ersatzgeometrien.'
                     : 'Bearbeiten aktiviert ausschließlich diesen Editor.',
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -363,6 +373,77 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
     );
   }
 
+  Widget _buildAreaToolBar(
+    BuildContext context, {
+    required bool canUseAreaTools,
+    required bool hasPreview,
+  }) {
+    final angle = mapEditorController.replacementCornerAngleDeg.value;
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.8)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text('Flächen-Werkzeuge', style: Theme.of(context).textTheme.labelLarge),
+          OutlinedButton.icon(
+            onPressed: canUseAreaTools && !hasPreview
+                ? () => _runEditorAction(mapEditorController.createAreaLineReplacementPreview)
+                : null,
+            icon: const Icon(Icons.linear_scale),
+            label: const Text('Ersatzlinie Auto'),
+          ),
+          OutlinedButton.icon(
+            onPressed: canUseAreaTools || hasPreview
+                ? () => _runEditorAction(() {
+                      mapEditorController.decreaseReplacementCornerAngle();
+                      return true;
+                    })
+                : null,
+            icon: const Icon(Icons.remove),
+            label: const Text('Winkel -5°'),
+          ),
+          Chip(
+            visualDensity: VisualDensity.compact,
+            label: Text('Ecke ab ${angle.toStringAsFixed(0)}°'),
+          ),
+          OutlinedButton.icon(
+            onPressed: canUseAreaTools || hasPreview
+                ? () => _runEditorAction(() {
+                      mapEditorController.increaseReplacementCornerAngle();
+                      return true;
+                    })
+                : null,
+            icon: const Icon(Icons.add),
+            label: const Text('Winkel +5°'),
+          ),
+          OutlinedButton.icon(
+            onPressed: hasPreview
+                ? () => _runEditorAction(mapEditorController.acceptReplacementPreview)
+                : null,
+            icon: const Icon(Icons.check),
+            label: const Text('Flächen-Vorschau übernehmen'),
+          ),
+          OutlinedButton.icon(
+            onPressed: hasPreview
+                ? () => _runEditorAction(() {
+                      mapEditorController.discardReplacementPreview();
+                      return true;
+                    })
+                : null,
+            icon: const Icon(Icons.close),
+            label: const Text('Flächen-Vorschau verwerfen'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _runEditorAction(bool Function() action) {
     action();
     mapEditorController.requestEditorRepaint();
@@ -372,7 +453,7 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
   }
 
   String _areaDropdownText(dynamic area) {
-    final activeSuffix = area.isObstacle && !area.active ? ' · inaktiv' : '';
+    final activeSuffix = !area.active ? ' · inaktiv' : '';
     return '${area.displayName} · ${area.type}$activeSuffix · ${area.outline.length} Punkte';
   }
 
