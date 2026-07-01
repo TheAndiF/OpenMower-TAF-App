@@ -17,6 +17,8 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
   final MapEditorController mapEditorController = Get.find<MapEditorController>();
   bool _renewSent = false;
 
+  static const double _obstacleMoveStep = 0.05;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -232,7 +234,7 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
           const SizedBox(height: 6),
           Text(
             hasPreview
-                ? 'Vorschau-Modus: Alte und neue Kontur vergleichen. Vorschau per Drag verschieben, mit Faktor skalieren und anschließend übernehmen oder verwerfen.'
+                ? 'Vorschau-Modus: Alte und neue Kontur vergleichen. Vorschau per Drag oder X/Y-Tasten verschieben, mit Faktor skalieren und anschließend übernehmen oder verwerfen.'
                 : editMode
                     ? 'Fläche wählen oder anklicken. Punkte ziehen: Grenze verschieben. Obstacle-Werkzeuge erzeugen und bearbeiten Ersatzgeometrien.'
                     : 'Bearbeiten aktiviert ausschließlich diesen Editor.',
@@ -265,42 +267,89 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
         children: [
           Text('Obstacle-Werkzeuge', style: Theme.of(context).textTheme.labelLarge),
           OutlinedButton.icon(
-            onPressed: canUseObstacleTools && !hasPreview ? mapEditorController.toggleSelectedObstacleActive : null,
+            onPressed: canUseObstacleTools && !hasPreview
+                ? () => _runEditorAction(mapEditorController.toggleSelectedObstacleActive)
+                : null,
             icon: Icon(selectedObstacleActive ? Icons.visibility_off_outlined : Icons.visibility_outlined),
             label: Text(selectedObstacleActive ? 'Obstacle deaktivieren' : 'Obstacle aktivieren'),
           ),
           OutlinedButton.icon(
-            onPressed: canUseObstacleTools && !hasPreview ? () => mapEditorController.createReplacementPreview() : null,
+            onPressed: canUseObstacleTools && !hasPreview
+                ? () => _runEditorAction(() => mapEditorController.createReplacementPreview())
+                : null,
             icon: const Icon(Icons.auto_fix_high),
             label: const Text('Ersatz Auto'),
           ),
           OutlinedButton.icon(
-            onPressed: canUseObstacleTools ? () => mapEditorController.createReplacementPreview(shape: 'circle') : null,
+            onPressed: canUseObstacleTools
+                ? () => _runEditorAction(() => mapEditorController.createReplacementPreview(shape: 'circle'))
+                : null,
             icon: const Icon(Icons.radio_button_unchecked),
             label: const Text('Kreis'),
           ),
           OutlinedButton.icon(
-            onPressed: canUseObstacleTools ? () => mapEditorController.createReplacementPreview(shape: 'capsule') : null,
+            onPressed: canUseObstacleTools
+                ? () => _runEditorAction(() => mapEditorController.createReplacementPreview(shape: 'capsule'))
+                : null,
             icon: const Icon(Icons.crop_16_9),
             label: const Text('Langloch'),
           ),
           OutlinedButton.icon(
-            onPressed: hasPreview ? mapEditorController.acceptReplacementPreview : null,
+            onPressed: hasPreview
+                ? () => _runEditorAction(mapEditorController.acceptReplacementPreview)
+                : null,
             icon: const Icon(Icons.check),
             label: const Text('Vorschau übernehmen'),
           ),
           OutlinedButton.icon(
-            onPressed: hasPreview ? mapEditorController.discardReplacementPreview : null,
+            onPressed: hasPreview
+                ? () => _runEditorAction(() {
+                      mapEditorController.discardReplacementPreview();
+                      return true;
+                    })
+                : null,
             icon: const Icon(Icons.close),
             label: const Text('Vorschau verwerfen'),
           ),
           OutlinedButton.icon(
-            onPressed: canScaleGeometry ? () => mapEditorController.scaleActiveObstacleGeometry(0.95) : null,
+            onPressed: canScaleGeometry
+                ? () => _runEditorAction(() => mapEditorController.moveActiveObstacleGeometryBy(-_obstacleMoveStep, 0))
+                : null,
+            icon: const Icon(Icons.keyboard_arrow_left),
+            label: const Text('X-'),
+          ),
+          OutlinedButton.icon(
+            onPressed: canScaleGeometry
+                ? () => _runEditorAction(() => mapEditorController.moveActiveObstacleGeometryBy(_obstacleMoveStep, 0))
+                : null,
+            icon: const Icon(Icons.keyboard_arrow_right),
+            label: const Text('X+'),
+          ),
+          OutlinedButton.icon(
+            onPressed: canScaleGeometry
+                ? () => _runEditorAction(() => mapEditorController.moveActiveObstacleGeometryBy(0, _obstacleMoveStep))
+                : null,
+            icon: const Icon(Icons.keyboard_arrow_up),
+            label: const Text('Y+'),
+          ),
+          OutlinedButton.icon(
+            onPressed: canScaleGeometry
+                ? () => _runEditorAction(() => mapEditorController.moveActiveObstacleGeometryBy(0, -_obstacleMoveStep))
+                : null,
+            icon: const Icon(Icons.keyboard_arrow_down),
+            label: const Text('Y-'),
+          ),
+          OutlinedButton.icon(
+            onPressed: canScaleGeometry
+                ? () => _runEditorAction(() => mapEditorController.scaleActiveObstacleGeometry(0.95))
+                : null,
             icon: const Icon(Icons.remove),
             label: const Text('-5 %'),
           ),
           OutlinedButton.icon(
-            onPressed: canScaleGeometry ? () => mapEditorController.scaleActiveObstacleGeometry(1.05) : null,
+            onPressed: canScaleGeometry
+                ? () => _runEditorAction(() => mapEditorController.scaleActiveObstacleGeometry(1.05))
+                : null,
             icon: const Icon(Icons.add),
             label: const Text('+5 %'),
           ),
@@ -312,6 +361,14 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
         ],
       ),
     );
+  }
+
+  void _runEditorAction(bool Function() action) {
+    action();
+    mapEditorController.requestEditorRepaint();
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   String _areaDropdownText(dynamic area) {
@@ -353,7 +410,7 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
     );
     factorController.dispose();
     if (result == null) return;
-    mapEditorController.scaleActiveObstacleGeometry(result);
+    _runEditorAction(() => mapEditorController.scaleActiveObstacleGeometry(result));
   }
 
   Widget _editorMetaText(BuildContext context, String label, String value) {

@@ -174,7 +174,7 @@ class MapEditorPainter extends CustomPainter {
       _drawGrid(canvas);
     }
 
-    for (var i = 0; i < areas.length; i++) {
+    for (final i in _paintOrderIndices()) {
       final area = areas[i];
       final path = _pathFor(area);
       final isReplacementSource = replacementPreview != null && area.sourceIndex == replacementSourceIndex;
@@ -239,6 +239,46 @@ class MapEditorPainter extends CustomPainter {
     final origin = viewport.worldToCanvas(Offset.zero);
     canvas.drawCircle(origin, 4, _axisPaint..style = PaintingStyle.fill);
     _axisPaint.style = PaintingStyle.stroke;
+  }
+
+  List<int> _paintOrderIndices() {
+    final indexed = <int>[];
+    for (var i = 0; i < areas.length; i++) {
+      indexed.add(i);
+    }
+    indexed.sort((a, b) => _paintCompare(areas[a], areas[b], a, b));
+    return indexed;
+  }
+
+  int _paintCompare(EditableMapArea a, EditableMapArea b, int indexA, int indexB) {
+    final layerCompare = _paintLayer(a).compareTo(_paintLayer(b));
+    if (layerCompare != 0) return layerCompare;
+
+    // Bigger polygons are painted first. Smaller obstacle geometries are painted later
+    // and therefore stay visible and easier to grab above larger source geometries.
+    final areaCompare = _displayPolygonArea(b.outline).compareTo(_displayPolygonArea(a.outline));
+    if (areaCompare != 0) return areaCompare;
+
+    return indexA.compareTo(indexB);
+  }
+
+  int _paintLayer(EditableMapArea area) {
+    if (area.type == 'obstacle' && area.active) return 3;
+    if (area.type == 'obstacle') return 2;
+    if (area.type == 'nav') return 1;
+    return 0;
+  }
+
+  double _displayPolygonArea(List<EditableMapPoint> outline) {
+    if (outline.length < 3) return 0;
+    var twiceArea = 0.0;
+    for (var i = 0; i < outline.length; i++) {
+      final current = outline[i].displayOffset;
+      final next = outline[(i + 1) % outline.length].displayOffset;
+      twiceArea += current.dx * next.dy - next.dx * current.dy;
+    }
+    final area = (twiceArea / 2).abs();
+    return area.isFinite ? area : 0;
   }
 
   Path _pathFor(EditableMapArea area) {

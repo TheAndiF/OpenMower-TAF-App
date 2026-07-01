@@ -34,6 +34,7 @@ class MapEditorController extends GetxController {
 
   void requestEditorRepaint() {
     editorRepaintTick.value++;
+    editorRepaintTick.refresh();
   }
 
   @override
@@ -510,6 +511,34 @@ class MapEditorController extends GetxController {
     return true;
   }
 
+  bool moveActiveObstacleGeometryBy(double dx, double dy) {
+    if (!editMode.value || !dx.isFinite || !dy.isFinite) return false;
+    if (dx == 0 && dy == 0) return false;
+
+    final preview = replacementPreview.value;
+    if (preview != null) {
+      _moveOutline(preview.outline, dx, dy);
+      replacementPreview.refresh();
+      editorStatus.value = 'Ersatzgeometrie-Vorschau um x ${dx.toStringAsFixed(3)} / y ${dy.toStringAsFixed(3)} m verschoben.';
+      requestEditorRepaint();
+      return true;
+    }
+
+    final area = selectedArea;
+    if (area == null || !area.isObstacle) {
+      editorStatus.value = 'Bitte zuerst ein Obstacle auswählen.';
+      return false;
+    }
+
+    _pushUndoSnapshot();
+    _moveOutline(area.outline, dx, dy);
+    editableAreas.refresh();
+    hasUnsavedChanges.value = true;
+    editorStatus.value = 'Obstacle „${area.displayName}“ um x ${dx.toStringAsFixed(3)} / y ${dy.toStringAsFixed(3)} m verschoben.';
+    requestEditorRepaint();
+    return true;
+  }
+
   bool startReplacementPreviewDrag(Offset worldPoint, double toleranceWorld) {
     final preview = replacementPreview.value;
     if (!editMode.value || preview == null) return false;
@@ -676,7 +705,7 @@ class MapEditorController extends GetxController {
     for (var i = 0; i < editableAreas.length; i++) {
       indexed.add(i);
     }
-    indexed.sort((a, b) => _selectionPriority(editableAreas[b].type).compareTo(_selectionPriority(editableAreas[a].type)));
+    indexed.sort((a, b) => _hitTestCompare(editableAreas[a], editableAreas[b], a, b));
     for (final index in indexed) {
       final path = _pathFor(editableAreas[index]);
       if (path.contains(worldPoint)) return index;
@@ -684,10 +713,22 @@ class MapEditorController extends GetxController {
     return null;
   }
 
-  int _selectionPriority(String type) {
-    if (type == 'obstacle') return 3;
-    if (type == 'mow') return 2;
-    if (type == 'nav') return 1;
+  int _hitTestCompare(EditableMapArea a, EditableMapArea b, int indexA, int indexB) {
+    final layerCompare = _hitTestLayer(b).compareTo(_hitTestLayer(a));
+    if (layerCompare != 0) return layerCompare;
+
+    final areaCompare = _displayPolygonArea(a.outline).compareTo(_displayPolygonArea(b.outline));
+    if (areaCompare != 0) return areaCompare;
+
+    // Later-created replacement geometries usually sit visually above their source.
+    return indexB.compareTo(indexA);
+  }
+
+  int _hitTestLayer(EditableMapArea area) {
+    if (area.type == 'obstacle' && area.active) return 4;
+    if (area.type == 'obstacle') return 3;
+    if (area.type == 'mow') return 2;
+    if (area.type == 'nav') return 1;
     return 0;
   }
 
@@ -965,6 +1006,26 @@ class MapEditorController extends GetxController {
     }
   }
 
+  void _moveOutline(List<EditableMapPoint> outline, double dx, double dy) {
+    for (final point in outline) {
+      point
+        ..x = _rounded(point.x + dx)
+        ..y = _rounded(point.y + dy);
+    }
+  }
+
+  double _displayPolygonArea(List<EditableMapPoint> outline) {
+    if (outline.length < 3) return double.infinity;
+    var twiceArea = 0.0;
+    for (var i = 0; i < outline.length; i++) {
+      final current = outline[i].displayOffset;
+      final next = outline[(i + 1) % outline.length].displayOffset;
+      twiceArea += current.dx * next.dy - next.dx * current.dy;
+    }
+    final area = (twiceArea / 2).abs();
+    return area.isFinite ? area : double.infinity;
+  }
+
   Offset _coordinateCenterOf(List<EditableMapPoint> outline) {
     if (outline.isEmpty) return Offset.zero;
     var minX = double.infinity;
@@ -992,12 +1053,19 @@ class MapEditorController extends GetxController {
   }
 
   String _newReplacementObstacleId(String sourceId) {
-    final timestamp = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
     final trimmedSourceId = sourceId.trim();
-    if (trimmedSourceId.isEmpty) return 'replacement_$timestamp';
-    final safeSourceId = trimmedSourceId.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_');
-    final shortSourceId = safeSourceId.length > 18 ? safeSourceId.substring(0, 18) : safeSourceId;
-    return 'replacement_${shortSourceId}_$timestamp';
+    final rootId = trimmedSourceId.isEmpty
+        ? 'obstacle'
+        : trimmedSourceId.replaceFirst(RegExp(r'_re\d{2}$'), '');
+    final existingIds = editableAreas.map((area) => area.id.trim()).toSet();
+
+    for (var number = 1; number <= 99; number++) {
+      final candidate = '${rootId}_re${number.toString().padLeft(2, '0')}';
+      if (!existingIds.contains(candidate)) return candidate;
+    }
+
+    final timestamp = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
+    return '${rootId}_re$timestamp';
   }
 
   String _appendDescriptionLine(String existing, String nextLine) {
