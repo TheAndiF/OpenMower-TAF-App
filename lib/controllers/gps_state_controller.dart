@@ -8,6 +8,7 @@ class GpsStateController extends GetxController {
   static const List<String> settingKeys = <String>[
     'enabled',
     'publish_rate_hz',
+    'publish_state0',
     'publish_state1',
     'publish_state2',
     'publish_state3',
@@ -16,12 +17,27 @@ class GpsStateController extends GetxController {
     'good_cn0_threshold',
   ];
 
+  static const List<String> restartModes = <String>[
+    'hot_start',
+    'warm_start',
+    'cold_start',
+  ];
+
+  static const List<String> restartResetModes = <String>[
+    'controlled_software',
+    'gnss_only',
+    'hardware_watchdog',
+  ];
+
+  final state0 = <String, dynamic>{}.obs;
   final state1 = <String, dynamic>{}.obs;
   final state2 = <String, dynamic>{}.obs;
   final state3 = <String, dynamic>{}.obs;
   final state4 = <String, dynamic>{}.obs;
   final settingsPayload = <String, dynamic>{}.obs;
   final validationPayload = <String, dynamic>{}.obs;
+  final restartStatusPayload = <String, dynamic>{}.obs;
+  final restartValidationPayload = <String, dynamic>{}.obs;
   final draftValues = <String, dynamic>{}.obs;
   final dirtyKeys = <String>{}.obs;
 
@@ -31,22 +47,28 @@ class GpsStateController extends GetxController {
   final lastUpdated = Rxn<DateTime>();
   final waitingForResponse = false.obs;
   final editorRevision = 0.obs;
+  final restartResetMode = 'controlled_software'.obs;
 
   Timer? _responseTimeout;
   int _responseWaitGeneration = 0;
 
-  bool get hasState => state1.isNotEmpty || state2.isNotEmpty || state3.isNotEmpty || state4.isNotEmpty;
+  bool get hasState => state0.isNotEmpty || state1.isNotEmpty || state2.isNotEmpty || state3.isNotEmpty || state4.isNotEmpty;
   bool get hasSettings => settingsPayload.isNotEmpty;
+  bool get state0Active => settingBool('publish_state0', fallback: state0.isNotEmpty);
   bool get state4Active => settingBool('publish_state4', fallback: state4.isNotEmpty);
+  bool get hasRestartStatus => restartStatusPayload.isNotEmpty || restartValidationPayload.isNotEmpty;
 
   String get rawJson {
     final data = <String, dynamic>{
+      'state0': state0,
       'state1': state1,
       'state2': state2,
       'state3': state3,
       'state4': state4,
       'settings': settingsPayload,
       'validation': validationPayload,
+      'restart_status': restartStatusPayload,
+      'restart_validation': restartValidationPayload,
     };
     return const JsonEncoder.withIndent('  ').convert(data);
   }
@@ -71,11 +93,15 @@ class GpsStateController extends GetxController {
     lastUpdated.value = DateTime.now();
     _armResponseTimeout('Keine GPS-State-Antwort empfangen. Bitte Topic gps_state/# prüfen.');
     Get.find<MqttConnection>().requestGpsState();
+    Get.find<MqttConnection>().requestGpsRestartStatus();
   }
 
   void setStatePayload(int stateNumber, Map<String, dynamic> payload, {required String topic}) {
     final root = _root(payload);
     switch (stateNumber) {
+      case 0:
+        state0.assignAll(root);
+        break;
       case 1:
         state1.assignAll(root);
         break;
@@ -128,6 +154,64 @@ class GpsStateController extends GetxController {
       dirtyKeys.clear();
       requestStatus();
     }
+  }
+
+  void setRestartStatus(Map<String, dynamic> payload, {required String topic}) {
+    final root = _root(payload);
+    restartStatusPayload.assignAll(_deepCopy(root));
+    final accepted = _bool(root['accepted'] ?? root['ok'] ?? root['success'], fallback: false);
+    final status = root['status']?.toString();
+    final normalizedStatus = status?.toLowerCase() ?? '';
+    final sent = normalizedStatus == 'sent' || normalizedStatus == 'requested' || normalizedStatus == 'ok' || accepted;
+    final rejected = normalizedStatus == 'rejected' || normalizedStatus == 'send_failed' || normalizedStatus == 'failed' || normalizedStatus == 'error';
+    lastStatusOk.value = rejected ? false : sent;
+    lastStatus.value = status == null || status.isEmpty
+        ? 'F9P-Neustartstatus empfangen.'
+        : 'F9P-Neustartstatus: $status';
+    lastTopic.value = topic;
+    lastUpdated.value = DateTime.now();
+    waitingForResponse.value = false;
+    _clearResponseTimeout();
+  }
+
+  void setRestartValidation(Map<String, dynamic> payload, {required String topic}) {
+    final root = _root(payload);
+    restartValidationPayload.assignAll(_deepCopy(root));
+    final valid = _bool(root['valid'] ?? root['ok'] ?? root['success'] ?? root['accepted']);
+    lastStatusOk.value = valid;
+    lastStatus.value = valid
+        ? 'F9P-Neustartbefehl wurde angenommen.'
+        : 'F9P-Neustartbefehl wurde abgelehnt.';
+    lastTopic.value = topic;
+    lastUpdated.value = DateTime.now();
+    waitingForResponse.value = false;
+    _clearResponseTimeout();
+  }
+
+  void requestRestartStatus() {
+    waitingForResponse.value = true;
+    lastStatusOk.value = null;
+    lastStatus.value = 'F9P-Neustartstatus wird neu angefordert ...';
+    lastTopic.value = MqttConnection.gpsStateRestartRenewJsonTopic;
+    lastUpdated.value = DateTime.now();
+    _armResponseTimeout('Keine F9P-Neustartstatus-Antwort empfangen. Bitte Topic gps_state/restart/# prüfen.');
+    Get.find<MqttConnection>().requestGpsRestartStatus();
+  }
+
+  void restartF9p(String mode, {String? resetMode}) {
+    final normalizedMode = restartModes.contains(mode) ? mode : 'hot_start';
+    final normalizedResetMode = restartResetModes.contains(resetMode) ? resetMode! : restartResetMode.value;
+    final payload = <String, dynamic>{
+      'mode': normalizedMode,
+      'reset_mode': normalizedResetMode,
+    };
+    waitingForResponse.value = true;
+    lastStatusOk.value = null;
+    lastStatus.value = 'F9P-Neustart wird angefordert: $normalizedMode ...';
+    lastTopic.value = MqttConnection.gpsStateRestartSetJsonTopic;
+    lastUpdated.value = DateTime.now();
+    _armResponseTimeout('Keine F9P-Neustart-Rückmeldung empfangen. Bitte gps_state/restart/# prüfen.');
+    Get.find<MqttConnection>().publishGpsRestartCommand(payload);
   }
 
   void setError(String message, {String topic = 'local/error'}) {
@@ -232,6 +316,8 @@ class GpsStateController extends GetxController {
         return 'GPS-State aktiviert';
       case 'publish_rate_hz':
         return 'Publish-Rate';
+      case 'publish_state0':
+        return 'State0 veröffentlichen';
       case 'publish_state1':
         return 'State1 veröffentlichen';
       case 'publish_state2':

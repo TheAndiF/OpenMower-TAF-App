@@ -849,3 +849,26 @@ mosquitto_pub -h <host> -t 'robot_state/json' -m '{"d":{"current_state":"IDLE","
 ---
 
 [Zurück zur Dokumentations-Startseite](../) · [PDF-Version herunterladen](../assets/OpenMower_App_MQTT_Schnittstelle.pdf)
+
+## GPS-State v2 und F9P-Neustart (2026-07-08)
+
+Die GPS-State-Unterseite ist auf das Payload-Schema `gps_state.v2` vorbereitet. Die App trennt die fünf States fachlich:
+
+| Topic | Verwendung in der App |
+|---|---|
+| `gps_state/state0` | Experten-/Debugansicht der vollständigen Fahrfähigkeits-Entscheidungskette. Die App versucht generische Felder wie `steps`, `checks`, `decision_chain`, `diagnostics`, `value`, `threshold`, `ok` und `status` tabellarisch darzustellen. |
+| `gps_state/state1` | Kompakter Bedienerstatus mit `quality_class`, `gps_drive_ready`, `gps_drive_state`, `gps_drive_label`, `gps_drive_reason`, `gps_drive_block_reason`, `rtk_state`, `position_accuracy_m`, `max_position_accuracy_m` und `pose_age_ms`. Satellitenstatistik wird hier nicht mehr erwartet. |
+| `gps_state/state2` | Technische GNSS-/Pose-Zusammenfassung mit `available`, `quality_class`, `visible_count`, `used_count`, `avg_cn0`, `min_cn0`, `max_cn0`, `weak_count`, `good_count`, `systems`, `rtk_state`, `ll_gps_accuracy_m`, `xb_pose_accuracy_m`, `orientation_valid`, `recent_absolute_pose`, `gps_timeout`, `diagnostic_summary` und `drive_diagnostics`. |
+| `gps_state/state3` | Liste der aktiv verwendeten Satelliten mit `used_count` und `satellites[]`. Die App erwartet hier kein `used` je Satellit und blendet keine Used-Spalte ein. Unterstützte Satellitenfelder sind unter anderem `gnss`, `gnss_id`, `sv`, `cn0`, `elev`, `azim`, `prres` und `qual`. |
+| `gps_state/state4` | Expertenliste aller sichtbaren Satelliten inklusive `used=true/false`, aggregierter C/N0-Werte und `sensor_stamp`. Die App hält State4 als diagnoseorientierte Ansicht und kann `publish_state4` temporär schalten. |
+
+Für den F9P-Neustart nutzt die App ausschließlich den Namensraum `gps_state/restart`:
+
+| Topic | Richtung | Verwendung |
+|---|---|---|
+| `gps_state/restart/set/json` | App -> MQTT | Sendet `{"mode":"hot_start|warm_start|cold_start","reset_mode":"controlled_software|gnss_only|hardware_watchdog"}`. |
+| `gps_state/restart/status/json` | MQTT -> App | Zeigt den letzten Neustartstatus, zum Beispiel `requested`, `sent`, `rejected` oder `send_failed`. |
+| `gps_state/restart/validation/json` | MQTT -> App | Zeigt Validierungsfehler oder Annahme des zuletzt gesendeten Befehls. |
+| `gps_state/restart/set/renew/json` | App -> MQTT | Fordert Restart-Status und GPS-State-Settings erneut an. |
+
+Die App sendet standardmäßig `reset_mode=controlled_software`. Ein Status `sent` bedeutet, dass die UBX-CFG-RST-Nachricht geschrieben wurde; ein späterer GNSS-Fix oder ein ACK wird daraus nicht abgeleitet.

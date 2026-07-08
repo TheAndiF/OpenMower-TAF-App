@@ -48,12 +48,16 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                   const SizedBox(height: 10),
                   _buildState4Section(context),
                   const SizedBox(height: 10),
+                  _buildState0Section(context),
+                  const SizedBox(height: 10),
+                  _buildRestartSection(context),
+                  const SizedBox(height: 10),
                   _buildSettingsSection(context),
                   const SizedBox(height: 10),
                   _buildRawJsonSection(context),
                   const SizedBox(height: 10),
                   Text(
-                    'Hinweis: State4 ist standardmäßig deaktiviert, um MQTT-Datenmenge und Ressourcen zu schonen.',
+                    'Hinweis: State1 ist die kompakte Bedieneranzeige. State0 und State4 sind Experten-/Debugdaten und sollten nur bei Bedarf aktiv sein.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
                   ),
                 ],
@@ -74,7 +78,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     final waiting = controller.waitingForResponse.value;
     final statusColor = controller.lastStatusOk.value == false
         ? Colors.orange.shade700
-        : controller.hasState
+        : controller.hasState || controller.hasRestartStatus
             ? Colors.green.shade700
             : theme.hintColor;
 
@@ -100,7 +104,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Live-Daten der GPS-Satelliten, Empfangsqualität und Fahrfreigabe aus gps_state/#.',
+                        'Auswertung von gps_state.v2: Bedienerstatus, technische Diagnose, Satellitenlisten und F9P-Neustart.',
                         style: theme.textTheme.bodyMedium?.copyWith(color: theme.hintColor),
                       ),
                       if (controller.lastStatus.value.isNotEmpty) ...[
@@ -147,9 +151,9 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     return _sectionCard(
       context,
       icon: Icons.gps_fixed_outlined,
-      title: 'Übersicht (State1)',
-      subtitle: state.isEmpty ? 'Noch keine Daten empfangen' : null,
-      active: _bool(state['gps_drive_ready'] ?? state['available']),
+      title: 'Bedienerstatus (State1)',
+      subtitle: state.isEmpty ? 'Noch keine kompakten Bedienerdaten empfangen' : 'Fahrfreigabe, Grund, RTK, Genauigkeit und Pose-Alter',
+      active: _bool(state['gps_drive_ready']),
       initiallyExpanded: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -160,11 +164,11 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _metricTile(context, 'Verfügbar', _bool(state['available']) ? 'Ja' : 'Nein', accent: _bool(state['available'])),
-              _metricTile(context, 'Qualität', _text(state['quality'], fallback: '-'), accent: _qualityGood(state['quality'])),
-              _metricTile(context, 'Sichtbar', _fmt(state['visible'])),
-              _metricTile(context, 'Verwendet', _fmt(state['used'])),
-              _metricTile(context, 'Ø C/N0', '${_fmt(state['avg_cn0'])} dB-Hz', accent: _double(state['avg_cn0']) >= 30),
+              _metricTile(context, 'Quality Class', _text(state['quality_class'], fallback: '-'), accent: _qualityGood(state['quality_class'])),
+              _metricTile(context, 'RTK', _text(state['rtk_state'], fallback: '-'), accent: _text(state['rtk_state']).toLowerCase() == 'fixed'),
+              _metricTile(context, 'Genauigkeit', _metersText(state['position_accuracy_m']), accent: _accuracyOk(state['position_accuracy_m'], state['max_position_accuracy_m'])),
+              _metricTile(context, 'Grenzwert', _metersText(state['max_position_accuracy_m'])),
+              _metricTile(context, 'Pose-Alter', _millisecondsText(state['pose_age_ms'])),
               _metricTile(context, 'Aktualisiert', _updatedAtText(state['updated_at'])),
             ],
           ),
@@ -181,8 +185,8 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     return _sectionCard(
       context,
       icon: Icons.signal_cellular_alt,
-      title: 'Signalqualität (State2)',
-      subtitle: state.isEmpty ? 'Noch keine erweiterten Qualitätsdaten empfangen' : null,
+      title: 'Technische GNSS-/Pose-Zusammenfassung (State2)',
+      subtitle: state.isEmpty ? 'Noch keine technischen Qualitätsdaten empfangen' : 'Aggregierte GNSS-Werte, Systemverteilung und technische Diagnosen',
       initiallyExpanded: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -191,10 +195,22 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
             spacing: 8,
             runSpacing: 8,
             children: [
+              _metricTile(context, 'Verfügbar', _boolText(state['available']), accent: _boolNullable(state['available']) == true, warning: _boolNullable(state['available']) == false),
+              _metricTile(context, 'Quality Class', _text(state['quality_class'], fallback: '-'), accent: _qualityGood(state['quality_class'])),
+              _metricTile(context, 'Sichtbar', _fmt(state['visible_count'] ?? state['visible'])),
+              _metricTile(context, 'Verwendet', _fmt(state['used_count'] ?? state['used']), accent: _int(state['used_count'] ?? state['used']) > 0),
+              _metricTile(context, 'Ø C/N0', '${_fmt(state['avg_cn0'])} dB-Hz', accent: _double(state['avg_cn0']) >= 30),
               _metricTile(context, 'Min C/N0', '${_fmt(state['min_cn0'])} dB-Hz'),
               _metricTile(context, 'Max C/N0', '${_fmt(state['max_cn0'])} dB-Hz'),
               _metricTile(context, 'Schwach', _fmt(state['weak_count']), warning: _int(state['weak_count']) > 0),
               _metricTile(context, 'Gut', _fmt(state['good_count']), accent: _int(state['good_count']) > 0),
+              _metricTile(context, 'RTK', _text(state['rtk_state'], fallback: '-'), accent: _text(state['rtk_state']).toLowerCase() == 'fixed'),
+              _metricTile(context, 'LL GPS Genauigkeit', _metersText(state['ll_gps_accuracy_m'] ?? state['ll_gps_position_accuracy_m'])),
+              _metricTile(context, 'XB Pose Genauigkeit', _metersText(state['xb_pose_accuracy_m'])),
+              _metricTile(context, 'Orientierung', _boolText(state['orientation_valid']), accent: _boolNullable(state['orientation_valid']) == true, warning: _boolNullable(state['orientation_valid']) == false),
+              _metricTile(context, 'Pose aktuell', _boolText(state['recent_absolute_pose']), accent: _boolNullable(state['recent_absolute_pose']) == true, warning: _boolNullable(state['recent_absolute_pose']) == false),
+              _metricTile(context, 'GPS Timeout', _boolText(state['gps_timeout']), accent: _boolNullable(state['gps_timeout']) == false, warning: _boolNullable(state['gps_timeout']) == true),
+              _metricTile(context, 'Aktualisiert', _updatedAtText(state['updated_at'])),
             ],
           ),
           const SizedBox(height: 12),
@@ -204,10 +220,11 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: systems.entries.map((entry) => Chip(label: Text('${entry.key} ${entry.value}'))).toList(growable: false),
+              children: systems.entries.map<Widget>((entry) => Chip(label: Text(_systemChipText(entry.key.toString(), entry.value)))).toList(growable: false),
             )
           else
             Text('Keine Systemverteilung empfangen.', style: Theme.of(context).textTheme.bodySmall),
+          _buildDiagnosticSummary(context, state),
           _buildDriveDiagnosticsSection(context, state),
           const SizedBox(height: 10),
           Text(
@@ -219,12 +236,234 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     );
   }
 
+  Widget _buildState3Section(BuildContext context) {
+    final state = controller.state3;
+    final satellites = controller.satellitesForState(3);
+    final usedCount = state['used_count'] ?? satellites.length;
+    return _sectionCard(
+      context,
+      icon: Icons.hub_outlined,
+      title: 'Aktiv verwendete Satelliten (State3)',
+      subtitle: satellites.isEmpty ? 'Noch keine verwendeten Satelliten empfangen' : 'Verwendet laut Payload: ${_fmt(usedCount)}',
+      initiallyExpanded: true,
+      child: _satelliteTable(context, satellites, showUsed: false),
+    );
+  }
+
+  Widget _buildState4Section(BuildContext context) {
+    final state = controller.state4;
+    final satellites = controller.satellitesForState(4);
+    final active = controller.state4Active;
+    return _sectionCard(
+      context,
+      icon: Icons.satellite_outlined,
+      title: 'Expertenliste aller sichtbaren Satelliten (State4)',
+      subtitle: active ? 'Aktiv - vollständige Satellitenliste' : 'Deaktiviert - nur bei Diagnose aktivieren',
+      active: active,
+      initiallyExpanded: active,
+      trailing: active
+          ? TextButton.icon(
+              onPressed: () => controller.setState4Enabled(false),
+              icon: const Icon(Icons.power_settings_new),
+              label: const Text('Deaktivieren'),
+            )
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: active ? Colors.green.withOpacity(0.08) : Colors.orange.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: (active ? Colors.green : Colors.orange).withOpacity(0.28)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(active ? Icons.info_outline : Icons.warning_amber_outlined, color: active ? Colors.green.shade700 : Colors.orange.shade700),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(active
+                      ? 'State4 ist aktiv. Es werden alle sichtbaren Satelliten inklusive used=true/false übertragen.'
+                      : 'State4 erzeugt mehr MQTT-Daten und sollte nur zur Diagnose aktiviert werden.'),
+                ),
+                const SizedBox(width: 8),
+                if (!active)
+                  OutlinedButton(
+                    onPressed: () => controller.setState4Enabled(true),
+                    child: const Text('State4 temporär aktivieren'),
+                  ),
+              ],
+            ),
+          ),
+          if (state.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _metricTile(context, 'Sichtbar', _fmt(state['visible_count'] ?? satellites.length)),
+                _metricTile(context, 'Verwendet', _fmt(state['used_count']), accent: _int(state['used_count']) > 0),
+                _metricTile(context, 'Ø C/N0', '${_fmt(state['avg_cn0'])} dB-Hz'),
+                _metricTile(context, 'Min C/N0', '${_fmt(state['min_cn0'])} dB-Hz'),
+                _metricTile(context, 'Max C/N0', '${_fmt(state['max_cn0'])} dB-Hz'),
+                _metricTile(context, 'Sensor-Zeit', _text(state['sensor_stamp'], fallback: '-')),
+              ],
+            ),
+          ],
+          if (satellites.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _satelliteTable(context, satellites, showUsed: true),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildState0Section(BuildContext context) {
+    final state = controller.state0;
+    final rows = _decisionRowsFromPayload(state);
+    return _sectionCard(
+      context,
+      icon: Icons.fact_check_outlined,
+      title: 'Fahrfähigkeits-Entscheidungskette (State0)',
+      subtitle: state.isEmpty ? 'Noch keine State0-Diagnose empfangen' : 'Experten-/Debugansicht mit ${rows.length} Entscheidungsknoten',
+      active: controller.state0Active,
+      initiallyExpanded: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'State0 ist für die vollständige Fahrfähigkeitsdiagnose vorgesehen. Die normale Bedieneranzeige bleibt State1.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+          ),
+          const SizedBox(height: 10),
+          if (rows.isEmpty)
+            Text('Keine auswertbare Entscheidungskette empfangen.', style: Theme.of(context).textTheme.bodyMedium)
+          else
+            _decisionTable(context, rows),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRestartSection(BuildContext context) {
+    final status = controller.restartStatusPayload;
+    final validation = controller.restartValidationPayload;
+    final waiting = controller.waitingForResponse.value;
+    return _sectionCard(
+      context,
+      icon: Icons.restart_alt,
+      title: 'F9P-Neustart unter gps_state',
+      subtitle: status.isEmpty ? 'MQTT-Befehl an gps_state/restart/set/json' : 'Letzter Status: ${_text(status['status'], fallback: '-')}',
+      initiallyExpanded: status.isNotEmpty || validation.isNotEmpty,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Der Neustart wird als JSON-Befehl gesendet. Standard ist reset_mode=controlled_software; ein späterer GNSS-Fix wird nicht durch ein ACK bestätigt.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 250,
+                child: DropdownButtonFormField<String>(
+                  value: controller.restartResetMode.value,
+                  decoration: const InputDecoration(
+                    labelText: 'Reset-Mode',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: GpsStateController.restartResetModes
+                      .map((mode) => DropdownMenuItem<String>(value: mode, child: Text(_restartResetModeLabel(mode))))
+                      .toList(growable: false),
+                  onChanged: waiting ? null : (value) {
+                    if (value != null) controller.restartResetMode.value = value;
+                  },
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: waiting ? null : () => controller.restartF9p('hot_start', resetMode: controller.restartResetMode.value),
+                icon: const Icon(Icons.flash_on),
+                label: const Text('Hot Start'),
+              ),
+              ElevatedButton.icon(
+                onPressed: waiting ? null : () => controller.restartF9p('warm_start', resetMode: controller.restartResetMode.value),
+                icon: const Icon(Icons.thermostat),
+                label: const Text('Warm Start'),
+              ),
+              OutlinedButton.icon(
+                onPressed: waiting ? null : () => controller.restartF9p('cold_start', resetMode: controller.restartResetMode.value),
+                icon: const Icon(Icons.ac_unit),
+                label: const Text('Cold Start'),
+              ),
+              OutlinedButton.icon(
+                onPressed: waiting ? null : controller.requestRestartStatus,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Restart-Status neu laden'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (status.isNotEmpty) ...[
+            Text('Letzter Neustartstatus', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _compactStatusChip(context, 'Status', _text(status['status'], fallback: '-'), accent: _restartStatusOk(status), warning: _restartStatusRejected(status)),
+                _compactStatusChip(context, 'Akzeptiert', _boolText(status['accepted']), accent: _boolNullable(status['accepted']) == true, warning: _boolNullable(status['accepted']) == false),
+                _compactStatusChip(context, 'Mode', _text(status['mode'], fallback: '-')),
+                _compactStatusChip(context, 'Reset', _text(status['reset_mode'], fallback: '-')),
+                _compactStatusChip(context, 'navBbrMask', _fmt(status['nav_bbr_mask'])),
+                _compactStatusChip(context, 'resetMode', _fmt(status['reset_mode_value'])),
+                _compactStatusChip(context, 'Quelle', _text(status['source'], fallback: '-')),
+              ],
+            ),
+            if (_text(status['reason']).isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _messageBox(context, 'Grund', _text(status['reason'])),
+            ],
+          ],
+          if (validation.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text('Letzte Validierung', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _compactStatusChip(context, 'Gültig', _boolText(validation['valid'] ?? validation['accepted']), accent: _boolNullable(validation['valid'] ?? validation['accepted']) == true, warning: _boolNullable(validation['valid'] ?? validation['accepted']) == false),
+                _compactStatusChip(context, 'Mode', _text(validation['mode'], fallback: '-')),
+                _compactStatusChip(context, 'Reset', _text(validation['reset_mode'], fallback: '-')),
+              ],
+            ),
+            if (_text(validation['reason'] ?? validation['error'] ?? validation['message']).isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _messageBox(context, 'Validierungsantwort', _text(validation['reason'] ?? validation['error'] ?? validation['message'])),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildDriveReadinessCard(BuildContext context, Map<String, dynamic> state) {
     final theme = Theme.of(context);
-    final hasDriveFields = state.containsKey('gps_drive_ready') ||
-        state.containsKey('gps_drive_state') ||
-        state.containsKey('gps_drive_label') ||
-        state.containsKey('gps_drive_reason');
+    final hasDriveFields = _containsAny(state, const [
+      'gps_drive_ready',
+      'gps_drive_state',
+      'gps_drive_label',
+      'gps_drive_reason',
+      'gps_drive_block_reason',
+    ]);
     final ready = _boolNullable(state['gps_drive_ready']);
     final effectiveReady = ready ?? false;
     final label = _text(
@@ -237,7 +476,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       state['gps_drive_reason'],
       fallback: hasDriveFields
           ? 'Kein Detailgrund angegeben.'
-          : 'Erwartet werden die additiven State1-Felder gps_drive_ready, gps_drive_label und gps_drive_reason.',
+          : 'Erwartet werden die State1-Felder gps_drive_ready, gps_drive_label und gps_drive_reason.',
     );
     final blockReason = _text(state['gps_drive_block_reason']);
     final color = hasDriveFields
@@ -285,14 +524,24 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
               _compactStatusChip(context, 'RTK', _text(state['rtk_state'], fallback: '-'), accent: _text(state['rtk_state']).toLowerCase() == 'fixed'),
               _compactStatusChip(context, 'Genauigkeit', _metersText(state['position_accuracy_m']), accent: _accuracyOk(state['position_accuracy_m'], state['max_position_accuracy_m'])),
               _compactStatusChip(context, 'Grenzwert', _metersText(state['max_position_accuracy_m'])),
-              _compactStatusChip(context, 'Orientierung', _boolText(state['orientation_valid']), accent: _boolNullable(state['orientation_valid']) == true, warning: _boolNullable(state['orientation_valid']) == false),
-              _compactStatusChip(context, 'Pose aktuell', _boolText(state['recent_absolute_pose']), accent: _boolNullable(state['recent_absolute_pose']) == true, warning: _boolNullable(state['recent_absolute_pose']) == false),
-              _compactStatusChip(context, 'GPS Timeout', _boolText(state['gps_timeout']), accent: _boolNullable(state['gps_timeout']) == false, warning: _boolNullable(state['gps_timeout']) == true),
-              _compactStatusChip(context, 'Pose-Alter', _millisecondsText(state['age_ms'])),
+              _compactStatusChip(context, 'Pose-Alter', _millisecondsText(state['pose_age_ms'])),
+              _compactStatusChip(context, 'Quality', _text(state['quality_class'], fallback: '-'), accent: _qualityGood(state['quality_class'])),
             ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDiagnosticSummary(BuildContext context, Map<String, dynamic> state) {
+    final raw = state['diagnostic_summary'];
+    if (raw == null || raw.toString().trim().isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 12),
+        _messageBox(context, 'Diagnose-Zusammenfassung', raw is Map || raw is Iterable ? const JsonEncoder.withIndent('  ').convert(raw) : raw.toString()),
+      ],
     );
   }
 
@@ -307,7 +556,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 12),
-        Text('Fahrfreigabe-Diagnose', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+        Text('Technische Drive-Diagnose', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -316,7 +565,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
             _compactStatusChip(context, 'Entscheidung', _text(diagnostics['decision_source'], fallback: '-')),
             _compactStatusChip(context, 'RTK-Quelle', _text(diagnostics['rtk_source'], fallback: '-')),
             _compactStatusChip(context, 'LL RTK fixed', _boolText(diagnostics['ll_gps_rtk_fixed']), accent: _boolNullable(diagnostics['ll_gps_rtk_fixed']) == true, warning: _boolNullable(diagnostics['ll_gps_rtk_fixed']) == false),
-            _compactStatusChip(context, 'LL Genauigkeit', _metersText(diagnostics['ll_gps_position_accuracy_m'])),
+            _compactStatusChip(context, 'LL Genauigkeit', _metersText(diagnostics['ll_gps_position_accuracy_m'] ?? diagnostics['ll_gps_accuracy_m'])),
             _compactStatusChip(context, 'XB Genauigkeit OK', _boolText(diagnostics['xb_pose_accuracy_ok_for_mower_logic']), accent: _boolNullable(diagnostics['xb_pose_accuracy_ok_for_mower_logic']) == true, warning: _boolNullable(diagnostics['xb_pose_accuracy_ok_for_mower_logic']) == false),
             _compactStatusChip(context, 'XB Pose-Alter', _millisecondsText(diagnostics['xb_pose_age_ms'])),
             _compactStatusChip(context, 'Letzte Freigabe', _millisecondsText(diagnostics['last_drive_ready_age_ms'])),
@@ -325,75 +574,6 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           ],
         ),
       ],
-    );
-  }
-
-  Widget _buildState3Section(BuildContext context) {
-    final satellites = controller.satellitesForState(3);
-    return _sectionCard(
-      context,
-      icon: Icons.hub_outlined,
-      title: 'Verwendete Satelliten (State3)',
-      subtitle: satellites.isEmpty ? 'Noch keine verwendeten Satelliten empfangen' : 'Gesamt verwendet: ${satellites.length}',
-      initiallyExpanded: true,
-      child: _satelliteTable(context, satellites, showUsed: false),
-    );
-  }
-
-  Widget _buildState4Section(BuildContext context) {
-    final satellites = controller.satellitesForState(4);
-    final active = controller.state4Active;
-    return _sectionCard(
-      context,
-      icon: Icons.satellite_outlined,
-      title: 'Alle Satelliten (State4)',
-      subtitle: active ? 'Aktiv - vollständige Satellitenliste' : 'Deaktiviert - nur bei Diagnose aktivieren',
-      active: active,
-      initiallyExpanded: active,
-      trailing: active
-          ? TextButton.icon(
-              onPressed: () => controller.setState4Enabled(false),
-              icon: const Icon(Icons.power_settings_new),
-              label: const Text('Deaktivieren'),
-            )
-          : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: active ? Colors.green.withOpacity(0.08) : Colors.orange.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: (active ? Colors.green : Colors.orange).withOpacity(0.28)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(active ? Icons.info_outline : Icons.warning_amber_outlined, color: active ? Colors.green.shade700 : Colors.orange.shade700),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(active
-                      ? 'State4 ist aktiv. Es werden alle sichtbaren Satelliten übertragen.'
-                      : 'State4 erzeugt mehr MQTT-Daten und sollte nur zur Diagnose aktiviert werden.'),
-                ),
-                const SizedBox(width: 8),
-                if (!active)
-                  OutlinedButton(
-                    onPressed: () => controller.setState4Enabled(true),
-                    child: const Text('State4 temporär aktivieren'),
-                  ),
-              ],
-            ),
-          ),
-          if (satellites.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text('Gesamt sichtbar: ${satellites.length}', style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 8),
-            _satelliteTable(context, satellites, showUsed: true),
-          ],
-        ],
-      ),
     );
   }
 
@@ -575,7 +755,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
             ? Colors.green.shade700
             : theme.textTheme.titleMedium?.color;
     return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 128, maxWidth: 180),
+      constraints: const BoxConstraints(minWidth: 128, maxWidth: 190),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
@@ -627,6 +807,27 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     );
   }
 
+  Widget _messageBox(BuildContext context, String title, String message) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFAFA),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: theme.dividerColor.withOpacity(0.7)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          SelectableText(message, style: theme.textTheme.bodySmall),
+        ],
+      ),
+    );
+  }
+
   Widget _satelliteTable(BuildContext context, List<Map<String, dynamic>> satellites, {required bool showUsed}) {
     if (satellites.isEmpty) {
       return Text('Keine Satellitenliste empfangen.', style: Theme.of(context).textTheme.bodyMedium);
@@ -639,21 +840,64 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
         dataRowMaxHeight: 42,
         columns: [
           const DataColumn(label: Text('System')),
-          const DataColumn(label: Text('ID')),
+          const DataColumn(label: Text('GNSS-ID'), numeric: true),
+          const DataColumn(label: Text('SV'), numeric: true),
           const DataColumn(label: Text('C/N0 (dB-Hz)'), numeric: true),
           const DataColumn(label: Text('Elevation (°)'), numeric: true),
           const DataColumn(label: Text('Azimuth (°)'), numeric: true),
+          const DataColumn(label: Text('PRRes'), numeric: true),
+          const DataColumn(label: Text('Qual'), numeric: true),
           if (showUsed) const DataColumn(label: Text('Used')),
         ],
         rows: satellites.map((satellite) {
           return DataRow(
             cells: [
-              DataCell(Text(_satText(satellite, const ['system', 'gnss', 'constellation']))),
-              DataCell(Text(_satText(satellite, const ['id', 'svid', 'satellite_id', 'prn']))),
+              DataCell(Text(_satText(satellite, const ['gnss', 'system', 'constellation']))),
+              DataCell(Text(_fmt(_satDouble(satellite, const ['gnss_id', 'gnssId'])))),
+              DataCell(Text(_satText(satellite, const ['sv', 'svid', 'id', 'satellite_id', 'prn']))),
               DataCell(Text(_fmt(_satDouble(satellite, const ['cn0', 'cno', 'c_n0'])))),
-              DataCell(Text(_fmt(_satDouble(satellite, const ['elevation', 'elev'])))),
-              DataCell(Text(_fmt(_satDouble(satellite, const ['azimuth', 'az'])))),
+              DataCell(Text(_fmt(_satDouble(satellite, const ['elev', 'elevation'])))),
+              DataCell(Text(_fmt(_satDouble(satellite, const ['azim', 'azimuth', 'az'])))),
+              DataCell(Text(_fmt(_satDouble(satellite, const ['prres', 'pr_res'])))),
+              DataCell(Text(_fmt(_satDouble(satellite, const ['qual', 'quality'])))),
               if (showUsed) DataCell(_usedIcon(_satBool(satellite, const ['used', 'in_fix', 'fix_used']))),
+            ],
+          );
+        }).toList(growable: false),
+      ),
+    );
+  }
+
+  Widget _decisionTable(BuildContext context, List<_DecisionRow> rows) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        headingRowHeight: 40,
+        dataRowMinHeight: 36,
+        dataRowMaxHeight: 56,
+        columns: const [
+          DataColumn(label: Text('Nr.')),
+          DataColumn(label: Text('Entscheidungsknoten')),
+          DataColumn(label: Text('Wert')),
+          DataColumn(label: Text('Grenzwert')),
+          DataColumn(label: Text('Status')),
+        ],
+        rows: rows.map((row) {
+          final ok = _boolNullable(row.ok);
+          return DataRow(
+            cells: [
+              DataCell(Text(row.number)),
+              DataCell(SizedBox(width: 260, child: Text(row.label, maxLines: 2, overflow: TextOverflow.ellipsis))),
+              DataCell(SizedBox(width: 140, child: Text(row.value, maxLines: 2, overflow: TextOverflow.ellipsis))),
+              DataCell(SizedBox(width: 140, child: Text(row.threshold, maxLines: 2, overflow: TextOverflow.ellipsis))),
+              DataCell(Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (ok != null) Icon(ok ? Icons.check_circle_outline : Icons.warning_amber_outlined, size: 18, color: ok ? Colors.green.shade700 : Colors.orange.shade700),
+                  if (ok != null) const SizedBox(width: 5),
+                  Text(row.status),
+                ],
+              )),
             ],
           );
         }).toList(growable: false),
@@ -697,6 +941,140 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     );
   }
 
+  List<_DecisionRow> _decisionRowsFromPayload(Map<String, dynamic> payload) {
+    if (payload.isEmpty) return const <_DecisionRow>[];
+    final rawList = _firstValue(payload, const [
+      'steps',
+      'checks',
+      'decision_steps',
+      'decision_chain',
+      'diagnostics',
+      'stages',
+      'tests',
+      'items',
+      'nodes',
+      'decisions',
+    ]);
+    final rows = <_DecisionRow>[];
+    if (rawList is Iterable) {
+      var index = 1;
+      for (final item in rawList) {
+        rows.add(_decisionRowFromItem(item, index));
+        index++;
+      }
+      return rows;
+    }
+    if (rawList is Map) {
+      var index = 1;
+      for (final entry in rawList.entries) {
+        rows.add(_decisionRowFromItem(entry.value, index, fallbackLabel: entry.key.toString()));
+        index++;
+      }
+      return rows;
+    }
+    var index = 1;
+    for (final entry in payload.entries) {
+      if (const {'schema', 'state', 'updated_at', 'updatedAt', 'timestamp'}.contains(entry.key)) continue;
+      final value = entry.value;
+      if (value is Map || value is Iterable) {
+        rows.add(_decisionRowFromItem(value, index, fallbackLabel: entry.key));
+      } else {
+        rows.add(_DecisionRow(
+          number: index.toString(),
+          label: entry.key,
+          value: _formatValue(value),
+          threshold: '-',
+          status: '-',
+          ok: null,
+        ));
+      }
+      index++;
+    }
+    return rows;
+  }
+
+  _DecisionRow _decisionRowFromItem(dynamic item, int fallbackIndex, {String? fallbackLabel}) {
+    if (item is Map) {
+      final map = Map<String, dynamic>.from(item);
+      final number = _text(_firstValue(map, const ['index', 'step', 'number', 'id']), fallback: fallbackIndex.toString());
+      final label = _text(
+        _firstValue(map, const ['label', 'title', 'description', 'name', 'node', 'check']),
+        fallback: fallbackLabel ?? 'Prüfschritt $fallbackIndex',
+      );
+      final value = _formatValue(_firstValue(map, const ['value', 'actual', 'measured', 'current', 'observed', 'status_value']));
+      final threshold = _formatValue(_firstValue(map, const ['threshold', 'limit', 'required', 'expected', 'max', 'min', 'range']));
+      final statusValue = _firstValue(map, const ['status', 'result', 'state', 'reason']);
+      final ok = _firstValue(map, const ['ok', 'valid', 'passed', 'ready', 'success']);
+      final status = statusValue == null
+          ? (_boolNullable(ok) == null ? '-' : (_boolNullable(ok)! ? 'OK' : 'Fehler'))
+          : _formatValue(statusValue);
+      return _DecisionRow(
+        number: number,
+        label: label,
+        value: value,
+        threshold: threshold,
+        status: status,
+        ok: ok,
+      );
+    }
+    return _DecisionRow(
+      number: fallbackIndex.toString(),
+      label: fallbackLabel ?? 'Prüfschritt $fallbackIndex',
+      value: _formatValue(item),
+      threshold: '-',
+      status: '-',
+      ok: null,
+    );
+  }
+
+  dynamic _firstValue(Map<String, dynamic> map, List<String> keys) {
+    for (final key in keys) {
+      if (map.containsKey(key)) return map[key];
+    }
+    return null;
+  }
+
+  bool _containsAny(Map<String, dynamic> map, List<String> keys) {
+    for (final key in keys) {
+      if (map.containsKey(key)) return true;
+    }
+    return false;
+  }
+
+  String _systemChipText(String key, dynamic value) {
+    if (value is Map) {
+      final visible = value['visible'] ?? value['visible_count'];
+      final used = value['used'] ?? value['used_count'];
+      final parts = <String>[];
+      if (visible != null) parts.add('sichtbar ${_fmt(visible)}');
+      if (used != null) parts.add('used ${_fmt(used)}');
+      if (parts.isNotEmpty) return '$key ${parts.join(' / ')}';
+    }
+    return '$key ${_formatValue(value)}';
+  }
+
+  String _restartResetModeLabel(String mode) {
+    switch (mode) {
+      case 'controlled_software':
+        return 'controlled_software (Standard)';
+      case 'gnss_only':
+        return 'gnss_only';
+      case 'hardware_watchdog':
+        return 'hardware_watchdog';
+    }
+    return mode;
+  }
+
+  bool _restartStatusOk(Map<String, dynamic> status) {
+    final text = _text(status['status']).toLowerCase();
+    return text == 'sent' || text == 'requested' || text == 'ok' || text == 'accepted';
+  }
+
+  bool _restartStatusRejected(Map<String, dynamic> status) {
+    final text = _text(status['status']).toLowerCase();
+    return text == 'rejected' || text == 'send_failed' || text == 'failed' || text == 'error';
+  }
+
   String _metersText(dynamic value) {
     if (value == null || value.toString().trim().isEmpty || value.toString().trim().toLowerCase() == 'null') return '-';
     return '${_fmt(value)} m';
@@ -726,8 +1104,8 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     if (value is num) return value != 0;
     final text = value.toString().trim().toLowerCase();
     if (text.isEmpty || text == 'null' || text == '-') return null;
-    if (text == 'true' || text == '1' || text == 'yes' || text == 'on' || text == 'ja') return true;
-    if (text == 'false' || text == '0' || text == 'no' || text == 'off' || text == 'nein') return false;
+    if (text == 'true' || text == '1' || text == 'yes' || text == 'on' || text == 'ja' || text == 'ok' || text == 'passed' || text == 'ready' || text == 'sent' || text == 'requested') return true;
+    if (text == 'false' || text == '0' || text == 'no' || text == 'off' || text == 'nein' || text == 'failed' || text == 'error' || text == 'rejected' || text == 'blocked') return false;
     return null;
   }
 
@@ -768,6 +1146,13 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     return text.trim().isEmpty ? fallback : text;
   }
 
+  String _formatValue(dynamic value) {
+    if (value == null) return '-';
+    if (value is Map || value is Iterable) return const JsonEncoder.withIndent('  ').convert(value);
+    if (value is bool) return value ? 'Ja' : 'Nein';
+    return _fmt(value);
+  }
+
   String _fmt(dynamic value) {
     if (value == null) return '-';
     if (value is int) return value.toString();
@@ -793,12 +1178,12 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     if (value is bool) return value;
     if (value is num) return value != 0;
     final text = value?.toString().trim().toLowerCase() ?? '';
-    return text == 'true' || text == '1' || text == 'yes' || text == 'on';
+    return text == 'true' || text == '1' || text == 'yes' || text == 'on' || text == 'ja' || text == 'ok' || text == 'ready';
   }
 
   bool _qualityGood(dynamic quality) {
     final text = quality?.toString().toLowerCase() ?? '';
-    return text.contains('good') || text.contains('fix') || text.contains('ok');
+    return text.contains('good') || text.contains('fix') || text.contains('fixed') || text.contains('ok');
   }
 
   String _updatedAtText(dynamic value) {
@@ -827,4 +1212,22 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     if (age.isNegative) return Duration.zero;
     return age;
   }
+}
+
+class _DecisionRow {
+  const _DecisionRow({
+    required this.number,
+    required this.label,
+    required this.value,
+    required this.threshold,
+    required this.status,
+    required this.ok,
+  });
+
+  final String number;
+  final String label;
+  final String value;
+  final String threshold;
+  final String status;
+  final dynamic ok;
 }

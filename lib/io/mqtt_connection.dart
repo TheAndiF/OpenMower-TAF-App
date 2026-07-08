@@ -150,6 +150,7 @@ class MqttConnection  {
   static const String sensorSettingsSetPersistentJsonTopic = "sensors/settings/set/persistent/json";
   static const String sensorSettingsValidationJsonTopic = "sensors/settings/validation/json";
 
+  static const String gpsState0Topic = "gps_state/state0";
   static const String gpsState1Topic = "gps_state/state1";
   static const String gpsState2Topic = "gps_state/state2";
   static const String gpsState3Topic = "gps_state/state3";
@@ -159,6 +160,10 @@ class MqttConnection  {
   static const String gpsStateRenewJsonTopic = "gps_state/settings/set/renew/json";
   static const String gpsStateSetSessionJsonTopic = "gps_state/settings/set/session/json";
   static const String gpsStateSetPersistentJsonTopic = "gps_state/settings/set/persistent/json";
+  static const String gpsStateRestartSetJsonTopic = "gps_state/restart/set/json";
+  static const String gpsStateRestartStatusJsonTopic = "gps_state/restart/status/json";
+  static const String gpsStateRestartValidationJsonTopic = "gps_state/restart/validation/json";
+  static const String gpsStateRestartRenewJsonTopic = "gps_state/restart/set/renew/json";
 
   List<int>? _payloadBytes(MqttPublishMessage payload) {
     return payload.payload.message?.toList(growable: false);
@@ -696,6 +701,32 @@ class MqttConnection  {
     }
   }
 
+  void parseGpsRestartStatus(MqttPublishMessage payload) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) {
+        gpsStateController.setError("Leere oder ungültige F9P-Neustartstatus-Nachricht empfangen.", topic: gpsStateRestartStatusJsonTopic);
+        return;
+      }
+      gpsStateController.setRestartStatus(map, topic: gpsStateRestartStatusJsonTopic);
+    } catch (e) {
+      gpsStateController.setError("F9P-Neustartstatus konnte nicht gelesen werden: $e", topic: gpsStateRestartStatusJsonTopic);
+    }
+  }
+
+  void parseGpsRestartValidation(MqttPublishMessage payload) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) {
+        gpsStateController.setError("Leere oder ungültige F9P-Neustartvalidierung empfangen.", topic: gpsStateRestartValidationJsonTopic);
+        return;
+      }
+      gpsStateController.setRestartValidation(map, topic: gpsStateRestartValidationJsonTopic);
+    } catch (e) {
+      gpsStateController.setError("F9P-Neustartvalidierung konnte nicht gelesen werden: $e", topic: gpsStateRestartValidationJsonTopic);
+    }
+  }
+
   void _publishJson(String topic, Map<String, dynamic> map, {MqttQos qos = MqttQos.atLeastOnce}) {
     final builder = MqttPayloadBuilder();
     builder.addString(jsonEncode(map));
@@ -919,6 +950,24 @@ class MqttConnection  {
     } catch(e) {
       debugPrint("error requesting gps state via mqtt");
       gpsStateController.setError("GPS-State-Anfrage konnte nicht gesendet werden.", topic: gpsStateRenewJsonTopic);
+    }
+  }
+
+  void requestGpsRestartStatus() {
+    try {
+      _publishJson(gpsStateRestartRenewJsonTopic, <String, dynamic>{});
+    } catch(e) {
+      debugPrint("error requesting gps restart status via mqtt");
+      gpsStateController.setError("F9P-Neustartstatus-Anfrage konnte nicht gesendet werden.", topic: gpsStateRestartRenewJsonTopic);
+    }
+  }
+
+  void publishGpsRestartCommand(Map<String, dynamic> command) {
+    try {
+      _publishJson(gpsStateRestartSetJsonTopic, command, qos: MqttQos.exactlyOnce);
+    } catch(e) {
+      debugPrint("error publishing gps restart command via mqtt");
+      gpsStateController.setError("F9P-Neustartbefehl konnte nicht gesendet werden.", topic: gpsStateRestartSetJsonTopic);
     }
   }
 
@@ -1866,6 +1915,10 @@ class MqttConnection  {
               parseMowerLogicSatelliteLoggingStatus(payload);
             }
             break;
+            case gpsState0Topic: {
+              parseGpsState(0, payload, topic: gpsState0Topic);
+            }
+            break;
             case gpsState1Topic: {
               parseGpsState(1, payload, topic: gpsState1Topic);
             }
@@ -1888,6 +1941,14 @@ class MqttConnection  {
             break;
             case gpsStateValidationJsonTopic: {
               parseGpsStateValidation(payload);
+            }
+            break;
+            case gpsStateRestartStatusJsonTopic: {
+              parseGpsRestartStatus(payload);
+            }
+            break;
+            case gpsStateRestartValidationJsonTopic: {
+              parseGpsRestartValidation(payload);
             }
             break;
             case lowLevelPowerJsonTopic: {
@@ -1995,12 +2056,15 @@ class MqttConnection  {
     // Mäh-Lastregelung wird ausschließlich über settings/mower_logic/... verarbeitet.
     client.subscribe(lowLevelPowerJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(lowLevelPowerValidationJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(gpsState0Topic, MqttQos.atLeastOnce);
     client.subscribe(gpsState1Topic, MqttQos.atLeastOnce);
     client.subscribe(gpsState2Topic, MqttQos.atLeastOnce);
     client.subscribe(gpsState3Topic, MqttQos.atMostOnce);
     client.subscribe(gpsState4Topic, MqttQos.atMostOnce);
     client.subscribe(gpsStateSettingsJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(gpsStateValidationJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(gpsStateRestartStatusJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(gpsStateRestartValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mapOverlayJsonTopic, MqttQos.atMostOnce);
     client.subscribe(mapMowingProgressJsonTopic, MqttQos.atMostOnce);
     client.subscribe(mapMowingProgressStatusJsonTopic, MqttQos.atMostOnce);

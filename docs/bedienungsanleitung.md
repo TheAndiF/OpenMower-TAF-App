@@ -409,3 +409,9 @@ Der Flächeneditor ist die getrennte Detailseite zur Polygonbearbeitung. Hier we
 - Mit Zoom und Verschieben an die gewünschte Stelle navigieren.
 - Punkte gezielt bearbeiten und das Ergebnis visuell prüfen.
 - Nur speichern, wenn die Fläche weiterhin plausibel und geschlossen ist; sonst `Rückgängig` oder `Verwerfen` verwenden.
+
+### GPS-State v2 und F9P-Neustart
+
+Die GPS-State-Seite unterscheidet nun klar zwischen Bedieneranzeige und Experten-/Debugdaten. **State1** zeigt nur die kompakte Fahrfreigabe mit Grund, RTK-Zustand, Genauigkeit und Pose-Alter. **State2** zeigt die technische GNSS-/Pose-Zusammenfassung mit sichtbaren und verwendeten Satelliten, C/N0-Werten, Systemverteilung, Orientierung, Pose-Aktualität und Timeout. **State3** zeigt nur aktiv verwendete Satelliten. **State4** zeigt alle sichtbaren Satelliten inklusive Used-Status und sollte nur bei Diagnose aktiv sein. **State0** zeigt, sofern vom Backend geliefert, die vollständige Fahrfähigkeits-Entscheidungskette als Expertenansicht.
+
+Im Bereich **F9P-Neustart unter gps_state** können Hot Start, Warm Start und Cold Start ausgelöst werden. Als Reset-Mode ist `controlled_software` voreingestellt. Der angezeigte Status bestätigt das Senden beziehungsweise Schreiben des Restart-Befehls; er bedeutet nicht automatisch, dass sofort wieder RTK Fixed verfügbar ist.

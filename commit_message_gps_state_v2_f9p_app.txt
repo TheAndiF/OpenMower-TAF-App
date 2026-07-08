@@ -1,0 +1,18 @@
+BS_Adapt GPS-State v2 and F9P restart UI
+
+Summary:
+- Added gps_state/state0 subscription and a generic expert table for the 12-step drive-readiness decision chain.
+- Updated the GPS-State screen to reflect the separated gps_state.v2 roles of State1 through State4.
+- Removed State1 reliance on satellite statistics and moved aggregated GNSS/Pose details to State2 display.
+- Updated State3/State4 satellite tables for gnss, gnss_id, sv, cn0, elev, azim, prres, qual and State4 used flags.
+- Added F9P restart controls under gps_state/restart with hot_start, warm_start, cold_start and reset_mode selection.
+- Added parsing for restart status and validation feedback under gps_state/restart/status/json and gps_state/restart/validation/json.
+- Updated MQTT and user documentation for gps_state.v2 and F9P restart topics.
+
+Changed files:
+- lib/controllers/gps_state_controller.dart
+- lib/io/mqtt_connection.dart
+- lib/screens/gps_state.dart
+- docs/mqtt-schnittstelle.md
+- docs/bedienungsanleitung.md
+- commit_message_gps_state_v2_f9p_app.txt
