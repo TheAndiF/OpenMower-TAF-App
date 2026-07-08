@@ -30,6 +30,9 @@ class GpsStateController extends GetxController {
   ];
 
   final state0 = <String, dynamic>{}.obs;
+  final state0Legacy = <String, dynamic>{}.obs;
+  final state0Definition = <String, dynamic>{}.obs;
+  final state0Status = <String, dynamic>{}.obs;
   final state1 = <String, dynamic>{}.obs;
   final state2 = <String, dynamic>{}.obs;
   final state3 = <String, dynamic>{}.obs;
@@ -52,15 +55,18 @@ class GpsStateController extends GetxController {
   Timer? _responseTimeout;
   int _responseWaitGeneration = 0;
 
-  bool get hasState => state0.isNotEmpty || state1.isNotEmpty || state2.isNotEmpty || state3.isNotEmpty || state4.isNotEmpty;
+  bool get hasState => state0.isNotEmpty || state0Legacy.isNotEmpty || state0Definition.isNotEmpty || state0Status.isNotEmpty || state1.isNotEmpty || state2.isNotEmpty || state3.isNotEmpty || state4.isNotEmpty;
   bool get hasSettings => settingsPayload.isNotEmpty;
-  bool get state0Active => settingBool('publish_state0', fallback: state0.isNotEmpty);
+  bool get state0Active => settingBool('publish_state0', fallback: state0.isNotEmpty || state0Legacy.isNotEmpty || state0Definition.isNotEmpty || state0Status.isNotEmpty);
   bool get state4Active => settingBool('publish_state4', fallback: state4.isNotEmpty);
   bool get hasRestartStatus => restartStatusPayload.isNotEmpty || restartValidationPayload.isNotEmpty;
 
   String get rawJson {
     final data = <String, dynamic>{
       'state0': state0,
+      'state0_legacy': state0Legacy,
+      'state0_definition': state0Definition,
+      'state0_status': state0Status,
       'state1': state1,
       'state2': state2,
       'state3': state3,
@@ -100,7 +106,7 @@ class GpsStateController extends GetxController {
     final root = _root(payload);
     switch (stateNumber) {
       case 0:
-        state0.assignAll(root);
+        _setState0Payload(root, topic: topic);
         break;
       case 1:
         state1.assignAll(root);
@@ -121,6 +127,41 @@ class GpsStateController extends GetxController {
     lastUpdated.value = DateTime.now();
     waitingForResponse.value = false;
     _clearResponseTimeout();
+  }
+
+
+  void _setState0Payload(Map<String, dynamic> root, {required String topic}) {
+    final type = root['type']?.toString().trim().toLowerCase();
+    final isDefinition = type == 'definition' || topic == MqttConnection.gpsState0DefinitionTopic;
+    final isStatus = type == 'status' || topic == MqttConnection.gpsState0StatusTopic;
+
+    // State0 is split by the ROS side into a retained static definition and a
+    // frequently changing live status. Keep both payloads instead of allowing
+    // the last received MQTT message to overwrite the other half.
+    if (root['definition'] is Map || root['status'] is Map) {
+      // Accept a combined State0 object as well, for example from tests or
+      // older bridges that bundle definition and status in one retained value.
+      if (root['definition'] is Map) {
+        state0Definition.assignAll(_deepCopy(Map<String, dynamic>.from(root['definition'] as Map)));
+      }
+      if (root['status'] is Map) {
+        state0Status.assignAll(_deepCopy(Map<String, dynamic>.from(root['status'] as Map)));
+      }
+    } else if (isDefinition) {
+      state0Definition.assignAll(_deepCopy(root));
+    } else if (isStatus) {
+      state0Status.assignAll(_deepCopy(root));
+    } else {
+      // Backwards-compatible fallback for older packets that published a single
+      // combined State0 object directly on gps_state/state0.
+      state0Legacy.assignAll(_deepCopy(root));
+    }
+
+    final combined = <String, dynamic>{};
+    if (state0Legacy.isNotEmpty) combined['legacy'] = _deepCopy(state0Legacy);
+    if (state0Definition.isNotEmpty) combined['definition'] = _deepCopy(state0Definition);
+    if (state0Status.isNotEmpty) combined['status'] = _deepCopy(state0Status);
+    state0.assignAll(combined);
   }
 
   void setSettingsPayload(Map<String, dynamic> payload, {required String topic}) {

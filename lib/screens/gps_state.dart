@@ -322,29 +322,89 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
   }
 
   Widget _buildState0Section(BuildContext context) {
-    final state = controller.state0;
-    final rows = _decisionRowsFromPayload(state);
+    final definition = controller.state0Definition;
+    final status = controller.state0Status;
+    final legacy = controller.state0Legacy;
+    final rows = _state0DecisionRows(definition, status, legacy);
+    final summarySource = status.isNotEmpty ? Map<String, dynamic>.from(status) : legacy;
+    final definitionVersion = _text(
+      status['definition_version'] ?? definition['definition_version'] ?? legacy['definition_version'],
+      fallback: '-',
+    );
+
     return _sectionCard(
       context,
       icon: Icons.fact_check_outlined,
       title: 'Fahrfähigkeits-Entscheidungskette (State0)',
-      subtitle: state.isEmpty ? 'Noch keine State0-Diagnose empfangen' : 'Experten-/Debugansicht mit ${rows.length} Entscheidungsknoten',
+      subtitle: rows.isEmpty
+          ? 'Noch keine State0-Diagnose empfangen'
+          : 'Definition v$definitionVersion, Live-Status mit ${rows.length} Entscheidungsknoten',
       active: controller.state0Active,
       initiallyExpanded: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'State0 ist für die vollständige Fahrfähigkeitsdiagnose vorgesehen. Die normale Bedieneranzeige bleibt State1.',
+            'State0 ist die vollständige 12-stufige Experten-/Debugdiagnose. Die App wertet dazu die statische Definition und den Live-Status gemeinsam aus.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
           ),
           const SizedBox(height: 10),
+          if (summarySource.isNotEmpty) ...[
+            _state0SummaryBox(context, summarySource),
+            const SizedBox(height: 12),
+          ],
+          if (definition.isEmpty && status.isNotEmpty)
+            _messageBox(
+              context,
+              'Hinweis',
+              'Live-Status wurde empfangen, aber die statische Definition fehlt noch. Topic gps_state/state0/definition prüfen oder Status neu laden.',
+            ),
+          if (definition.isNotEmpty && status.isEmpty)
+            _messageBox(
+              context,
+              'Hinweis',
+              'Definition wurde empfangen, aber der Live-Status fehlt noch. Topic gps_state/state0/status prüfen.',
+            ),
+          if ((definition.isEmpty && status.isNotEmpty) || (definition.isNotEmpty && status.isEmpty))
+            const SizedBox(height: 12),
           if (rows.isEmpty)
             Text('Keine auswertbare Entscheidungskette empfangen.', style: Theme.of(context).textTheme.bodyMedium)
           else
             _decisionTable(context, rows),
         ],
       ),
+    );
+  }
+
+  Widget _state0SummaryBox(BuildContext context, Map<String, dynamic> status) {
+    final ready = _boolNullable(status['drive_ready'] ?? status['gps_drive_ready']);
+    final driveState = _text(status['drive_state'] ?? status['gps_drive_state'], fallback: ready == true ? 'ready' : '-');
+    final severity = _int(status['severity']);
+    final blockingStage = status['blocking_stage'];
+    final blockingTitle = _text(status['blocking_title']);
+    final summary = _text(status['summary'], fallback: ready == true ? 'Alle Bedingungen erfüllt' : 'Kein zusammenfassender Status empfangen');
+    final warning = ready == false || severity > 0 || blockingStage != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _compactStatusChip(context, 'Fahrfreigabe', ready == null ? '-' : (ready ? 'Ja' : 'Nein'), accent: ready == true, warning: warning),
+            _compactStatusChip(context, 'Drive-State', driveState, accent: driveState == 'ready', warning: warning),
+            _compactStatusChip(context, 'Severity', _fmt(status['severity']), accent: severity == 0, warning: severity > 0),
+            _compactStatusChip(context, 'Blockierende Stufe', blockingStage == null ? '-' : _fmt(blockingStage), accent: blockingStage == null, warning: blockingStage != null),
+            _compactStatusChip(context, 'Definition', _fmt(status['definition_version'])),
+            _compactStatusChip(context, 'Positioning-Debug', _boolText(status['positioning_debug_available']), accent: _boolNullable(status['positioning_debug_available']) == true, warning: _boolNullable(status['positioning_debug_available']) == false),
+            _compactStatusChip(context, 'LL GPS Alter', _millisecondsText(status['ll_gps_age_ms'])),
+            _compactStatusChip(context, 'XB Pose Alter', _millisecondsText(status['xb_pose_age_ms'])),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _messageBox(context, blockingTitle.isEmpty ? 'Zusammenfassung' : 'Zusammenfassung - blockiert durch: $blockingTitle', summary),
+      ],
     );
   }
 
@@ -869,27 +929,40 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
   }
 
   Widget _decisionTable(BuildContext context, List<_DecisionRow> rows) {
+    final theme = Theme.of(context);
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
         headingRowHeight: 40,
-        dataRowMinHeight: 36,
-        dataRowMaxHeight: 56,
+        dataRowMinHeight: 52,
+        dataRowMaxHeight: 76,
         columns: const [
           DataColumn(label: Text('Nr.')),
           DataColumn(label: Text('Entscheidungsknoten')),
           DataColumn(label: Text('Wert')),
           DataColumn(label: Text('Grenzwert')),
           DataColumn(label: Text('Status')),
+          DataColumn(label: Text('Quelle')),
         ],
         rows: rows.map((row) {
           final ok = _boolNullable(row.ok);
           return DataRow(
             cells: [
               DataCell(Text(row.number)),
-              DataCell(SizedBox(width: 260, child: Text(row.label, maxLines: 2, overflow: TextOverflow.ellipsis))),
-              DataCell(SizedBox(width: 140, child: Text(row.value, maxLines: 2, overflow: TextOverflow.ellipsis))),
-              DataCell(SizedBox(width: 140, child: Text(row.threshold, maxLines: 2, overflow: TextOverflow.ellipsis))),
+              DataCell(SizedBox(
+                width: 300,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(row.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                    if (row.description.isNotEmpty)
+                      Text(row.description, maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
+                  ],
+                ),
+              )),
+              DataCell(SizedBox(width: 155, child: Text(row.value, maxLines: 2, overflow: TextOverflow.ellipsis))),
+              DataCell(SizedBox(width: 155, child: Text(row.threshold, maxLines: 2, overflow: TextOverflow.ellipsis))),
               DataCell(Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -898,6 +971,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                   Text(row.status),
                 ],
               )),
+              DataCell(SizedBox(width: 230, child: Text(row.source, maxLines: 2, overflow: TextOverflow.ellipsis))),
             ],
           );
         }).toList(growable: false),
@@ -939,6 +1013,132 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       ),
       child: Icon(icon, color: color, size: 22),
     );
+  }
+
+  List<_DecisionRow> _state0DecisionRows(
+    Map<String, dynamic> definition,
+    Map<String, dynamic> status,
+    Map<String, dynamic> legacy,
+  ) {
+    final definitionChecks = _state0ChecksMap(definition);
+    final statusChecks = _state0ChecksMap(status);
+
+    // New State0 consists of two retained MQTT messages: a static definition
+    // and a live status. Merge both sides by the stable check id so the table
+    // can show title/description/source from the definition and value/status
+    // from the live payload in the same row.
+    if (definitionChecks.isNotEmpty || statusChecks.isNotEmpty) {
+      final orderedKeys = <String>[];
+      final allKeys = <String>{...definitionChecks.keys, ...statusChecks.keys};
+      final sorted = allKeys.toList(growable: false)
+        ..sort((a, b) {
+          final aStage = _int(statusChecks[a]?['stage'] ?? definitionChecks[a]?['stage']);
+          final bStage = _int(statusChecks[b]?['stage'] ?? definitionChecks[b]?['stage']);
+          if (aStage != bStage) return aStage.compareTo(bStage);
+          return a.compareTo(b);
+        });
+      orderedKeys.addAll(sorted);
+
+      var index = 1;
+      return orderedKeys.map((key) {
+        final row = _state0DecisionRow(
+          key,
+          definitionChecks[key],
+          statusChecks[key],
+          index,
+        );
+        index++;
+        return row;
+      }).toList(growable: false);
+    }
+
+    final legacyPayload = legacy.isNotEmpty ? legacy : definition;
+    if (legacyPayload.isNotEmpty) {
+      return _decisionRowsFromPayload(legacyPayload);
+    }
+    return const <_DecisionRow>[];
+  }
+
+  Map<String, Map<String, dynamic>> _state0ChecksMap(Map<String, dynamic> payload) {
+    final raw = payload['checks'];
+    if (raw is! Map) return const <String, Map<String, dynamic>>{};
+    final result = <String, Map<String, dynamic>>{};
+    for (final entry in raw.entries) {
+      if (entry.value is Map) {
+        final map = Map<String, dynamic>.from(entry.value as Map);
+        result[entry.key.toString()] = map;
+      }
+    }
+    return result;
+  }
+
+  _DecisionRow _state0DecisionRow(
+    String checkId,
+    Map<String, dynamic>? definition,
+    Map<String, dynamic>? status,
+    int fallbackIndex,
+  ) {
+    final stage = _text(status?['stage'] ?? definition?['stage'], fallback: fallbackIndex.toString());
+    final label = _text(
+      definition?['title'] ?? status?['title'] ?? definition?['name'] ?? status?['name'],
+      fallback: checkId,
+    );
+    final description = _text(definition?['description'] ?? status?['description']);
+    final value = _state0ValueText(status, definition);
+    final threshold = _state0ThresholdText(status, definition);
+    final statusText = _text(status?['status'] ?? status?['result'] ?? status?['state'], fallback: definition == null ? 'Definition fehlt' : 'Status fehlt');
+    final source = _text(definition?['source'] ?? status?['source'], fallback: _text(status?['key'] ?? definition?['key'], fallback: checkId));
+
+    return _DecisionRow(
+      number: stage,
+      label: label,
+      description: description,
+      value: value,
+      threshold: threshold,
+      status: statusText,
+      ok: _state0StatusOk(status),
+      source: source,
+      key: checkId,
+    );
+  }
+
+  String _state0ValueText(Map<String, dynamic>? status, Map<String, dynamic>? definition) {
+    if (status == null) {
+      final expected = definition?['expected'];
+      if (expected != null) return 'Soll: ${_formatValue(expected)}';
+      return '-';
+    }
+    final display = _text(status['display']);
+    if (display.isNotEmpty) return display;
+    if (status.containsKey('value')) return _formatValue(status['value']);
+    return '-';
+  }
+
+  String _state0ThresholdText(Map<String, dynamic>? status, Map<String, dynamic>? definition) {
+    final operator = _text(definition?['operator'] ?? status?['operator']);
+    final unit = _text(definition?['unit'] ?? status?['unit']);
+    final expected = definition?['expected'] ?? status?['expected'];
+    if (expected != null) return '${operator.isEmpty ? 'Soll' : operator} ${_formatValue(expected)}';
+    final threshold = status?['threshold'] ?? definition?['threshold'] ?? definition?['default_threshold'];
+    if (threshold == null) return '-';
+    final suffix = unit.isEmpty ? '' : ' $unit';
+    if (operator == '>') return '> ${_formatValue(threshold)}$suffix';
+    if (operator == '<') return '< ${_formatValue(threshold)}$suffix';
+    if (operator == '>=') return '>= ${_formatValue(threshold)}$suffix';
+    if (operator == '<=') return '<= ${_formatValue(threshold)}$suffix';
+    return '${operator.isEmpty ? 'Grenze' : operator} ${_formatValue(threshold)}$suffix';
+  }
+
+  bool? _state0StatusOk(Map<String, dynamic>? status) {
+    if (status == null) return null;
+    final explicit = _firstValue(status, const ['ok', 'valid', 'passed', 'ready', 'success']);
+    final explicitBool = _boolNullable(explicit);
+    if (explicitBool != null) return explicitBool;
+    final text = _text(status['status'] ?? status['result'] ?? status['state']).toLowerCase();
+    if (text == 'ok' || text == 'passed' || text == 'ready' || text == 'true') return true;
+    if (text == 'fail' || text == 'failed' || text == 'error' || text == 'blocked' || text == 'false') return false;
+    if (_int(status['severity']) > 0) return false;
+    return null;
   }
 
   List<_DecisionRow> _decisionRowsFromPayload(Map<String, dynamic> payload) {
@@ -996,25 +1196,31 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
   _DecisionRow _decisionRowFromItem(dynamic item, int fallbackIndex, {String? fallbackLabel}) {
     if (item is Map) {
       final map = Map<String, dynamic>.from(item);
-      final number = _text(_firstValue(map, const ['index', 'step', 'number', 'id']), fallback: fallbackIndex.toString());
+      final number = _text(_firstValue(map, const ['stage', 'index', 'step', 'number', 'id']), fallback: fallbackIndex.toString());
       final label = _text(
-        _firstValue(map, const ['label', 'title', 'description', 'name', 'node', 'check']),
+        _firstValue(map, const ['label', 'title', 'name', 'node', 'check', 'description']),
         fallback: fallbackLabel ?? 'Prüfschritt $fallbackIndex',
       );
-      final value = _formatValue(_firstValue(map, const ['value', 'actual', 'measured', 'current', 'observed', 'status_value']));
+      final description = _text(map['description']);
+      final value = _text(map['display']).isNotEmpty
+          ? _text(map['display'])
+          : _formatValue(_firstValue(map, const ['value', 'actual', 'measured', 'current', 'observed', 'status_value']));
       final threshold = _formatValue(_firstValue(map, const ['threshold', 'limit', 'required', 'expected', 'max', 'min', 'range']));
       final statusValue = _firstValue(map, const ['status', 'result', 'state', 'reason']);
-      final ok = _firstValue(map, const ['ok', 'valid', 'passed', 'ready', 'success']);
+      final ok = _firstValue(map, const ['ok', 'valid', 'passed', 'ready', 'success']) ?? _state0StatusOk(map);
       final status = statusValue == null
           ? (_boolNullable(ok) == null ? '-' : (_boolNullable(ok)! ? 'OK' : 'Fehler'))
           : _formatValue(statusValue);
       return _DecisionRow(
         number: number,
         label: label,
+        description: description,
         value: value,
         threshold: threshold,
         status: status,
         ok: ok,
+        source: _text(map['source'] ?? map['key'], fallback: fallbackLabel ?? '-'),
+        key: _text(map['key'], fallback: fallbackLabel ?? ''),
       );
     }
     return _DecisionRow(
@@ -1024,6 +1230,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       threshold: '-',
       status: '-',
       ok: null,
+      key: fallbackLabel ?? '',
     );
   }
 
@@ -1218,16 +1425,22 @@ class _DecisionRow {
   const _DecisionRow({
     required this.number,
     required this.label,
+    this.description = '',
     required this.value,
     required this.threshold,
     required this.status,
     required this.ok,
+    this.source = '',
+    this.key = '',
   });
 
   final String number;
   final String label;
+  final String description;
   final String value;
   final String threshold;
   final String status;
   final dynamic ok;
+  final String source;
+  final String key;
 }

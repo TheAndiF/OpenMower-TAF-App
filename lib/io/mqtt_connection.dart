@@ -151,6 +151,8 @@ class MqttConnection  {
   static const String sensorSettingsValidationJsonTopic = "sensors/settings/validation/json";
 
   static const String gpsState0Topic = "gps_state/state0";
+  static const String gpsState0DefinitionTopic = "gps_state/state0/definition";
+  static const String gpsState0StatusTopic = "gps_state/state0/status";
   static const String gpsState1Topic = "gps_state/state1";
   static const String gpsState2Topic = "gps_state/state2";
   static const String gpsState3Topic = "gps_state/state3";
@@ -1919,6 +1921,14 @@ class MqttConnection  {
               parseGpsState(0, payload, topic: gpsState0Topic);
             }
             break;
+            case gpsState0DefinitionTopic: {
+              parseGpsState(0, payload, topic: gpsState0DefinitionTopic);
+            }
+            break;
+            case gpsState0StatusTopic: {
+              parseGpsState(0, payload, topic: gpsState0StatusTopic);
+            }
+            break;
             case gpsState1Topic: {
               parseGpsState(1, payload, topic: gpsState1Topic);
             }
@@ -2057,6 +2067,8 @@ class MqttConnection  {
     client.subscribe(lowLevelPowerJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(lowLevelPowerValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(gpsState0Topic, MqttQos.atLeastOnce);
+    client.subscribe(gpsState0DefinitionTopic, MqttQos.atLeastOnce);
+    client.subscribe(gpsState0StatusTopic, MqttQos.atLeastOnce);
     client.subscribe(gpsState1Topic, MqttQos.atLeastOnce);
     client.subscribe(gpsState2Topic, MqttQos.atLeastOnce);
     client.subscribe(gpsState3Topic, MqttQos.atMostOnce);

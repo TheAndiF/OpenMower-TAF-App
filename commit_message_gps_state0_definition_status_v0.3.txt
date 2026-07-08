@@ -1,0 +1,15 @@
+BS_Fix GPS State0 definition status evaluation
+Date: 2026-07-09
+Summary:
+- Fixed State0 MQTT handling for the split gps_state/state0/definition and gps_state/state0/status payloads.
+- Kept State0 definition and live status separately so retained definition data is not overwritten by status updates.
+- Merged State0 definition metadata with live status checks in the expert table.
+- Added summary chips for drive readiness, severity, blocking stage and message.
+- Added source and description output for each State0 decision node.
+Changed files:
+- lib/controllers/gps_state_controller.dart
+- lib/io/mqtt_connection.dart
+- lib/screens/gps_state.dart
+- _Dokumentation/2026-07-09 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State0 Definition-Status Auswertung - v0.3.docx
+- _Dokumentation/2026-07-09 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State0 Definition-Status Auswertung - v0.3.pdf
+- commit_message_gps_state0_definition_status_v0.3.txt
