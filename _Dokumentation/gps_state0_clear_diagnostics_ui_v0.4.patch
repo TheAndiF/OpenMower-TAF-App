@@ -1,0 +1,585 @@
+--- orig_state0_ui/OpenMower-TAF-App/lib/screens/gps_state.dart	2026-07-08 22:32:52.000000000 +0000
++++ work_state0_ui/OpenMower-TAF-App/lib/screens/gps_state.dart	2026-07-08 22:58:11.017825544 +0000
+@@ -338,20 +338,20 @@
+       title: 'Fahrfähigkeits-Entscheidungskette (State0)',
+       subtitle: rows.isEmpty
+           ? 'Noch keine State0-Diagnose empfangen'
+-          : 'Definition v$definitionVersion, Live-Status mit ${rows.length} Entscheidungsknoten',
++          : 'Definition v$definitionVersion, ${rows.length} klar markierte Entscheidungsknoten',
+       active: controller.state0Active,
+       initiallyExpanded: false,
+       child: Column(
+         crossAxisAlignment: CrossAxisAlignment.stretch,
+         children: [
+           Text(
+-            'State0 ist die vollständige 12-stufige Experten-/Debugdiagnose. Die App wertet dazu die statische Definition und den Live-Status gemeinsam aus.',
++            'State0 zeigt die vollständige Freigabekette. Jeder Prüfschritt ist farbig markiert: grün = erfüllt, gelb = prüfen/unklar, rot = blockiert.',
+             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+           ),
+           const SizedBox(height: 10),
+           if (summarySource.isNotEmpty) ...[
+-            _state0SummaryBox(context, summarySource),
+-            const SizedBox(height: 12),
++            _state0ReadinessBanner(context, summarySource, rows),
++            const SizedBox(height: 10),
+           ],
+           if (definition.isEmpty && status.isNotEmpty)
+             _messageBox(
+@@ -369,45 +369,129 @@
+             const SizedBox(height: 12),
+           if (rows.isEmpty)
+             Text('Keine auswertbare Entscheidungskette empfangen.', style: Theme.of(context).textTheme.bodyMedium)
+-          else
+-            _decisionTable(context, rows),
++          else ...[
++            _state0Legend(context, rows),
++            const SizedBox(height: 10),
++            _state0DecisionList(context, rows),
++          ],
+         ],
+       ),
+     );
+   }
+ 
+-  Widget _state0SummaryBox(BuildContext context, Map<String, dynamic> status) {
++  Widget _state0ReadinessBanner(BuildContext context, Map<String, dynamic> status, List<_DecisionRow> rows) {
++    final theme = Theme.of(context);
+     final ready = _boolNullable(status['drive_ready'] ?? status['gps_drive_ready']);
+-    final driveState = _text(status['drive_state'] ?? status['gps_drive_state'], fallback: ready == true ? 'ready' : '-');
+     final severity = _int(status['severity']);
+     final blockingStage = status['blocking_stage'];
++    final blockingKey = _text(status['blocking_key']);
+     final blockingTitle = _text(status['blocking_title']);
+-    final summary = _text(status['summary'], fallback: ready == true ? 'Alle Bedingungen erfüllt' : 'Kein zusammenfassender Status empfangen');
+-    final warning = ready == false || severity > 0 || blockingStage != null;
++    final summary = _text(status['summary'], fallback: ready == true ? 'Alle Bedingungen erfüllt' : 'Keine Zusammenfassung empfangen');
++    final blockingRow = _state0BlockingRow(rows, blockingStage: blockingStage, blockingKey: blockingKey);
++    final state = ready == true && severity == 0 && blockingStage == null
++        ? _DecisionConditionState.passed
++        : ready == false || severity > 0 || blockingStage != null
++            ? _DecisionConditionState.failed
++            : _DecisionConditionState.warning;
++    final color = _decisionStateColor(state);
++    final title = state == _DecisionConditionState.passed
++        ? 'Fahrfreigabe erteilt'
++        : blockingRow != null
++            ? 'Fahrfreigabe hängt bei Stufe ${blockingRow.number}: ${blockingRow.label}'
++            : blockingTitle.isNotEmpty
++                ? 'Fahrfreigabe hängt bei: $blockingTitle'
++                : 'Fahrfreigabe noch nicht eindeutig';
++    final details = <String>[];
++    if (summary.isNotEmpty) details.add(summary);
++    if (blockingKey.isNotEmpty) details.add('Blockierender Schlüssel: $blockingKey');
++    final llAge = _millisecondsText(status['ll_gps_age_ms']);
++    final xbAge = _millisecondsText(status['xb_pose_age_ms']);
++    if (llAge != '-') details.add('LL GPS Alter: $llAge');
++    if (xbAge != '-') details.add('XB Pose Alter: $xbAge');
+ 
+-    return Column(
+-      crossAxisAlignment: CrossAxisAlignment.stretch,
++    return Container(
++      width: double.infinity,
++      padding: const EdgeInsets.all(12),
++      decoration: BoxDecoration(
++        color: color.withOpacity(0.08),
++        borderRadius: BorderRadius.circular(6),
++        border: Border.all(color: color.withOpacity(0.45), width: 1.2),
++      ),
++      child: Row(
++        crossAxisAlignment: CrossAxisAlignment.start,
++        children: [
++          Icon(_decisionStateIcon(state), color: color, size: 28),
++          const SizedBox(width: 10),
++          Expanded(
++            child: Column(
++              crossAxisAlignment: CrossAxisAlignment.start,
++              children: [
++                Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: color)),
++                if (details.isNotEmpty) ...[
++                  const SizedBox(height: 4),
++                  Text(details.join(' · '), style: theme.textTheme.bodySmall),
++                ],
++              ],
++            ),
++          ),
++        ],
++      ),
++    );
++  }
++
++  Widget _state0Legend(BuildContext context, List<_DecisionRow> rows) {
++    final counts = <_DecisionConditionState, int>{
++      _DecisionConditionState.passed: 0,
++      _DecisionConditionState.warning: 0,
++      _DecisionConditionState.failed: 0,
++      _DecisionConditionState.unknown: 0,
++    };
++    for (final row in rows) {
++      counts[_decisionConditionState(row)] = (counts[_decisionConditionState(row)] ?? 0) + 1;
++    }
++    return Wrap(
++      spacing: 8,
++      runSpacing: 8,
+       children: [
+-        Wrap(
+-          spacing: 8,
+-          runSpacing: 8,
+-          children: [
+-            _compactStatusChip(context, 'Fahrfreigabe', ready == null ? '-' : (ready ? 'Ja' : 'Nein'), accent: ready == true, warning: warning),
+-            _compactStatusChip(context, 'Drive-State', driveState, accent: driveState == 'ready', warning: warning),
+-            _compactStatusChip(context, 'Severity', _fmt(status['severity']), accent: severity == 0, warning: severity > 0),
+-            _compactStatusChip(context, 'Blockierende Stufe', blockingStage == null ? '-' : _fmt(blockingStage), accent: blockingStage == null, warning: blockingStage != null),
+-            _compactStatusChip(context, 'Definition', _fmt(status['definition_version'])),
+-            _compactStatusChip(context, 'Positioning-Debug', _boolText(status['positioning_debug_available']), accent: _boolNullable(status['positioning_debug_available']) == true, warning: _boolNullable(status['positioning_debug_available']) == false),
+-            _compactStatusChip(context, 'LL GPS Alter', _millisecondsText(status['ll_gps_age_ms'])),
+-            _compactStatusChip(context, 'XB Pose Alter', _millisecondsText(status['xb_pose_age_ms'])),
+-          ],
+-        ),
+-        const SizedBox(height: 8),
+-        _messageBox(context, blockingTitle.isEmpty ? 'Zusammenfassung' : 'Zusammenfassung - blockiert durch: $blockingTitle', summary),
++        _state0LegendChip(context, _DecisionConditionState.passed, 'Erfüllt', counts[_DecisionConditionState.passed] ?? 0),
++        _state0LegendChip(context, _DecisionConditionState.warning, 'Prüfen', counts[_DecisionConditionState.warning] ?? 0),
++        _state0LegendChip(context, _DecisionConditionState.failed, 'Blockiert', counts[_DecisionConditionState.failed] ?? 0),
++        if ((counts[_DecisionConditionState.unknown] ?? 0) > 0)
++          _state0LegendChip(context, _DecisionConditionState.unknown, 'Unbekannt', counts[_DecisionConditionState.unknown] ?? 0),
+       ],
+     );
+   }
+ 
++  Widget _state0LegendChip(BuildContext context, _DecisionConditionState state, String label, int count) {
++    final color = _decisionStateColor(state);
++    return Container(
++      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
++      decoration: BoxDecoration(
++        color: color.withOpacity(0.08),
++        borderRadius: BorderRadius.circular(16),
++        border: Border.all(color: color.withOpacity(0.45)),
++      ),
++      child: Row(
++        mainAxisSize: MainAxisSize.min,
++        children: [
++          Icon(_decisionStateIcon(state), size: 16, color: color),
++          const SizedBox(width: 6),
++          Text('$label: $count', style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600, color: color)),
++        ],
++      ),
++    );
++  }
++
++  _DecisionRow? _state0BlockingRow(List<_DecisionRow> rows, {dynamic blockingStage, String blockingKey = ''}) {
++    final stageText = _text(blockingStage);
++    for (final row in rows) {
++      if (row.isBlocking) return row;
++      if (stageText.isNotEmpty && row.number == stageText) return row;
++      if (blockingKey.isNotEmpty && (row.key == blockingKey || row.source == blockingKey)) return row;
++    }
++    return null;
++  }
++
+   Widget _buildRestartSection(BuildContext context) {
+     final status = controller.restartStatusPayload;
+     final validation = controller.restartValidationPayload;
+@@ -928,57 +1012,204 @@
+     );
+   }
+ 
+-  Widget _decisionTable(BuildContext context, List<_DecisionRow> rows) {
++  Widget _state0DecisionList(BuildContext context, List<_DecisionRow> rows) {
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.stretch,
++      children: rows.map((row) => Padding(
++            padding: const EdgeInsets.only(bottom: 8),
++            child: _state0DecisionCard(context, row),
++          )).toList(growable: false),
++    );
++  }
++
++  Widget _state0DecisionCard(BuildContext context, _DecisionRow row) {
+     final theme = Theme.of(context);
+-    return SingleChildScrollView(
+-      scrollDirection: Axis.horizontal,
+-      child: DataTable(
+-        headingRowHeight: 40,
+-        dataRowMinHeight: 52,
+-        dataRowMaxHeight: 76,
+-        columns: const [
+-          DataColumn(label: Text('Nr.')),
+-          DataColumn(label: Text('Entscheidungsknoten')),
+-          DataColumn(label: Text('Wert')),
+-          DataColumn(label: Text('Grenzwert')),
+-          DataColumn(label: Text('Status')),
+-          DataColumn(label: Text('Quelle')),
+-        ],
+-        rows: rows.map((row) {
+-          final ok = _boolNullable(row.ok);
+-          return DataRow(
+-            cells: [
+-              DataCell(Text(row.number)),
+-              DataCell(SizedBox(
+-                width: 300,
++    final state = _decisionConditionState(row);
++    final color = _decisionStateColor(state);
++    final stateLabel = _decisionStateLabel(state);
++    return Container(
++      width: double.infinity,
++      padding: const EdgeInsets.all(11),
++      decoration: BoxDecoration(
++        color: color.withOpacity(row.isBlocking ? 0.12 : 0.06),
++        borderRadius: BorderRadius.circular(6),
++        border: Border.all(color: color.withOpacity(row.isBlocking ? 0.75 : 0.38), width: row.isBlocking ? 1.4 : 1.0),
++      ),
++      child: Column(
++        crossAxisAlignment: CrossAxisAlignment.stretch,
++        children: [
++          Row(
++            crossAxisAlignment: CrossAxisAlignment.start,
++            children: [
++              Container(
++                width: 42,
++                padding: const EdgeInsets.symmetric(vertical: 7),
++                decoration: BoxDecoration(
++                  color: color.withOpacity(0.14),
++                  borderRadius: BorderRadius.circular(5),
++                  border: Border.all(color: color.withOpacity(0.45)),
++                ),
++                child: Column(
++                  mainAxisSize: MainAxisSize.min,
++                  children: [
++                    Icon(_decisionStateIcon(state), color: color, size: 18),
++                    const SizedBox(height: 2),
++                    Text(row.number, style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700, color: color)),
++                  ],
++                ),
++              ),
++              const SizedBox(width: 10),
++              Expanded(
+                 child: Column(
+                   crossAxisAlignment: CrossAxisAlignment.start,
+-                  mainAxisAlignment: MainAxisAlignment.center,
+                   children: [
+-                    Text(row.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+-                    if (row.description.isNotEmpty)
+-                      Text(row.description, maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
++                    Wrap(
++                      spacing: 8,
++                      runSpacing: 4,
++                      crossAxisAlignment: WrapCrossAlignment.center,
++                      children: [
++                        Text(row.label, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
++                        if (row.isBlocking)
++                          _state0SmallPill(context, 'BLOCKIERENDE STUFE', Colors.red.shade700),
++                      ],
++                    ),
++                    if (row.description.isNotEmpty) ...[
++                      const SizedBox(height: 3),
++                      Text(row.description, style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
++                    ],
+                   ],
+                 ),
+-              )),
+-              DataCell(SizedBox(width: 155, child: Text(row.value, maxLines: 2, overflow: TextOverflow.ellipsis))),
+-              DataCell(SizedBox(width: 155, child: Text(row.threshold, maxLines: 2, overflow: TextOverflow.ellipsis))),
+-              DataCell(Row(
+-                mainAxisSize: MainAxisSize.min,
+-                children: [
+-                  if (ok != null) Icon(ok ? Icons.check_circle_outline : Icons.warning_amber_outlined, size: 18, color: ok ? Colors.green.shade700 : Colors.orange.shade700),
+-                  if (ok != null) const SizedBox(width: 5),
+-                  Text(row.status),
+-                ],
+-              )),
+-              DataCell(SizedBox(width: 230, child: Text(row.source, maxLines: 2, overflow: TextOverflow.ellipsis))),
++              ),
++              const SizedBox(width: 10),
++              Container(
++                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
++                decoration: BoxDecoration(
++                  color: color.withOpacity(0.10),
++                  borderRadius: BorderRadius.circular(16),
++                  border: Border.all(color: color.withOpacity(0.45)),
++                ),
++                child: Row(
++                  mainAxisSize: MainAxisSize.min,
++                  children: [
++                    Icon(_decisionStateIcon(state), size: 16, color: color),
++                    const SizedBox(width: 5),
++                    Text(stateLabel, style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700, color: color)),
++                  ],
++                ),
++              ),
+             ],
+-          );
+-        }).toList(growable: false),
++          ),
++          const SizedBox(height: 9),
++          Wrap(
++            spacing: 8,
++            runSpacing: 8,
++            children: [
++              _state0InfoPill(context, 'Wert', row.value),
++              _state0InfoPill(context, 'Bedingung', row.threshold),
++              _state0InfoPill(context, 'Status', row.status),
++              _state0InfoPill(context, 'Quelle', row.source),
++            ],
++          ),
++        ],
++      ),
++    );
++  }
++
++  Widget _state0InfoPill(BuildContext context, String label, String value) {
++    final theme = Theme.of(context);
++    return ConstrainedBox(
++      constraints: const BoxConstraints(minWidth: 145, maxWidth: 320),
++      child: Container(
++        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
++        decoration: BoxDecoration(
++          color: const Color(0xFFFAFAFA),
++          borderRadius: BorderRadius.circular(4),
++          border: Border.all(color: theme.dividerColor.withOpacity(0.65)),
++        ),
++        child: Column(
++          crossAxisAlignment: CrossAxisAlignment.start,
++          mainAxisSize: MainAxisSize.min,
++          children: [
++            Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
++            const SizedBox(height: 2),
++            Text(value.isEmpty ? '-' : value, maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
++          ],
++        ),
+       ),
+     );
+   }
+ 
++  Widget _state0SmallPill(BuildContext context, String label, Color color) {
++    return Container(
++      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
++      decoration: BoxDecoration(
++        color: color.withOpacity(0.10),
++        borderRadius: BorderRadius.circular(12),
++        border: Border.all(color: color.withOpacity(0.45)),
++      ),
++      child: Text(label, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700, color: color)),
++    );
++  }
++
++  _DecisionConditionState _decisionConditionState(_DecisionRow row) {
++    final ok = _boolNullable(row.ok);
++    final text = row.status.toLowerCase();
++    if (row.isBlocking) return _DecisionConditionState.failed;
++    if (ok == true) return _DecisionConditionState.passed;
++    if (ok == false) {
++      if (row.severity == 1 || text.contains('warn') || text.contains('toleranz') || text.contains('grace')) {
++        return _DecisionConditionState.warning;
++      }
++      return _DecisionConditionState.failed;
++    }
++    if (row.severity >= 2 || text.contains('fail') || text.contains('fehler') || text.contains('blocked') || text.contains('blockiert')) {
++      return _DecisionConditionState.failed;
++    }
++    if (row.severity == 1 || text.contains('warn') || text.contains('prüfen') || text.contains('pruefen') || text.contains('missing') || text.contains('fehlt')) {
++      return _DecisionConditionState.warning;
++    }
++    return _DecisionConditionState.unknown;
++  }
++
++  Color _decisionStateColor(_DecisionConditionState state) {
++    switch (state) {
++      case _DecisionConditionState.passed:
++        return Colors.green.shade700;
++      case _DecisionConditionState.warning:
++        return Colors.orange.shade700;
++      case _DecisionConditionState.failed:
++        return Colors.red.shade700;
++      case _DecisionConditionState.unknown:
++        return Colors.amber.shade800;
++    }
++  }
++
++  IconData _decisionStateIcon(_DecisionConditionState state) {
++    switch (state) {
++      case _DecisionConditionState.passed:
++        return Icons.check_circle_outline;
++      case _DecisionConditionState.warning:
++        return Icons.report_problem_outlined;
++      case _DecisionConditionState.failed:
++        return Icons.cancel_outlined;
++      case _DecisionConditionState.unknown:
++        return Icons.help_outline;
++    }
++  }
++
++  String _decisionStateLabel(_DecisionConditionState state) {
++    switch (state) {
++      case _DecisionConditionState.passed:
++        return 'Erfüllt';
++      case _DecisionConditionState.warning:
++        return 'Prüfen';
++      case _DecisionConditionState.failed:
++        return 'Blockiert';
++      case _DecisionConditionState.unknown:
++        return 'Unbekannt';
++    }
++  }
++
+   Widget _usedIcon(bool used) {
+     if (used) {
+       return Icon(Icons.check, color: Colors.green.shade700, size: 18);
+@@ -1022,11 +1253,13 @@
+   ) {
+     final definitionChecks = _state0ChecksMap(definition);
+     final statusChecks = _state0ChecksMap(status);
++    final rootStatus = status.isNotEmpty ? status : legacy;
++    final blockingStage = rootStatus['blocking_stage'];
++    final blockingKey = _text(rootStatus['blocking_key']);
+ 
+     // New State0 consists of two retained MQTT messages: a static definition
+-    // and a live status. Merge both sides by the stable check id so the table
+-    // can show title/description/source from the definition and value/status
+-    // from the live payload in the same row.
++    // and a live status. Merge both sides by the stable check id so the list
++    // can show definition data and live result in one clearly marked row.
+     if (definitionChecks.isNotEmpty || statusChecks.isNotEmpty) {
+       final orderedKeys = <String>[];
+       final allKeys = <String>{...definitionChecks.keys, ...statusChecks.keys};
+@@ -1046,6 +1279,8 @@
+           definitionChecks[key],
+           statusChecks[key],
+           index,
++          blockingStage: blockingStage,
++          blockingKey: blockingKey,
+         );
+         index++;
+         return row;
+@@ -1076,8 +1311,10 @@
+     String checkId,
+     Map<String, dynamic>? definition,
+     Map<String, dynamic>? status,
+-    int fallbackIndex,
+-  ) {
++    int fallbackIndex, {
++    dynamic blockingStage,
++    String blockingKey = '',
++  }) {
+     final stage = _text(status?['stage'] ?? definition?['stage'], fallback: fallbackIndex.toString());
+     final label = _text(
+       definition?['title'] ?? status?['title'] ?? definition?['name'] ?? status?['name'],
+@@ -1088,6 +1325,7 @@
+     final threshold = _state0ThresholdText(status, definition);
+     final statusText = _text(status?['status'] ?? status?['result'] ?? status?['state'], fallback: definition == null ? 'Definition fehlt' : 'Status fehlt');
+     final source = _text(definition?['source'] ?? status?['source'], fallback: _text(status?['key'] ?? definition?['key'], fallback: checkId));
++    final key = _text(status?['key'] ?? definition?['key'], fallback: checkId);
+ 
+     return _DecisionRow(
+       number: stage,
+@@ -1098,10 +1336,25 @@
+       status: statusText,
+       ok: _state0StatusOk(status),
+       source: source,
+-      key: checkId,
++      key: key,
++      severity: _int(status?['severity']),
++      isBlocking: _state0CheckIsBlocking(stage, checkId, key, blockingStage: blockingStage, blockingKey: blockingKey),
+     );
+   }
+ 
++  bool _state0CheckIsBlocking(
++    String stage,
++    String checkId,
++    String key, {
++    dynamic blockingStage,
++    String blockingKey = '',
++  }) {
++    final blockingStageText = _text(blockingStage);
++    if (blockingStageText.isNotEmpty && stage == blockingStageText) return true;
++    if (blockingKey.isEmpty) return false;
++    return checkId == blockingKey || key == blockingKey;
++  }
++
+   String _state0ValueText(Map<String, dynamic>? status, Map<String, dynamic>? definition) {
+     if (status == null) {
+       final expected = definition?['expected'];
+@@ -1186,6 +1439,7 @@
+           threshold: '-',
+           status: '-',
+           ok: null,
++          key: entry.key,
+         ));
+       }
+       index++;
+@@ -1221,6 +1475,7 @@
+         ok: ok,
+         source: _text(map['source'] ?? map['key'], fallback: fallbackLabel ?? '-'),
+         key: _text(map['key'], fallback: fallbackLabel ?? ''),
++        severity: _int(map['severity']),
+       );
+     }
+     return _DecisionRow(
+@@ -1421,6 +1676,8 @@
+   }
+ }
+ 
++enum _DecisionConditionState { passed, warning, failed, unknown }
++
+ class _DecisionRow {
+   const _DecisionRow({
+     required this.number,
+@@ -1432,6 +1689,8 @@
+     required this.ok,
+     this.source = '',
+     this.key = '',
++    this.severity = 0,
++    this.isBlocking = false,
+   });
+ 
+   final String number;
+@@ -1443,4 +1702,6 @@
+   final dynamic ok;
+   final String source;
+   final String key;
++  final int severity;
++  final bool isBlocking;
+ }
+--- orig_state0_ui/OpenMower-TAF-App/docs/bedienungsanleitung.md	2026-07-08 22:00:25.000000000 +0000
++++ work_state0_ui/OpenMower-TAF-App/docs/bedienungsanleitung.md	2026-07-08 22:59:11.665471061 +0000
+@@ -414,4 +414,6 @@
+ 
+ Die GPS-State-Seite unterscheidet nun klar zwischen Bedieneranzeige und Experten-/Debugdaten. **State1** zeigt nur die kompakte Fahrfreigabe mit Grund, RTK-Zustand, Genauigkeit und Pose-Alter. **State2** zeigt die technische GNSS-/Pose-Zusammenfassung mit sichtbaren und verwendeten Satelliten, C/N0-Werten, Systemverteilung, Orientierung, Pose-Aktualität und Timeout. **State3** zeigt nur aktiv verwendete Satelliten. **State4** zeigt alle sichtbaren Satelliten inklusive Used-Status und sollte nur bei Diagnose aktiv sein. **State0** zeigt, sofern vom Backend geliefert, die vollständige Fahrfähigkeits-Entscheidungskette als Expertenansicht.
+ 
++In **State0** wird die bisherige, überladene Kennzahlen-Zusammenfassung durch einen kompakten Freigabe-Banner ersetzt. Direkt darunter zeigt eine farbige Liste alle 12 Prüfpunkte: grün bedeutet erfüllt, gelb bedeutet prüfen/unklar und rot bedeutet blockiert. Wenn das Backend `blocking_stage` oder `blocking_key` liefert, markiert die App den betreffenden Prüfschritt zusätzlich als **blockierende Stufe**, damit sofort sichtbar ist, wo die Freigabe hängt.
++
+ Im Bereich **F9P-Neustart unter gps_state** können Hot Start, Warm Start und Cold Start ausgelöst werden. Als Reset-Mode ist `controlled_software` voreingestellt. Der angezeigte Status bestätigt das Senden beziehungsweise Schreiben des Restart-Befehls; er bedeutet nicht automatisch, dass sofort wieder RTK Fixed verfügbar ist.
+--- orig_state0_ui/OpenMower-TAF-App/docs/mqtt-schnittstelle.md	2026-07-08 22:00:25.000000000 +0000
++++ work_state0_ui/OpenMower-TAF-App/docs/mqtt-schnittstelle.md	2026-07-08 22:59:11.666519954 +0000
+@@ -265,7 +265,7 @@
+ 
+ ## GPS-State und Fahrfreigabe
+ 
+-Die GPS-State-Unterseite liest die Topics `gps_state/state1` bis `gps_state/state4` sowie die zugehörigen Settings. Die Payloads dürfen direkt als JSON-Objekt oder unter `d` gekapselt gesendet werden. Die App wertet die neuen Fahrfreigabe-Felder additiv aus; ältere Backends ohne diese Felder bleiben weiterhin darstellbar.
++Die GPS-State-Unterseite liest `gps_state/state0/definition`, `gps_state/state0/status`, `gps_state/state1` bis `gps_state/state4` sowie die zugehörigen Settings. Die Payloads dürfen direkt als JSON-Objekt oder unter `d` gekapselt gesendet werden. Die App wertet die neuen Fahrfreigabe-Felder additiv aus; ältere Backends ohne diese Felder bleiben weiterhin darstellbar.
+ 
+ ### `gps_state/state1`
+ 
+@@ -309,6 +309,23 @@
+ | `gps_timeout` | Anzeige, ob aus Sicht des Backend-Monitorings ein GPS-Timeout erreicht ist. |
+ | `age_ms` | Alter der zuletzt ausgewerteten Pose. |
+ 
++### `gps_state/state0/definition` und `gps_state/state0/status`
++
++State0 ist die Experten-/Debugansicht der vollständigen Fahrfähigkeits-Entscheidungskette. Die App wertet die statische Definition und den Live-Status gemeinsam über die stabile Check-ID aus, zum Beispiel `03_gps_input_accuracy`.
++
++| Payload | Verwendung in der App |
++|---|---|
++| `gps_state/state0/definition` | Liefert Titel, Beschreibung, Quelle, Operator, erwarteten Wert oder Grenzwert je Prüfschritt. |
++| `gps_state/state0/status` | Liefert Live-Wert, Anzeige-Text, Status, Severity, Zusammenfassung sowie optional `blocking_stage` und `blocking_key`. |
++
++Darstellung in der App:
++
++- Grün: Bedingung erfüllt (`status=ok`, `ok=true`, `passed=true` oder Severity 0).
++- Gelb: Wert unklar, fehlend oder prüfbedürftig, zum Beispiel Definition ohne Live-Status.
++- Rot: Bedingung blockiert, fehlgeschlagen oder vom Backend als blockierende Stufe gemeldet.
++
++Die frühere breite Kennzahlen-Zusammenfassung wird nicht mehr als Chip-Leiste dargestellt. Stattdessen zeigt die App oben nur einen kompakten Banner mit Fahrfreigabe, Blockierstelle und wenigen Altersinformationen. Die eigentliche Diagnose erfolgt über die farbige 12-Punkte-Liste.
++
+ ### `gps_state/state2`
+ 
+ State2 bleibt die erweiterte Signal- und Diagnoseansicht. Wenn `drive_diagnostics` vorhanden ist, blendet die App zusätzlich eine technische Diagnosegruppe ein.

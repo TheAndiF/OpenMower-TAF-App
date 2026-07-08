@@ -1,0 +1,16 @@
+BS_Improve State0 diagnostics visibility
+Date: 2026-07-09
+Summary:
+- Replaced the overloaded State0 summary chip area with a compact readiness banner.
+- Rendered all 12 State0 checks as clearly colored diagnostic cards.
+- Added green/yellow/red state mapping with text labels for accessibility.
+- Highlighted the blocking check from blocking_stage or blocking_key.
+- Updated user and MQTT documentation for the new State0 evaluation.
+Changed files:
+- lib/screens/gps_state.dart
+- docs/bedienungsanleitung.md
+- docs/mqtt-schnittstelle.md
+- _Dokumentation/gps_state0_clear_diagnostics_ui_v0.4.patch
+- _Dokumentation/2026-07-09 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State0 klare Freigabeauswertung - v0.4.docx
+- _Dokumentation/2026-07-09 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State0 klare Freigabeauswertung - v0.4.pdf
+- commit_message_gps_state0_clear_diagnostics_v0.4.txt

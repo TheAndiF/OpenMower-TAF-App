@@ -265,7 +265,7 @@ Die App kann Änderungen an Anzeige-Metadaten über `sensors/settings/set/persis
 
 ## GPS-State und Fahrfreigabe
 
-Die GPS-State-Unterseite liest die Topics `gps_state/state1` bis `gps_state/state4` sowie die zugehörigen Settings. Die Payloads dürfen direkt als JSON-Objekt oder unter `d` gekapselt gesendet werden. Die App wertet die neuen Fahrfreigabe-Felder additiv aus; ältere Backends ohne diese Felder bleiben weiterhin darstellbar.
+Die GPS-State-Unterseite liest `gps_state/state0/definition`, `gps_state/state0/status`, `gps_state/state1` bis `gps_state/state4` sowie die zugehörigen Settings. Die Payloads dürfen direkt als JSON-Objekt oder unter `d` gekapselt gesendet werden. Die App wertet die neuen Fahrfreigabe-Felder additiv aus; ältere Backends ohne diese Felder bleiben weiterhin darstellbar.
 
 ### `gps_state/state1`
 
@@ -308,6 +308,23 @@ State1 ist die kompakte Bedieneransicht. Neben den bisherigen Feldern für Verf�
 | `recent_absolute_pose` | Anzeige, ob eine aktuelle Sensor-Fusion-Pose vorhanden ist. |
 | `gps_timeout` | Anzeige, ob aus Sicht des Backend-Monitorings ein GPS-Timeout erreicht ist. |
 | `age_ms` | Alter der zuletzt ausgewerteten Pose. |
+
+### `gps_state/state0/definition` und `gps_state/state0/status`
+
+State0 ist die Experten-/Debugansicht der vollständigen Fahrfähigkeits-Entscheidungskette. Die App wertet die statische Definition und den Live-Status gemeinsam über die stabile Check-ID aus, zum Beispiel `03_gps_input_accuracy`.
+
+| Payload | Verwendung in der App |
+|---|---|
+| `gps_state/state0/definition` | Liefert Titel, Beschreibung, Quelle, Operator, erwarteten Wert oder Grenzwert je Prüfschritt. |
+| `gps_state/state0/status` | Liefert Live-Wert, Anzeige-Text, Status, Severity, Zusammenfassung sowie optional `blocking_stage` und `blocking_key`. |
+
+Darstellung in der App:
+
+- Grün: Bedingung erfüllt (`status=ok`, `ok=true`, `passed=true` oder Severity 0).
+- Gelb: Wert unklar, fehlend oder prüfbedürftig, zum Beispiel Definition ohne Live-Status.
+- Rot: Bedingung blockiert, fehlgeschlagen oder vom Backend als blockierende Stufe gemeldet.
+
+Die frühere breite Kennzahlen-Zusammenfassung wird nicht mehr als Chip-Leiste dargestellt. Stattdessen zeigt die App oben nur einen kompakten Banner mit Fahrfreigabe, Blockierstelle und wenigen Altersinformationen. Die eigentliche Diagnose erfolgt über die farbige 12-Punkte-Liste.
 
 ### `gps_state/state2`
 
