@@ -1362,8 +1362,8 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       orderedKeys.addAll(sorted);
 
       var index = 1;
-      return orderedKeys.map((key) {
-        final row = _state0DecisionRow(
+      return orderedKeys.map<_DecisionRow>((key) {
+        final row = _buildState0DecisionRowData(
           key,
           definitionChecks[key],
           statusChecks[key],
@@ -1396,7 +1396,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     return result;
   }
 
-  _DecisionRow _state0DecisionRow(
+  _DecisionRow _buildState0DecisionRowData(
     String checkId,
     Map<String, dynamic>? definition,
     Map<String, dynamic>? status,

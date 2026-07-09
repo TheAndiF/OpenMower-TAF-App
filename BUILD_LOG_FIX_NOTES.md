@@ -38,3 +38,22 @@ FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 ```
 
 Damit wird die Node-20-Deprecation-Warnung der GitHub Actions berücksichtigt.
+
+## GPS-State0 Web-Build - 09.07.2026
+
+Die Logs `logs_78453450581.zip` und `logs_78453450581(1).zip` enthielten für amd64 und arm64 denselben abbrechenden Dart-Compilerfehler:
+
+```text
+lib/screens/gps_state.dart:1399:16: Error: '_state0DecisionRow' is already declared in this scope.
+lib/screens/gps_state.dart:1376:10: Error: A value of type 'List<dynamic>' can't be returned from a function with return type 'List<_DecisionRow>'.
+```
+
+Ursache war eine Namenskollision zwischen dem Widget-Builder für eine sichtbare State0-Zeile und der Hilfsfunktion zum Erzeugen des zugehörigen `_DecisionRow`-Datenobjekts. Dadurch konnte Dart den Aufruf im `map` nicht eindeutig typisieren.
+
+Umgesetzt:
+
+- Daten-Hilfsfunktion eindeutig in `_buildState0DecisionRowData` umbenannt.
+- `map<_DecisionRow>` explizit typisiert, sodass die Rückgabe garantiert `List<_DecisionRow>` bleibt.
+- Klammerbilanz und eindeutige Methodendeklarationen statisch geprüft.
+
+Die Hinweise zu WebAssembly/`dart:html`, Windows-Anforderungen sowie GitHub-Actions-Deprecations waren Warnungen und nicht die Ursache des fehlgeschlagenen Web-Builds.

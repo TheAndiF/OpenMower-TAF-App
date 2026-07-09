@@ -1,0 +1,13 @@
+BS_Fix State0 web build compilation
+Date: 2026-07-09
+Summary:
+- Renamed the State0 data-row builder to avoid a duplicate method declaration.
+- Added an explicit _DecisionRow generic to the State0 mapping operation.
+- Documented the fatal amd64/arm64 compiler errors and separated them from non-blocking warnings.
+Changed files:
+- lib/screens/gps_state.dart
+- BUILD_LOG_FIX_NOTES.md
+- _Dokumentation/2026-07-09 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State0 Buildfehlerkorrektur - v0.6.docx
+- _Dokumentation/2026-07-09 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State0 Buildfehlerkorrektur - v0.6.pdf
+- _Dokumentation/gps_state0_build_error_fix_v0.6.patch
+- commit_message_gps_state0_build_error_fix_v0.6.txt
