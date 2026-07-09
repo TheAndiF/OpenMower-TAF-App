@@ -331,6 +331,8 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       status['definition_version'] ?? definition['definition_version'] ?? legacy['definition_version'],
       fallback: '-',
     );
+    final waiting = controller.state0WaitingForUpdate.value;
+    final snapshotCurrent = controller.state0SnapshotIsCurrent;
 
     return _sectionCard(
       context,
@@ -338,42 +340,126 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       title: 'Fahrfähigkeits-Entscheidungskette (State0)',
       subtitle: rows.isEmpty
           ? 'Noch keine State0-Diagnose empfangen'
-          : 'Definition v$definitionVersion, ${rows.length} klar markierte Entscheidungsknoten',
+          : 'Definition v$definitionVersion, ${rows.length} Entscheidungsknoten',
       active: controller.state0Active,
       initiallyExpanded: false,
+      onExpansionChanged: (expanded) {
+        if (expanded && !controller.state0WaitingForUpdate.value) {
+          controller.requestState0Update(automatic: true);
+        }
+      },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'State0 zeigt die vollständige Freigabekette. Jeder Prüfschritt ist farbig markiert: grün = erfüllt, gelb = prüfen/unklar, rot = blockiert.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
-          ),
+          _state0UpdateControls(context, waiting: waiting, snapshotCurrent: snapshotCurrent),
           const SizedBox(height: 10),
-          if (summarySource.isNotEmpty) ...[
+          if (waiting || !snapshotCurrent)
+            _state0RefreshBanner(context, waiting: waiting)
+          else if (summarySource.isNotEmpty)
             _state0ReadinessBanner(context, summarySource, rows),
+          if (definition.isEmpty && status.isNotEmpty) ...[
             const SizedBox(height: 10),
+            _messageBox(
+              context,
+              'Hinweis',
+              'Live-Status wurde empfangen, aber die statische Definition fehlt noch. Topic gps_state/state0/definition prüfen.',
+            ),
           ],
-          if (definition.isEmpty && status.isNotEmpty)
+          if (definition.isNotEmpty && status.isEmpty) ...[
+            const SizedBox(height: 10),
             _messageBox(
               context,
               'Hinweis',
-              'Live-Status wurde empfangen, aber die statische Definition fehlt noch. Topic gps_state/state0/definition prüfen oder Status neu laden.',
+              'Definition wurde empfangen, aber der Live-Status fehlt noch. Mit „State0 aktualisieren“ einen neuen Stand anfordern.',
             ),
-          if (definition.isNotEmpty && status.isEmpty)
-            _messageBox(
-              context,
-              'Hinweis',
-              'Definition wurde empfangen, aber der Live-Status fehlt noch. Topic gps_state/state0/status prüfen.',
-            ),
-          if ((definition.isEmpty && status.isNotEmpty) || (definition.isNotEmpty && status.isEmpty))
-            const SizedBox(height: 12),
+          ],
+          const SizedBox(height: 10),
           if (rows.isEmpty)
             Text('Keine auswertbare Entscheidungskette empfangen.', style: Theme.of(context).textTheme.bodyMedium)
           else ...[
-            _state0Legend(context, rows),
-            const SizedBox(height: 10),
-            _state0DecisionList(context, rows),
+            _state0DecisionHeader(context),
+            const SizedBox(height: 4),
+            _state0DecisionList(
+              context,
+              rows,
+              snapshotCurrent: snapshotCurrent,
+              waiting: waiting,
+            ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _state0UpdateControls(
+    BuildContext context, {
+    required bool waiting,
+    required bool snapshotCurrent,
+  }) {
+    final theme = Theme.of(context);
+    final received = controller.state0StatusReceivedAt.value;
+    final statusText = waiting
+        ? 'Aktueller Snapshot wird angefordert.'
+        : snapshotCurrent && received != null
+            ? 'Aktueller Snapshot empfangen: ${_clockText(received)}'
+            : controller.state0UpdateMessage.value.isNotEmpty
+                ? controller.state0UpdateMessage.value
+                : 'Beim Öffnen wird automatisch ein aktueller State0-Snapshot angefordert.';
+    final color = waiting
+        ? Colors.orange.shade700
+        : snapshotCurrent
+            ? Colors.green.shade700
+            : theme.hintColor;
+
+    return Row(
+      children: [
+        Icon(
+          waiting ? Icons.sync : snapshotCurrent ? Icons.check_circle_outline : Icons.schedule,
+          size: 18,
+          color: color,
+        ),
+        const SizedBox(width: 7),
+        Expanded(
+          child: Text(
+            statusText,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(color: color),
+          ),
+        ),
+        const SizedBox(width: 10),
+        OutlinedButton.icon(
+          onPressed: waiting ? null : () => controller.requestState0Update(),
+          icon: waiting
+              ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.refresh, size: 18),
+          label: const Text('State0 aktualisieren'),
+        ),
+      ],
+    );
+  }
+
+  Widget _state0RefreshBanner(BuildContext context, {required bool waiting}) {
+    final theme = Theme.of(context);
+    final color = Colors.orange.shade700;
+    final message = waiting
+        ? 'Die angezeigten Prüfpunkte werden bis zum Eingang einer neuen State0-Statusmeldung nicht als aktuell gewertet.'
+        : controller.state0UpdateMessage.value.isNotEmpty
+            ? controller.state0UpdateMessage.value
+            : 'Für diese Ansicht liegt noch kein seit dem Öffnen angeforderter State0-Snapshot vor.';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: color.withOpacity(0.42)),
+      ),
+      child: Row(
+        children: [
+          Icon(waiting ? Icons.sync : Icons.warning_amber_outlined, color: color, size: 21),
+          const SizedBox(width: 9),
+          Expanded(child: Text(message, style: theme.textTheme.bodySmall?.copyWith(color: color))),
         ],
       ),
     );
@@ -388,21 +474,31 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     final blockingTitle = _text(status['blocking_title']);
     final summary = _text(status['summary'], fallback: ready == true ? 'Alle Bedingungen erfüllt' : 'Keine Zusammenfassung empfangen');
     final blockingRow = _state0BlockingRow(rows, blockingStage: blockingStage, blockingKey: blockingKey);
-    final state = ready == true && severity == 0 && blockingStage == null
+    final rowStates = rows.map(_decisionConditionState).toList(growable: false);
+    final hasUnknown = rowStates.any((item) => item == _DecisionConditionState.unknown);
+    final hasFailed = rowStates.any((item) => item == _DecisionConditionState.failed);
+    final readyIsConsistent = ready == true && !hasUnknown && !hasFailed;
+    final reportedReadyButIncomplete = ready == true && !readyIsConsistent;
+    final state = readyIsConsistent && severity == 0 && blockingStage == null
         ? _DecisionConditionState.passed
-        : ready == false || severity > 0 || blockingStage != null
-            ? _DecisionConditionState.failed
-            : _DecisionConditionState.warning;
+        : reportedReadyButIncomplete
+            ? _DecisionConditionState.warning
+            : ready == false || severity > 0 || blockingStage != null
+                ? _DecisionConditionState.failed
+                : _DecisionConditionState.warning;
     final color = _decisionStateColor(state);
-    final title = state == _DecisionConditionState.passed
-        ? 'Fahrfreigabe erteilt'
-        : blockingRow != null
-            ? 'Fahrfreigabe hängt bei Stufe ${blockingRow.number}: ${blockingRow.label}'
-            : blockingTitle.isNotEmpty
-                ? 'Fahrfreigabe hängt bei: $blockingTitle'
-                : 'Fahrfreigabe noch nicht eindeutig';
+    final title = reportedReadyButIncomplete
+        ? 'Fahrfreigabe gemeldet, Prüfkette aber nicht vollständig aktuell'
+        : state == _DecisionConditionState.passed
+            ? 'Fahrfreigabe erteilt'
+            : blockingRow != null
+                ? 'Fahrfreigabe hängt bei Stufe ${blockingRow.number}: ${blockingRow.label}'
+                : blockingTitle.isNotEmpty
+                    ? 'Fahrfreigabe hängt bei: $blockingTitle'
+                    : 'Fahrfreigabe noch nicht eindeutig';
     final details = <String>[];
     if (summary.isNotEmpty) details.add(summary);
+    if (reportedReadyButIncomplete) details.add('Ein grüner Gesamtstatus wird erst angezeigt, wenn die Einzelprüfungen vollständig vorliegen.');
     if (blockingKey.isNotEmpty) details.add('Blockierender Schlüssel: $blockingKey');
     final llAge = _millisecondsText(status['ll_gps_age_ms']);
     final xbAge = _millisecondsText(status['xb_pose_age_ms']);
@@ -411,72 +507,29 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withOpacity(0.45), width: 1.2),
+        color: color.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: color.withOpacity(0.42)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(_decisionStateIcon(state), color: color, size: 28),
-          const SizedBox(width: 10),
+          Icon(_decisionStateIcon(state), color: color, size: 23),
+          const SizedBox(width: 9),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: color)),
                 if (details.isNotEmpty) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   Text(details.join(' · '), style: theme.textTheme.bodySmall),
                 ],
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _state0Legend(BuildContext context, List<_DecisionRow> rows) {
-    final counts = <_DecisionConditionState, int>{
-      _DecisionConditionState.passed: 0,
-      _DecisionConditionState.warning: 0,
-      _DecisionConditionState.failed: 0,
-      _DecisionConditionState.unknown: 0,
-    };
-    for (final row in rows) {
-      counts[_decisionConditionState(row)] = (counts[_decisionConditionState(row)] ?? 0) + 1;
-    }
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        _state0LegendChip(context, _DecisionConditionState.passed, 'Erfüllt', counts[_DecisionConditionState.passed] ?? 0),
-        _state0LegendChip(context, _DecisionConditionState.warning, 'Prüfen', counts[_DecisionConditionState.warning] ?? 0),
-        _state0LegendChip(context, _DecisionConditionState.failed, 'Blockiert', counts[_DecisionConditionState.failed] ?? 0),
-        if ((counts[_DecisionConditionState.unknown] ?? 0) > 0)
-          _state0LegendChip(context, _DecisionConditionState.unknown, 'Unbekannt', counts[_DecisionConditionState.unknown] ?? 0),
-      ],
-    );
-  }
-
-  Widget _state0LegendChip(BuildContext context, _DecisionConditionState state, String label, int count) {
-    final color = _decisionStateColor(state);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.45)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(_decisionStateIcon(state), size: 16, color: color),
-          const SizedBox(width: 6),
-          Text('$label: $count', style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600, color: color)),
         ],
       ),
     );
@@ -861,6 +914,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     bool active = false,
     bool initiallyExpanded = false,
     Widget? trailing,
+    ValueChanged<bool>? onExpansionChanged,
   }) {
     final theme = Theme.of(context);
     final color = active ? Colors.green.shade700 : theme.primaryColor;
@@ -875,6 +929,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       ),
       child: ExpansionTile(
         initiallyExpanded: initiallyExpanded,
+        onExpansionChanged: onExpansionChanged,
         leading: Icon(icon, color: color),
         title: Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
         subtitle: subtitle == null ? null : Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -1012,131 +1067,165 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     );
   }
 
-  Widget _state0DecisionList(BuildContext context, List<_DecisionRow> rows) {
+  Widget _state0DecisionHeader(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodySmall?.copyWith(
+          fontWeight: FontWeight.w700,
+          color: Theme.of(context).hintColor,
+        );
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 920),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            children: [
+              const SizedBox(width: 52),
+              SizedBox(width: 360, child: Text('Entscheidungsknoten', style: style)),
+              SizedBox(width: 200, child: Text('Aktueller Wert', style: style)),
+              SizedBox(width: 170, child: Text('Bedingung', style: style)),
+              SizedBox(width: 130, child: Text('Ergebnis', style: style)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _state0DecisionList(
+    BuildContext context,
+    List<_DecisionRow> rows, {
+    required bool snapshotCurrent,
+    required bool waiting,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: rows.map((row) => Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: _state0DecisionCard(context, row),
+            padding: const EdgeInsets.only(bottom: 4),
+            child: _state0DecisionRow(
+              context,
+              row,
+              snapshotCurrent: snapshotCurrent,
+              waiting: waiting,
+            ),
           )).toList(growable: false),
     );
   }
 
-  Widget _state0DecisionCard(BuildContext context, _DecisionRow row) {
+  Widget _state0DecisionRow(
+    BuildContext context,
+    _DecisionRow row, {
+    required bool snapshotCurrent,
+    required bool waiting,
+  }) {
     final theme = Theme.of(context);
-    final state = _decisionConditionState(row);
-    final color = _decisionStateColor(state);
-    final stateLabel = _decisionStateLabel(state);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(11),
+    final effectiveState = snapshotCurrent ? _decisionConditionState(row) : _DecisionConditionState.unknown;
+    final color = _decisionStateColor(effectiveState);
+    final stateLabel = waiting
+        ? 'Aktualisierung'
+        : snapshotCurrent
+            ? _decisionStateLabel(effectiveState)
+            : 'Nicht aktuell';
+
+    final line = Container(
+      constraints: const BoxConstraints(minWidth: 920, minHeight: 44),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(row.isBlocking ? 0.12 : 0.06),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withOpacity(row.isBlocking ? 0.75 : 0.38), width: row.isBlocking ? 1.4 : 1.0),
+        color: color.withOpacity(row.isBlocking && snapshotCurrent ? 0.065 : 0.025),
+        borderRadius: BorderRadius.circular(4),
+        border: Border(
+          left: BorderSide(color: color, width: row.isBlocking && snapshotCurrent ? 4 : 3),
+          top: BorderSide(color: theme.dividerColor.withOpacity(0.45)),
+          right: BorderSide(color: theme.dividerColor.withOpacity(0.45)),
+          bottom: BorderSide(color: theme.dividerColor.withOpacity(0.45)),
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 42,
-                padding: const EdgeInsets.symmetric(vertical: 7),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.14),
-                  borderRadius: BorderRadius.circular(5),
-                  border: Border.all(color: color.withOpacity(0.45)),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(_decisionStateIcon(state), color: color, size: 18),
-                    const SizedBox(height: 2),
-                    Text(row.number, style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700, color: color)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(row.label, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
-                        if (row.isBlocking)
-                          _state0SmallPill(context, 'BLOCKIERENDE STUFE', Colors.red.shade700),
-                      ],
+          SizedBox(
+            width: 44,
+            child: Row(
+              children: [
+                Icon(_decisionStateIcon(effectiveState), color: color, size: 18),
+                const SizedBox(width: 5),
+                Text(row.number, style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700, color: color)),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 360,
+            child: Tooltip(
+              message: row.description.isEmpty ? row.label : '${row.label}\n${row.description}',
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      row.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
-                    if (row.description.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(row.description, style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
-                    ],
+                  ),
+                  if (row.isBlocking && snapshotCurrent) ...[
+                    const SizedBox(width: 6),
+                    _state0SmallPill(context, 'BLOCKIERT ZUERST', Colors.red.shade700),
                   ],
-                ),
+                ],
               ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            ),
+          ),
+          SizedBox(
+            width: 200,
+            child: Text(
+              snapshotCurrent ? row.value : 'Warte auf aktuellen Wert',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
+          ),
+          SizedBox(
+            width: 170,
+            child: Text(
+              row.threshold,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          SizedBox(
+            width: 130,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: color.withOpacity(0.45)),
+                  color: color.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: color.withOpacity(0.42)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(_decisionStateIcon(state), size: 16, color: color),
-                    const SizedBox(width: 5),
-                    Text(stateLabel, style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700, color: color)),
+                    Icon(_decisionStateIcon(effectiveState), size: 14, color: color),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        stateLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700, color: color),
+                      ),
+                    ),
                   ],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 9),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _state0InfoPill(context, 'Wert', row.value),
-              _state0InfoPill(context, 'Bedingung', row.threshold),
-              _state0InfoPill(context, 'Status', row.status),
-              _state0InfoPill(context, 'Quelle', row.source),
-            ],
+            ),
           ),
         ],
       ),
     );
-  }
 
-  Widget _state0InfoPill(BuildContext context, String label, String value) {
-    final theme = Theme.of(context);
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 145, maxWidth: 320),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFAFAFA),
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: theme.dividerColor.withOpacity(0.65)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
-            const SizedBox(height: 2),
-            Text(value.isEmpty ? '-' : value, maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
-          ],
-        ),
-      ),
-    );
+    return SingleChildScrollView(scrollDirection: Axis.horizontal, child: line);
   }
 
   Widget _state0SmallPill(BuildContext context, String label, Color color) {
@@ -1206,7 +1295,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       case _DecisionConditionState.failed:
         return 'Blockiert';
       case _DecisionConditionState.unknown:
-        return 'Unbekannt';
+        return 'Nicht bewertet';
     }
   }
 
@@ -1646,6 +1735,13 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
   bool _qualityGood(dynamic quality) {
     final text = quality?.toString().toLowerCase() ?? '';
     return text.contains('good') || text.contains('fix') || text.contains('fixed') || text.contains('ok');
+  }
+
+  String _clockText(DateTime value) {
+    final local = value.toLocal();
+    String two(int number) => number.toString().padLeft(2, '0');
+    String three(int number) => number.toString().padLeft(3, '0');
+    return '${two(local.hour)}:${two(local.minute)}:${two(local.second)}.${three(local.millisecond)}';
   }
 
   String _updatedAtText(dynamic value) {

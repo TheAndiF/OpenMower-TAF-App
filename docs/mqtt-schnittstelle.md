@@ -324,7 +324,31 @@ Darstellung in der App:
 - Gelb: Wert unklar, fehlend oder prüfbedürftig, zum Beispiel Definition ohne Live-Status.
 - Rot: Bedingung blockiert, fehlgeschlagen oder vom Backend als blockierende Stufe gemeldet.
 
-Die frühere breite Kennzahlen-Zusammenfassung wird nicht mehr als Chip-Leiste dargestellt. Stattdessen zeigt die App oben nur einen kompakten Banner mit Fahrfreigabe, Blockierstelle und wenigen Altersinformationen. Die eigentliche Diagnose erfolgt über die farbige 12-Punkte-Liste.
+Die frühere breite Kennzahlen-Zusammenfassung wird nicht mehr als Chip-Leiste dargestellt. Stattdessen zeigt die App oben nur einen kompakten Banner mit Fahrfreigabe und Blockierstelle. Die eigentliche Diagnose erfolgt über 12 kompakte, einzeilige Zeilen mit `Stufe | Entscheidungsknoten | aktueller Wert | Bedingung | Ergebnis`. Die Quelle wird im normalen Layout nicht angezeigt.
+
+#### State0-Snapshot und manuelle Aktualisierung
+
+Beim Öffnen der State0-Expansion fordert die App automatisch einen aktuellen Snapshot an. Zusätzlich steht die Taste **State0 aktualisieren** zur Verfügung. Während die Antwort aussteht, stuft die App den bisherigen Inhalt nicht als aktuell ein. Erst eine nach dem Anforderungszeitpunkt empfangene Nachricht auf `gps_state/state0/status` oder ein kompatibles Legacy-Paket auf `gps_state/state0` beendet den Wartezustand.
+
+| Topic | Richtung | Payload / Verhalten |
+|---|---|---|
+| `gps_state/state0/set/renew/json` | App -> MQTT | Bevorzugte Snapshot-Anfrage mit `request_id`, `requested_at` und `evaluate_all_checks=true`. |
+| `gps_state/settings/set/renew/json` | App -> MQTT | Wird zusätzlich als Fallback gesendet, damit bestehende ROS-Versionen State0 erneut veröffentlichen können. |
+| `gps_state/state0/status` | MQTT -> App | Beendet den State0-Wartezustand und gilt als aktueller Snapshot, wenn die Nachricht nach der Anfrage empfangen wurde. |
+
+Beispiel der bevorzugten Anfrage:
+
+```json
+{
+  "request_id": "state0-1783591200123",
+  "requested_at": 1783591200.123,
+  "evaluate_all_checks": true
+}
+```
+
+`evaluate_all_checks=true` ist eine Anforderung an neuere Backends: Auch wenn eine frühe Stufe bereits blockiert, sollen alle technisch verfügbaren Diagnosewerte weiter ausgewertet werden. Unterstützt das Backend diese Option noch nicht, bleiben übersprungene Stufen gelb als **Nicht bewertet**. Die App erfindet dafür keine Ersatzwerte.
+
+Ein gemeldetes `drive_ready=true` wird nicht sofort grün dargestellt, wenn die Einzelprüfungen noch fehlen oder widersprüchlich sind. In diesem Fall zeigt die App einen gelben Konsistenzhinweis, bis ein vollständiger und aktueller State0-Status vorliegt.
 
 ### `gps_state/state2`
 
@@ -873,7 +897,7 @@ Die GPS-State-Unterseite ist auf das Payload-Schema `gps_state.v2` vorbereitet. 
 
 | Topic | Verwendung in der App |
 |---|---|
-| `gps_state/state0` | Experten-/Debugansicht der vollständigen Fahrfähigkeits-Entscheidungskette. Die App versucht generische Felder wie `steps`, `checks`, `decision_chain`, `diagnostics`, `value`, `threshold`, `ok` und `status` tabellarisch darzustellen. |
+| `gps_state/state0` | Legacy-/Kompatibilitäts-Payload der vollständigen Fahrfähigkeits-Entscheidungskette. Die App akzeptiert sie weiterhin als kombinierten Snapshot; bevorzugt werden `state0/definition` und `state0/status`. |
 | `gps_state/state1` | Kompakter Bedienerstatus mit `quality_class`, `gps_drive_ready`, `gps_drive_state`, `gps_drive_label`, `gps_drive_reason`, `gps_drive_block_reason`, `rtk_state`, `position_accuracy_m`, `max_position_accuracy_m` und `pose_age_ms`. Satellitenstatistik wird hier nicht mehr erwartet. |
 | `gps_state/state2` | Technische GNSS-/Pose-Zusammenfassung mit `available`, `quality_class`, `visible_count`, `used_count`, `avg_cn0`, `min_cn0`, `max_cn0`, `weak_count`, `good_count`, `systems`, `rtk_state`, `ll_gps_accuracy_m`, `xb_pose_accuracy_m`, `orientation_valid`, `recent_absolute_pose`, `gps_timeout`, `diagnostic_summary` und `drive_diagnostics`. |
 | `gps_state/state3` | Liste der aktiv verwendeten Satelliten mit `used_count` und `satellites[]`. Die App erwartet hier kein `used` je Satellit und blendet keine Used-Spalte ein. Unterstützte Satellitenfelder sind unter anderem `gnss`, `gnss_id`, `sv`, `cn0`, `elev`, `azim`, `prres` und `qual`. |

@@ -52,14 +52,34 @@ class GpsStateController extends GetxController {
   final editorRevision = 0.obs;
   final restartResetMode = 'controlled_software'.obs;
 
+  // State0 has its own refresh lifecycle. The general GPS-State renew can be
+  // satisfied by State1-State4 first, therefore it must not be used as proof
+  // that the 12 State0 decision checks are current.
+  final state0WaitingForUpdate = false.obs;
+  final state0UpdateMessage = ''.obs;
+  final state0UpdateRequestedAt = Rxn<DateTime>();
+  final state0StatusReceivedAt = Rxn<DateTime>();
+
   Timer? _responseTimeout;
+  Timer? _state0ResponseTimeout;
   int _responseWaitGeneration = 0;
+  int _state0WaitGeneration = 0;
 
   bool get hasState => state0.isNotEmpty || state0Legacy.isNotEmpty || state0Definition.isNotEmpty || state0Status.isNotEmpty || state1.isNotEmpty || state2.isNotEmpty || state3.isNotEmpty || state4.isNotEmpty;
   bool get hasSettings => settingsPayload.isNotEmpty;
   bool get state0Active => settingBool('publish_state0', fallback: state0.isNotEmpty || state0Legacy.isNotEmpty || state0Definition.isNotEmpty || state0Status.isNotEmpty);
   bool get state4Active => settingBool('publish_state4', fallback: state4.isNotEmpty);
   bool get hasRestartStatus => restartStatusPayload.isNotEmpty || restartValidationPayload.isNotEmpty;
+
+  /// True only when a State0 status was received after the most recent
+  /// explicit/automatic State0 refresh request. This prevents an old retained
+  /// drive_ready value from being presented as a current decision.
+  bool get state0SnapshotIsCurrent {
+    final requested = state0UpdateRequestedAt.value;
+    final received = state0StatusReceivedAt.value;
+    if (requested == null || received == null) return false;
+    return !received.isBefore(requested) && state0UpdateMessage.value.isEmpty;
+  }
 
   String get rawJson {
     final data = <String, dynamic>{
@@ -102,6 +122,25 @@ class GpsStateController extends GetxController {
     Get.find<MqttConnection>().requestGpsRestartStatus();
   }
 
+  /// Requests a fresh State0 snapshot. The MQTT layer sends the dedicated
+  /// State0 renew request and the existing global renew request as a fallback
+  /// for backends that do not yet implement the dedicated topic.
+  void requestState0Update({bool automatic = false}) {
+    final requestedAt = DateTime.now();
+    final requestId = 'state0-${requestedAt.millisecondsSinceEpoch}';
+    state0WaitingForUpdate.value = true;
+    state0UpdateRequestedAt.value = requestedAt;
+    state0UpdateMessage.value = automatic
+        ? 'Aktuelle State0-Werte werden beim Öffnen angefordert ...'
+        : 'Aktuelle State0-Werte werden manuell angefordert ...';
+    lastStatusOk.value = null;
+    lastStatus.value = state0UpdateMessage.value;
+    lastTopic.value = MqttConnection.gpsState0RenewJsonTopic;
+    lastUpdated.value = requestedAt;
+    _armState0ResponseTimeout();
+    Get.find<MqttConnection>().requestGpsState0Snapshot(requestId: requestId);
+  }
+
   void setStatePayload(int stateNumber, Map<String, dynamic> payload, {required String topic}) {
     final root = _root(payload);
     switch (stateNumber) {
@@ -134,6 +173,7 @@ class GpsStateController extends GetxController {
     final type = root['type']?.toString().trim().toLowerCase();
     final isDefinition = type == 'definition' || topic == MqttConnection.gpsState0DefinitionTopic;
     final isStatus = type == 'status' || topic == MqttConnection.gpsState0StatusTopic;
+    var statusUpdated = false;
 
     // State0 is split by the ROS side into a retained static definition and a
     // frequently changing live status. Keep both payloads instead of allowing
@@ -146,15 +186,23 @@ class GpsStateController extends GetxController {
       }
       if (root['status'] is Map) {
         state0Status.assignAll(_deepCopy(Map<String, dynamic>.from(root['status'] as Map)));
+        statusUpdated = true;
       }
     } else if (isDefinition) {
       state0Definition.assignAll(_deepCopy(root));
     } else if (isStatus) {
       state0Status.assignAll(_deepCopy(root));
+      statusUpdated = true;
     } else {
       // Backwards-compatible fallback for older packets that published a single
       // combined State0 object directly on gps_state/state0.
       state0Legacy.assignAll(_deepCopy(root));
+      // A legacy packet on gps_state/state0 is a complete live snapshot.
+      // Treat it as a valid update so older ROS installations can still use
+      // the automatic/manual refresh workflow.
+      statusUpdated = root.containsKey('checks') ||
+          root.containsKey('drive_ready') ||
+          root.containsKey('gps_drive_ready');
     }
 
     final combined = <String, dynamic>{};
@@ -162,6 +210,13 @@ class GpsStateController extends GetxController {
     if (state0Definition.isNotEmpty) combined['definition'] = _deepCopy(state0Definition);
     if (state0Status.isNotEmpty) combined['status'] = _deepCopy(state0Status);
     state0.assignAll(combined);
+
+    if (statusUpdated) {
+      state0StatusReceivedAt.value = DateTime.now();
+      state0WaitingForUpdate.value = false;
+      state0UpdateMessage.value = '';
+      _clearState0ResponseTimeout();
+    }
   }
 
   void setSettingsPayload(Map<String, dynamic> payload, {required String topic}) {
@@ -262,6 +317,11 @@ class GpsStateController extends GetxController {
     lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
     _clearResponseTimeout();
+    if (topic == MqttConnection.gpsState0RenewJsonTopic) {
+      state0WaitingForUpdate.value = false;
+      state0UpdateMessage.value = message;
+      _clearState0ResponseTimeout();
+    }
   }
 
   void setDraftValue(String key, dynamic value) {
@@ -422,6 +482,33 @@ class GpsStateController extends GetxController {
   double _double(dynamic value, {required double fallback}) {
     if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '') ?? fallback;
+  }
+
+  void _armState0ResponseTimeout() {
+    _state0ResponseTimeout?.cancel();
+    final generation = ++_state0WaitGeneration;
+    _state0ResponseTimeout = Timer(const Duration(seconds: 8), () {
+      if (generation != _state0WaitGeneration) return;
+      state0WaitingForUpdate.value = false;
+      state0UpdateMessage.value =
+          'Keine neue State0-Statusantwort empfangen. Der angezeigte Stand wird nicht als aktuell gewertet.';
+      lastStatusOk.value = null;
+      lastStatus.value = state0UpdateMessage.value;
+      lastUpdated.value = DateTime.now();
+    });
+  }
+
+  void _clearState0ResponseTimeout() {
+    _state0ResponseTimeout?.cancel();
+    _state0ResponseTimeout = null;
+    _state0WaitGeneration++;
+  }
+
+  @override
+  void onClose() {
+    _responseTimeout?.cancel();
+    _state0ResponseTimeout?.cancel();
+    super.onClose();
   }
 
   void _armResponseTimeout(String message) {

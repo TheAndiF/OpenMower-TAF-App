@@ -1,0 +1,19 @@
+BS_Compact State0 diagnostics and add manual refresh
+Date: 2026-07-09
+Summary:
+- Reworked the 12 State0 checks into compact single-line diagnostic rows.
+- Removed the source field from the normal UI while keeping it internally for blocking-key matching.
+- Added automatic State0 refresh when the expert section is opened.
+- Added a manual "State0 aktualisieren" button with a dedicated waiting and timeout state.
+- Added a preferred State0 snapshot request with request_id and evaluate_all_checks, plus the existing global renew fallback.
+- Prevented retained or incomplete drive_ready values from being shown as a current green approval.
+Changed files:
+- lib/controllers/gps_state_controller.dart
+- lib/io/mqtt_connection.dart
+- lib/screens/gps_state.dart
+- docs/bedienungsanleitung.md
+- docs/mqtt-schnittstelle.md
+- _Dokumentation/2026-07-09 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State0 kompakte Diagnose und manuelle Aktualisierung - v0.5.docx
+- _Dokumentation/2026-07-09 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State0 kompakte Diagnose und manuelle Aktualisierung - v0.5.pdf
+- _Dokumentation/gps_state0_compact_manual_refresh_v0.5.patch
+- commit_message_gps_state0_compact_manual_refresh_v0.5.txt

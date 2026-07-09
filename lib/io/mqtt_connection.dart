@@ -153,6 +153,7 @@ class MqttConnection  {
   static const String gpsState0Topic = "gps_state/state0";
   static const String gpsState0DefinitionTopic = "gps_state/state0/definition";
   static const String gpsState0StatusTopic = "gps_state/state0/status";
+  static const String gpsState0RenewJsonTopic = "gps_state/state0/set/renew/json";
   static const String gpsState1Topic = "gps_state/state1";
   static const String gpsState2Topic = "gps_state/state2";
   static const String gpsState3Topic = "gps_state/state3";
@@ -952,6 +953,28 @@ class MqttConnection  {
     } catch(e) {
       debugPrint("error requesting gps state via mqtt");
       gpsStateController.setError("GPS-State-Anfrage konnte nicht gesendet werden.", topic: gpsStateRenewJsonTopic);
+    }
+  }
+
+  /// Requests a State0 snapshot for the instant at which the expert section
+  /// is opened or the manual update button is pressed. New ROS versions can
+  /// answer the dedicated topic and echo request_id. The global renew remains
+  /// as a compatibility fallback for existing installations.
+  void requestGpsState0Snapshot({required String requestId}) {
+    final payload = <String, dynamic>{
+      'request_id': requestId,
+      'requested_at': DateTime.now().microsecondsSinceEpoch / 1000000.0,
+      'evaluate_all_checks': true,
+    };
+    try {
+      _publishJson(gpsState0RenewJsonTopic, payload);
+      _publishJson(gpsStateRenewJsonTopic, <String, dynamic>{});
+    } catch(e) {
+      debugPrint("error requesting gps state0 snapshot via mqtt");
+      gpsStateController.setError(
+        "State0-Aktualisierung konnte nicht gesendet werden.",
+        topic: gpsState0RenewJsonTopic,
+      );
     }
   }
 
