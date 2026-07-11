@@ -1,0 +1,16 @@
+BL_Reorder GPS state sections and simplify State1
+Date: 2026-07-11
+
+Summary:
+- Moved the State0 decision chain directly below the GPS-State overview and before State1.
+- Removed the duplicated State1 metric-tile row.
+- Removed the visible "Aktualisiert" value from State1 while retaining updated_at for the freshness warning.
+- Added PDF/DOCX implementation documentation and a source patch.
+- Kept the existing OpenMower-TAF-App root folder and project structure unchanged.
+
+Changed files:
+- lib/screens/gps_state.dart
+- _Dokumentation/2026-07-11 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State Reihenfolge und State1-Bereinigung - v0.7.docx
+- _Dokumentation/2026-07-11 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State Reihenfolge und State1-Bereinigung - v0.7.pdf
+- _Dokumentation/gps_state_order_state1_cleanup_v0.7.patch
+- commit_message_gps_state_order_state1_cleanup_v0.7.txt

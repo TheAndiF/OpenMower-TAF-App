@@ -40,6 +40,8 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                 children: [
                   _buildOverviewHeader(context),
                   const SizedBox(height: 12),
+                  _buildState0Section(context),
+                  const SizedBox(height: 10),
                   _buildState1Section(context),
                   const SizedBox(height: 10),
                   _buildState2Section(context),
@@ -47,8 +49,6 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                   _buildState3Section(context),
                   const SizedBox(height: 10),
                   _buildState4Section(context),
-                  const SizedBox(height: 10),
-                  _buildState0Section(context),
                   const SizedBox(height: 10),
                   _buildRestartSection(context),
                   const SizedBox(height: 10),
@@ -159,19 +159,6 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildDriveReadinessCard(context, state),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _metricTile(context, 'Quality Class', _text(state['quality_class'], fallback: '-'), accent: _qualityGood(state['quality_class'])),
-              _metricTile(context, 'RTK', _text(state['rtk_state'], fallback: '-'), accent: _text(state['rtk_state']).toLowerCase() == 'fixed'),
-              _metricTile(context, 'Genauigkeit', _metersText(state['position_accuracy_m']), accent: _accuracyOk(state['position_accuracy_m'], state['max_position_accuracy_m'])),
-              _metricTile(context, 'Grenzwert', _metersText(state['max_position_accuracy_m'])),
-              _metricTile(context, 'Pose-Alter', _millisecondsText(state['pose_age_ms'])),
-              _metricTile(context, 'Aktualisiert', _updatedAtText(state['updated_at'])),
-            ],
-          ),
           const SizedBox(height: 10),
           _freshnessHint(context, state['updated_at']),
         ],
