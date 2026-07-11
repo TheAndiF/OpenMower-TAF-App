@@ -114,7 +114,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
 
   Widget _buildZoomControls(BuildContext context) {
     return Material(
-      color: Theme.of(context).cardColor.withOpacity(0.94),
+      color: Theme.of(context).cardColor.withValues(alpha: 0.94),
       elevation: 2,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
@@ -210,7 +210,7 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
         padding: EdgeInsets.zero,
         onPressed: onPressed,
         style: IconButton.styleFrom(
-          backgroundColor: highlighted ? theme.primaryColor.withOpacity(0.14) : null,
+          backgroundColor: highlighted ? theme.primaryColor.withValues(alpha: 0.14) : null,
           foregroundColor: highlighted ? theme.primaryColor : null,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         ),
@@ -392,9 +392,9 @@ class _MapEditorWidgetState extends State<MapEditorWidget> {
         : Offset(_lastViewportSize.width / 2, _lastViewportSize.height / 2);
     final scenePoint = _transformationController.toScene(focalPoint);
     final next = Matrix4.identity()
-      ..translate(focalPoint.dx, focalPoint.dy)
-      ..scale(targetScale)
-      ..translate(-scenePoint.dx, -scenePoint.dy);
+      ..translateByDouble(focalPoint.dx, focalPoint.dy, 0, 1)
+      ..scaleByDouble(targetScale, targetScale, targetScale, 1)
+      ..translateByDouble(-scenePoint.dx, -scenePoint.dy, 0, 1);
 
     _transformationController.value = next;
     if (!mounted) return;

@@ -123,7 +123,7 @@ class SensorValues extends GetView<SensorsController> {
       elevation: 1,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(4),
-        side: BorderSide(color: theme.dividerColor.withOpacity(0.55)),
+        side: BorderSide(color: theme.dividerColor.withValues(alpha: 0.55)),
       ),
       child: ExpansionTile(
         initiallyExpanded: true,
@@ -222,7 +222,7 @@ class SensorValues extends GetView<SensorsController> {
       width: 34,
       height: 34,
       decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Icon(icon, color: color, size: 20),

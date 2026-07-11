@@ -200,10 +200,10 @@ class StatusTransitionLogController extends GetxController {
     final secs = rounded % 60;
 
     if (hours > 0) {
-      return '${hours} h ${minutes.toString().padLeft(2, '0')} min ${secs.toString().padLeft(2, '0')} s';
+      return '$hours h ${minutes.toString().padLeft(2, '0')} min ${secs.toString().padLeft(2, '0')} s';
     }
     if (minutes > 0) {
-      return '${minutes} min ${secs.toString().padLeft(2, '0')} s';
+      return '$minutes min ${secs.toString().padLeft(2, '0')} s';
     }
     return '$secs s';
   }

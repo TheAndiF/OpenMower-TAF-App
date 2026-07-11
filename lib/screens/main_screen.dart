@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -25,8 +24,17 @@ import 'package:url_launcher/url_launcher.dart';
 const Color _kUiBlue = Color(0xFF36618E);
 const Color _kUiBlueEdge = Color(0xFF274B70);
 
-class MainScreen extends GetView<RobotStateController> {
-  MainScreen({super.key}) {
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
+
+  @override
+  State<MainScreen> createState() => _MainScreenState();
+}
+
+class _MainScreenState extends State<MainScreen> {
+  @override
+  void initState() {
+    super.initState();
     widgetList = <Widget>[
       Dashboard(followRobot: _dashboardFollowRobot),
       AdvancedOptions(),
@@ -424,7 +432,7 @@ class MainScreen extends GetView<RobotStateController> {
           height: 5,
           margin: const EdgeInsets.symmetric(horizontal: 2.5),
           decoration: BoxDecoration(
-            color: isActive ? Colors.white : Colors.white.withOpacity(0.45),
+            color: isActive ? Colors.white : Colors.white.withValues(alpha: 0.45),
             borderRadius: BorderRadius.circular(99),
           ),
         );

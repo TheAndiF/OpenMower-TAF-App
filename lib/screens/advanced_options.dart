@@ -251,9 +251,9 @@ class AdvancedOptions extends GetView<RobotStateController> {
       constraints: const BoxConstraints(minWidth: 180),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.18)),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -279,10 +279,10 @@ class AdvancedOptions extends GetView<RobotStateController> {
       width: 46,
       height: 46,
       decoration: BoxDecoration(
-        color: color.withOpacity(active ? 0.16 : 0.08),
+        color: color.withValues(alpha: active ? 0.16 : 0.08),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Icon(icon, color: active ? color : color.withOpacity(0.55), size: 28),
+      child: Icon(icon, color: active ? color : color.withValues(alpha: 0.55), size: 28),
     );
   }
 }

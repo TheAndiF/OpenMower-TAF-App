@@ -261,9 +261,9 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: active ? Colors.green.withOpacity(0.08) : Colors.orange.withOpacity(0.08),
+              color: active ? Colors.green.withValues(alpha: 0.08) : Colors.orange.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: (active ? Colors.green : Colors.orange).withOpacity(0.28)),
+              border: Border.all(color: (active ? Colors.green : Colors.orange).withValues(alpha: 0.28)),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -438,9 +438,9 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.07),
+        color: color.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: color.withOpacity(0.42)),
+        border: Border.all(color: color.withValues(alpha: 0.42)),
       ),
       child: Row(
         children: [
@@ -496,9 +496,9 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.07),
+        color: color.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: color.withOpacity(0.42)),
+        border: Border.all(color: color.withValues(alpha: 0.42)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -558,7 +558,8 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
               SizedBox(
                 width: 250,
                 child: DropdownButtonFormField<String>(
-                  value: controller.restartResetMode.value,
+                  key: ValueKey('restart-reset-${controller.restartResetMode.value}'),
+                  initialValue: controller.restartResetMode.value,
                   decoration: const InputDecoration(
                     labelText: 'Reset-Mode',
                     border: OutlineInputBorder(),
@@ -671,9 +672,9 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withOpacity(0.30)),
+        border: Border.all(color: color.withValues(alpha: 0.30)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -912,7 +913,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       elevation: 1,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(4),
-        side: BorderSide(color: theme.dividerColor.withOpacity(0.55)),
+        side: BorderSide(color: theme.dividerColor.withValues(alpha: 0.55)),
       ),
       child: ExpansionTile(
         initiallyExpanded: initiallyExpanded,
@@ -947,7 +948,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
         decoration: BoxDecoration(
           color: const Color(0xFFFAFAFA),
           borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: theme.dividerColor.withOpacity(0.7)),
+          border: Border.all(color: theme.dividerColor.withValues(alpha: 0.7)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -979,7 +980,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFFFAFAFA),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: theme.dividerColor.withOpacity(0.7)),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.7)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1001,7 +1002,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFFFAFAFA),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: theme.dividerColor.withOpacity(0.7)),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.7)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1118,13 +1119,13 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       constraints: const BoxConstraints(minWidth: 920, minHeight: 44),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(row.isBlocking && snapshotCurrent ? 0.065 : 0.025),
+        color: color.withValues(alpha: row.isBlocking && snapshotCurrent ? 0.065 : 0.025),
         borderRadius: BorderRadius.circular(4),
         border: Border(
           left: BorderSide(color: color, width: row.isBlocking && snapshotCurrent ? 4 : 3),
-          top: BorderSide(color: theme.dividerColor.withOpacity(0.45)),
-          right: BorderSide(color: theme.dividerColor.withOpacity(0.45)),
-          bottom: BorderSide(color: theme.dividerColor.withOpacity(0.45)),
+          top: BorderSide(color: theme.dividerColor.withValues(alpha: 0.45)),
+          right: BorderSide(color: theme.dividerColor.withValues(alpha: 0.45)),
+          bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.45)),
         ),
       ),
       child: Row(
@@ -1186,9 +1187,9 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.08),
+                  color: color.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: color.withOpacity(0.42)),
+                  border: Border.all(color: color.withValues(alpha: 0.42)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1219,9 +1220,9 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.45)),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
       ),
       child: Text(label, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700, color: color)),
     );
@@ -1315,7 +1316,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       width: 34,
       height: 34,
       decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Icon(icon, color: color, size: 22),

@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:open_mower_app/services/platform_text_file.dart';
@@ -255,7 +254,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
       height: 42,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(color: color.withOpacity(0.65), width: 2),
+        border: Border.all(color: color.withValues(alpha: 0.65), width: 2),
       ),
       child: Icon(active ? Icons.grass : Icons.info_outline, color: color, size: 24),
     );
@@ -268,7 +267,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
       height: 132,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: active ? Colors.green.withOpacity(0.10) : color.withOpacity(0.08),
+        color: active ? Colors.green.withValues(alpha: 0.10) : color.withValues(alpha: 0.08),
       ),
       child: Icon(active ? Icons.grass : Icons.remove_circle_outline, color: active ? Colors.green : color, size: 64),
     );
@@ -335,8 +334,8 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: initiallyExpanded,
-          backgroundColor: color.withOpacity(0.08),
-          collapsedBackgroundColor: color.withOpacity(0.08),
+          backgroundColor: color.withValues(alpha: 0.08),
+          collapsedBackgroundColor: color.withValues(alpha: 0.08),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           leading: Icon(icon, color: color, size: 32),
@@ -416,8 +415,8 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isCurrentArea ? Colors.green.withOpacity(0.12) : null,
-        border: Border.all(color: isCurrentArea ? Colors.green.withOpacity(0.65) : Theme.of(context).dividerColor),
+        color: isCurrentArea ? Colors.green.withValues(alpha: 0.12) : null,
+        border: Border.all(color: isCurrentArea ? Colors.green.withValues(alpha: 0.65) : Theme.of(context).dividerColor),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Wrap(
@@ -513,7 +512,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
       },
     );
 
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !context.mounted) return;
 
     remoteController.callAction('mower_logic:idle/start_mowing_area/$areaId');
     controller.markDirectMowingStartSent(areaName);
@@ -695,7 +694,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
         return Card(
           margin: EdgeInsets.zero,
           child: Container(
-            color: color.withOpacity(0.08),
+            color: color.withValues(alpha: 0.08),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -832,12 +831,12 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
       headline = controller.lastStatus.value.isEmpty ? 'Aktion fehlgeschlagen.' : controller.lastStatus.value;
     } else if (controller.waitingForResponse.value) {
       accent = Theme.of(context).primaryColor;
-      background = accent.withOpacity(0.06);
+      background = accent.withValues(alpha: 0.06);
       icon = Icons.sync;
       headline = controller.lastStatus.value.isEmpty ? 'Warte auf Serverantwort ...' : controller.lastStatus.value;
     } else {
       accent = Theme.of(context).primaryColor;
-      background = accent.withOpacity(0.04);
+      background = accent.withValues(alpha: 0.04);
       icon = Icons.info_outline;
       headline = controller.lastStatus.value.isEmpty ? 'Noch keine Flächen empfangen.' : controller.lastStatus.value;
     }
@@ -847,7 +846,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: background,
-        border: Border.all(color: accent.withOpacity(0.28)),
+        border: Border.all(color: accent.withValues(alpha: 0.28)),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
@@ -905,7 +904,7 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
         borderRadius: BorderRadius.circular(6),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 4,
             offset: const Offset(0, 1),
           ),
@@ -952,9 +951,9 @@ class _MqttAreasScreenState extends State<MqttAreasScreen> {
               helperText: _jsonEditUnlocked
                   ? 'JSON-Bearbeitung ist freigegeben. Speichern übernimmt lokal und sendet per MQTT.'
                   : 'JSON ist gesperrt. Zum Bearbeiten bitte JSON entsperren.',
-              helperStyle: TextStyle(color: color.withOpacity(0.9)),
+              helperStyle: TextStyle(color: color.withValues(alpha: 0.9)),
               filled: !_jsonEditUnlocked,
-              fillColor: !_jsonEditUnlocked ? Colors.grey.withOpacity(0.06) : null,
+              fillColor: !_jsonEditUnlocked ? Colors.grey.withValues(alpha: 0.06) : null,
             ),
             style: const TextStyle(fontFamily: 'monospace'),
           ),

@@ -1,12 +1,9 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:open_mower_app/services/platform_text_file.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/mower_logic_settings_controller.dart';
-import 'package:open_mower_app/controllers/robot_state_controller.dart';
 import 'package:open_mower_app/controllers/settings_controller.dart';
-import 'package:open_mower_app/controllers/low_level_power_settings_controller.dart';
 import 'package:open_mower_app/controllers/satellite_logging_controller.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 
@@ -19,8 +16,6 @@ class MowerLogicSettingsScreen extends StatefulWidget {
 
 class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
   final MowerLogicSettingsController controller = Get.find<MowerLogicSettingsController>();
-  final RobotStateController robotStateController = Get.find<RobotStateController>();
-  final LowLevelPowerSettingsController lowLevelPowerController = Get.find<LowLevelPowerSettingsController>();
   final SatelliteLoggingController satelliteLoggingController = Get.find<SatelliteLoggingController>();
   final SettingsController settingsController = Get.find<SettingsController>();
   bool _renewSent = false;
@@ -163,8 +158,8 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.05),
-                    border: Border.all(color: color.withOpacity(0.18)),
+                    color: color.withValues(alpha: 0.05),
+                    border: Border.all(color: color.withValues(alpha: 0.18)),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
@@ -251,8 +246,8 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.06),
-                    border: Border.all(color: statusColor.withOpacity(0.24)),
+                    color: statusColor.withValues(alpha: 0.06),
+                    border: Border.all(color: statusColor.withValues(alpha: 0.24)),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Column(
@@ -357,8 +352,8 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: group == 'general' || group == 'temperature_protection',
-          backgroundColor: color.withOpacity(0.08),
-          collapsedBackgroundColor: color.withOpacity(0.08),
+          backgroundColor: color.withValues(alpha: 0.08),
+          collapsedBackgroundColor: color.withValues(alpha: 0.08),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           leading: Icon(controller.groupIcon(group), color: color, size: 32),
@@ -414,8 +409,8 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: dirty ? color.withOpacity(0.05) : Theme.of(context).cardColor,
-        border: Border.all(color: dirty ? color.withOpacity(0.45) : Theme.of(context).dividerColor),
+        color: dirty ? color.withValues(alpha: 0.05) : Theme.of(context).cardColor,
+        border: Border.all(color: dirty ? color.withValues(alpha: 0.45) : Theme.of(context).dividerColor),
         borderRadius: BorderRadius.circular(6),
       ),
       child: LayoutBuilder(
@@ -552,7 +547,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
       final draft = int.tryParse(controller.draftText(key, setting));
       return DropdownButtonFormField<int>(
         key: ValueKey('mower-direction-$key-${controller.editorRevision.value}'),
-        value: draft == -1 || draft == 0 || draft == 1 ? draft : null,
+        initialValue: draft == -1 || draft == 0 || draft == 1 ? draft : null,
         decoration: const InputDecoration(
           border: OutlineInputBorder(),
           labelText: 'Richtungsmodus',
@@ -660,290 +655,6 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     );
   }
 
-  Widget _buildLowLevelPowerSection(BuildContext context) {
-    final color = Theme.of(context).primaryColor;
-    final waiting = lowLevelPowerController.waitingForResponse.value;
-    final hasData = lowLevelPowerController.hasData;
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          initiallyExpanded: false,
-          backgroundColor: color.withOpacity(0.08),
-          collapsedBackgroundColor: color.withOpacity(0.08),
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          leading: Icon(Icons.battery_charging_full_outlined, color: color, size: 32),
-          iconColor: color,
-          collapsedIconColor: color,
-          title: Text('Low-Level Board', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
-          subtitle: Wrap(
-            spacing: 10,
-            runSpacing: 4,
-            children: [
-              const Text('Laufzeitwerte für /ll/services/power'),
-              if (lowLevelPowerController.dirtyCount > 0)
-                Text('${lowLevelPowerController.dirtyCount} lokale Änderung(en)'),
-            ],
-          ),
-          children: [
-            Container(
-              width: double.infinity,
-              color: Theme.of(context).cardColor,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.05),
-                      border: Border.all(color: color.withOpacity(0.18)),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      'Diese Werte werden über settings/ll_board/set/session/json live getestet oder über settings/ll_board/set/persistent/json dauerhaft gespeichert.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildLowLevelPowerStatusCard(context),
-                  const SizedBox(height: 12),
-                  if (!hasData)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
-                        'Noch keine settings/ll_board/json-Daten empfangen.',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        textAlign: TextAlign.center,
-                      ),
-                    )
-                  else
-                    for (var i = 0; i < LowLevelPowerSettingsController.orderedKeys.length; i++) ...[
-                      if (i > 0) const SizedBox(height: 12),
-                      _buildLowLevelPowerValueCard(context, LowLevelPowerSettingsController.orderedKeys[i]),
-                    ],
-                  const SizedBox(height: 14),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isMobile = constraints.maxWidth < 720;
-                      final actions = [
-                        OutlinedButton.icon(
-                          onPressed: waiting ? null : lowLevelPowerController.requestStatus,
-                          icon: waiting
-                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                              : const Icon(Icons.refresh),
-                          label: const Text('LL-Board neu laden'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: lowLevelPowerController.dirtyCount == 0 || waiting
-                              ? null
-                              : lowLevelPowerController.resetDrafts,
-                          icon: const Icon(Icons.undo),
-                          label: const Text('Änderungen verwerfen'),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: lowLevelPowerController.dirtyCount == 0 || waiting
-                              ? null
-                              : lowLevelPowerController.applySessionChanges,
-                          icon: const Icon(Icons.play_arrow),
-                          label: const Text('Jetzt anwenden'),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: lowLevelPowerController.dirtyCount == 0 || waiting
-                              ? null
-                              : lowLevelPowerController.savePersistentChanges,
-                          icon: const Icon(Icons.save_outlined),
-                          label: const Text('Dauerhaft speichern'),
-                        ),
-                      ];
-                      if (isMobile) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: actions
-                              .expand((button) => <Widget>[button, const SizedBox(height: 10)])
-                              .toList()
-                            ..removeLast(),
-                        );
-                      }
-                      return Wrap(spacing: 10, runSpacing: 10, alignment: WrapAlignment.end, children: actions);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  ExpansionTile(
-                    tilePadding: EdgeInsets.zero,
-                    childrenPadding: EdgeInsets.zero,
-                    title: const Text('LL-Board JSON-Status'),
-                    subtitle: const Text('Rohdaten aus settings/ll_board/json'),
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Theme.of(context).dividerColor),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: SelectableText(
-                          lowLevelPowerController.rawStatusJson,
-                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLowLevelPowerStatusCard(BuildContext context) {
-    final statusOk = lowLevelPowerController.lastStatusOk.value;
-    final color = statusOk == false ? Colors.red : statusOk == true ? Colors.green : Theme.of(context).primaryColor;
-    final status = lowLevelPowerController.lastStatus.value.isEmpty
-        ? 'Noch keine Low-Level-Board-Rückmeldung.'
-        : lowLevelPowerController.lastStatus.value;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.07),
-        border: Border.all(color: color.withOpacity(0.28)),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(statusOk == false ? Icons.error_outline : statusOk == true ? Icons.check_circle_outline : Icons.info_outline, color: color),
-              const SizedBox(width: 8),
-              Expanded(child: Text(status, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
-            ],
-          ),
-          if (lowLevelPowerController.lastTopic.value.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text('Topic: ${lowLevelPowerController.lastTopic.value}', style: Theme.of(context).textTheme.bodySmall),
-          ],
-          if (lowLevelPowerController.lastRemarks.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            for (final remark in lowLevelPowerController.lastRemarks)
-              Text('• $remark', style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLowLevelPowerValueCard(BuildContext context, String key) {
-    final color = Theme.of(context).primaryColor;
-    final valueDirty = lowLevelPowerController.dirtyKeys.contains(key);
-    final groupDirty = lowLevelPowerController.dirtyGroupKeys.contains(key);
-    final dirty = valueDirty || groupDirty;
-    final unit = lowLevelPowerController.unitFor(key);
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: dirty ? color.withOpacity(0.05) : Theme.of(context).cardColor,
-        border: Border.all(color: dirty ? color.withOpacity(0.45) : Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isMobile = constraints.maxWidth < 780;
-          final meta = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      lowLevelPowerController.labelFor(key),
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  if (valueDirty) _smallBadge(context, 'Wert geändert', Icons.edit_outlined, color),
-                  if (groupDirty) ...[
-                    const SizedBox(width: 6),
-                    _smallBadge(context, 'Gruppe geändert', Icons.category_outlined, color),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 2),
-              Text(key, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor)),
-              if (settingsController.expertModeEnabled.value) ...[
-                const SizedBox(height: 4),
-                Text(
-                  'JSON group: ${lowLevelPowerController.groupOriginalText(key)}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
-                ),
-              ],
-              const SizedBox(height: 8),
-              Text(lowLevelPowerController.descriptionFor(key), style: Theme.of(context).textTheme.bodySmall),
-              if (lowLevelPowerController.rangeText(key).isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(lowLevelPowerController.rangeText(key), style: Theme.of(context).textTheme.bodySmall),
-              ],
-              const SizedBox(height: 10),
-              _valueChip(
-                context,
-                label: 'Aktiv',
-                value: _withUnit(lowLevelPowerController.activeText(key), unit),
-                emphasis: dirty,
-              ),
-            ],
-          );
-          final field = Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextFormField(
-                key: ValueKey('ll_board_${key}_${lowLevelPowerController.editorRevision.value}'),
-                initialValue: lowLevelPowerController.draftText(key),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,\.\-]'))],
-                onChanged: (value) => lowLevelPowerController.updateDraftText(key, value),
-                decoration: InputDecoration(
-                  labelText: 'Neuer Wert',
-                  suffixText: unit.isEmpty ? null : unit,
-                  border: const OutlineInputBorder(),
-                  helperText: 'Wird als JSON-number gesendet.',
-                ),
-              ),
-              if (settingsController.expertModeEnabled.value) ...[
-                const SizedBox(height: 10),
-                _buildLowLevelPowerGroupMetadataEditor(context, key),
-              ],
-            ],
-          );
-          if (isMobile) {
-            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [meta, const SizedBox(height: 12), field]);
-          }
-          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 3, child: meta), const SizedBox(width: 16), Expanded(flex: 2, child: field)]);
-        },
-      ),
-    );
-  }
-
-
-  Widget _buildLowLevelPowerGroupMetadataEditor(BuildContext context, String key) {
-    final groupDirty = lowLevelPowerController.dirtyGroupKeys.contains(key);
-    return TextFormField(
-      key: ValueKey('ll-board-group-$key-${lowLevelPowerController.editorRevision.value}'),
-      initialValue: lowLevelPowerController.groupDraftText(key),
-      textInputAction: TextInputAction.done,
-      decoration: InputDecoration(
-        border: const OutlineInputBorder(),
-        labelText: 'JSON-Feld „group“',
-        helperText: groupDirty
-            ? 'Wird erst beim dauerhaften Speichern ans Backend gesendet'
-            : 'Expertenmodus: keine lokale Neusortierung während der Eingabe',
-        prefixIcon: const Icon(Icons.category_outlined),
-      ),
-      onChanged: (value) => lowLevelPowerController.updateDraftGroup(key, value),
-    );
-  }
 
   Widget _buildJsonSection(BuildContext context) {
     final color = Theme.of(context).primaryColor;
@@ -953,7 +664,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
         return Card(
           margin: EdgeInsets.zero,
           child: Container(
-            color: color.withOpacity(0.08),
+            color: color.withValues(alpha: 0.08),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1090,12 +801,12 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
       headline = controller.lastStatus.value.isEmpty ? 'Aktion fehlgeschlagen.' : controller.lastStatus.value;
     } else if (waiting) {
       accent = Theme.of(context).primaryColor;
-      background = accent.withOpacity(0.06);
+      background = accent.withValues(alpha: 0.06);
       icon = Icons.sync;
       headline = controller.lastStatus.value.isEmpty ? 'Warte auf Backend-Antwort ...' : controller.lastStatus.value;
     } else {
       accent = Theme.of(context).primaryColor;
-      background = accent.withOpacity(0.04);
+      background = accent.withValues(alpha: 0.04);
       icon = Icons.info_outline;
       headline = controller.lastStatus.value.isEmpty ? 'Noch keine Rückmeldung.' : controller.lastStatus.value;
     }
@@ -1105,7 +816,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: background,
-        border: Border.all(color: accent.withOpacity(0.28)),
+        border: Border.all(color: accent.withValues(alpha: 0.28)),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
@@ -1155,8 +866,8 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
       width: 190,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.05),
-        border: Border.all(color: color.withOpacity(0.18)),
+        color: color.withValues(alpha: 0.05),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
@@ -1182,8 +893,8 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        border: Border.all(color: color.withOpacity(0.35)),
+        color: color.withValues(alpha: 0.08),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
@@ -1202,8 +913,8 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        border: Border.all(color: color.withOpacity(0.35)),
+        color: color.withValues(alpha: 0.08),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Text('$label: $value', style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
@@ -1214,8 +925,8 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        border: Border.all(color: color.withOpacity(0.35)),
+        color: color.withValues(alpha: 0.08),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
@@ -1236,7 +947,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
       height: 42,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(color: color.withOpacity(0.65), width: 2),
+        border: Border.all(color: color.withValues(alpha: 0.65), width: 2),
       ),
       child: Icon(active ? icon : Icons.info_outline, color: color, size: 24),
     );
@@ -1270,7 +981,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
         return;
       }
       final imported = controller.importBackupJson(file.content, filename: file.name);
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(imported
@@ -1280,7 +991,7 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
       );
     } catch (e) {
       controller.setError('JSON-Datei konnte nicht geladen werden: $e', topic: 'local/upload');
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(controller.lastStatus.value)));
     }
   }

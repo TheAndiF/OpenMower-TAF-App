@@ -231,8 +231,8 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: group == 'general' || group == 'host_system' || group == 'system',
-          backgroundColor: color.withOpacity(0.08),
-          collapsedBackgroundColor: color.withOpacity(0.08),
+          backgroundColor: color.withValues(alpha: 0.08),
+          collapsedBackgroundColor: color.withValues(alpha: 0.08),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           leading: Icon(controller.groupIcon(group), color: color, size: 32),
@@ -279,8 +279,8 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: dirty ? color.withOpacity(0.05) : Theme.of(context).cardColor,
-        border: Border.all(color: dirty ? color.withOpacity(0.45) : Theme.of(context).dividerColor),
+        color: dirty ? color.withValues(alpha: 0.05) : Theme.of(context).cardColor,
+        border: Border.all(color: dirty ? color.withValues(alpha: 0.45) : Theme.of(context).dividerColor),
         borderRadius: BorderRadius.circular(6),
       ),
       child: LayoutBuilder(
@@ -378,8 +378,8 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: dirty ? color.withOpacity(0.05) : Theme.of(context).cardColor,
-        border: Border.all(color: dirty ? color.withOpacity(0.45) : Theme.of(context).dividerColor),
+        color: dirty ? color.withValues(alpha: 0.05) : Theme.of(context).cardColor,
+        border: Border.all(color: dirty ? color.withValues(alpha: 0.45) : Theme.of(context).dividerColor),
         borderRadius: BorderRadius.circular(6),
       ),
       child: LayoutBuilder(
@@ -577,8 +577,8 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        border: Border.all(color: color.withOpacity(0.35)),
-        color: color.withOpacity(0.06),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+        color: color.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Column(
@@ -731,7 +731,7 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
     return Container(
       width: 44,
       height: 44,
-      decoration: BoxDecoration(color: color.withOpacity(0.10), borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(10)),
       child: Icon(icon, color: color),
     );
   }
@@ -761,8 +761,8 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
   Widget _valueChip(BuildContext context, {required String label, required String value, bool emphasis = false}) {
     return Chip(
       visualDensity: VisualDensity.compact,
-      backgroundColor: emphasis ? Theme.of(context).primaryColor.withOpacity(0.10) : null,
-      side: BorderSide(color: emphasis ? Theme.of(context).primaryColor.withOpacity(0.35) : Theme.of(context).dividerColor),
+      backgroundColor: emphasis ? Theme.of(context).primaryColor.withValues(alpha: 0.10) : null,
+      side: BorderSide(color: emphasis ? Theme.of(context).primaryColor.withValues(alpha: 0.35) : Theme.of(context).dividerColor),
       label: Text('$label: $value', overflow: TextOverflow.ellipsis),
     );
   }
@@ -772,8 +772,8 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
       visualDensity: VisualDensity.compact,
       avatar: Icon(icon, size: 16, color: color),
       label: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
-      side: BorderSide(color: color.withOpacity(0.35)),
-      backgroundColor: color.withOpacity(0.08),
+      side: BorderSide(color: color.withValues(alpha: 0.35)),
+      backgroundColor: color.withValues(alpha: 0.08),
     );
   }
 
@@ -798,7 +798,7 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
         return;
       }
       final imported = controller.importBackupJson(file.content, filename: file.name);
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(imported
@@ -808,7 +808,7 @@ class _SensorSettingsScreenState extends State<SensorSettingsScreen> {
       );
     } catch (e) {
       controller.setError('JSON-Datei konnte nicht geladen werden: $e', topic: 'local/upload');
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(controller.lastStatus.value)));
     }
   }

@@ -64,7 +64,7 @@ class SensorWidget extends StatelessWidget {
                 ..textAlign = TextAlign.center,
             ),
           ),
-          Expanded(
+          const Expanded(
             child: AutoSizeText(
               'N/A',
               maxLines: 1,

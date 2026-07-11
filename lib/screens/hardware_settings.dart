@@ -153,8 +153,8 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.05),
-                    border: Border.all(color: color.withOpacity(0.18)),
+                    color: color.withValues(alpha: 0.05),
+                    border: Border.all(color: color.withValues(alpha: 0.18)),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
@@ -230,8 +230,8 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: group == 'll_board' || group == 'battery',
-          backgroundColor: color.withOpacity(0.08),
-          collapsedBackgroundColor: color.withOpacity(0.08),
+          backgroundColor: color.withValues(alpha: 0.08),
+          collapsedBackgroundColor: color.withValues(alpha: 0.08),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           leading: Icon(controller.groupIcon(group), color: color, size: 32),
@@ -284,8 +284,8 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: dirty ? color.withOpacity(0.05) : Theme.of(context).cardColor,
-        border: Border.all(color: dirty ? color.withOpacity(0.45) : Theme.of(context).dividerColor),
+        color: dirty ? color.withValues(alpha: 0.05) : Theme.of(context).cardColor,
+        border: Border.all(color: dirty ? color.withValues(alpha: 0.45) : Theme.of(context).dividerColor),
         borderRadius: BorderRadius.circular(6),
       ),
       child: LayoutBuilder(
@@ -513,7 +513,7 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
         return Card(
           margin: EdgeInsets.zero,
           child: Container(
-            color: color.withOpacity(0.08),
+            color: color.withValues(alpha: 0.08),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -639,8 +639,8 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.07),
-        border: Border.all(color: color.withOpacity(0.28)),
+        color: color.withValues(alpha: 0.07),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Column(
@@ -691,9 +691,9 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.22)),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
       ),
       child: Text('$label: $value', style: Theme.of(context).textTheme.bodySmall),
     );
@@ -703,9 +703,9 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withOpacity(0.25)),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -720,7 +720,7 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
       width: 44,
       height: 44,
       decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Icon(icon, color: color, size: 28),
@@ -735,7 +735,7 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
         return;
       }
       final imported = controller.importBackupJson(file.content, filename: file.name);
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(imported
@@ -745,14 +745,14 @@ class _HardwareSettingsScreenState extends State<HardwareSettingsScreen> {
       );
     } catch (e) {
       controller.setError('JSON-Datei konnte nicht geladen werden: $e', topic: 'local/upload');
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(controller.lastStatus.value)));
     }
   }
 
   Future<void> _copyJsonToClipboard(BuildContext context) async {
     await Clipboard.setData(ClipboardData(text: controller.rawStatusJson));
-    if (!mounted) return;
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('LL-Board-JSON wurde in die Zwischenablage kopiert.')));
   }
 

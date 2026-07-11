@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:open_mower_app/services/platform_text_file.dart';
@@ -120,9 +119,9 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
                   const SizedBox(height: 14),
                   Container(
                     decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.10),
+                      color: statusColor.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: statusColor.withOpacity(0.45)),
+                      border: Border.all(color: statusColor.withValues(alpha: 0.45)),
                     ),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     child: Row(
@@ -154,7 +153,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
       height: 42,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(color: color.withOpacity(0.65), width: 2),
+        border: Border.all(color: color.withValues(alpha: 0.65), width: 2),
       ),
       child: Icon(active ? Icons.history : Icons.receipt_long, color: color, size: 24),
     );
@@ -224,8 +223,8 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
       constraints: const BoxConstraints(minHeight: 54),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.30)),
-        color: color.withOpacity(0.06),
+        border: Border.all(color: color.withValues(alpha: 0.30)),
+        color: color.withValues(alpha: 0.06),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       child: Row(
@@ -303,7 +302,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
       width: 1,
       height: 34,
       margin: const EdgeInsets.symmetric(horizontal: 10),
-      color: color.withOpacity(0.18),
+      color: color.withValues(alpha: 0.18),
     );
   }
 
@@ -399,38 +398,6 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
     );
   }
 
-  Widget _infoChip(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
-    final color = Theme.of(context).primaryColor;
-    return Container(
-      constraints: const BoxConstraints(minWidth: 128),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.30)),
-        color: color.withOpacity(0.06),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: Theme.of(context).textTheme.bodySmall),
-              Text(value, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSection(
     BuildContext context, {
     required IconData icon,
@@ -445,8 +412,8 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: true,
-          backgroundColor: color.withOpacity(0.08),
-          collapsedBackgroundColor: color.withOpacity(0.08),
+          backgroundColor: color.withValues(alpha: 0.08),
+          collapsedBackgroundColor: color.withValues(alpha: 0.08),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           leading: Icon(icon, color: color, size: 32),
@@ -501,14 +468,14 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
         ? Colors.red
         : current
             ? Colors.green
-            : color.withOpacity(0.30);
+            : color.withValues(alpha: 0.30);
 
     return Card(
       elevation: current ? 3 : 1,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: borderColor.withOpacity(0.75), width: current || emergency ? 1.8 : 1.0),
+        side: BorderSide(color: borderColor.withValues(alpha: 0.75), width: current || emergency ? 1.8 : 1.0),
       ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -517,7 +484,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
           tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
           leading: CircleAvatar(
-            backgroundColor: borderColor.withOpacity(0.14),
+            backgroundColor: borderColor.withValues(alpha: 0.14),
             child: Icon(
               emergency
                   ? Icons.warning_amber_rounded
@@ -565,9 +532,9 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.40)),
+        border: Border.all(color: color.withValues(alpha: 0.40)),
       ),
       child: Text(
         label,
@@ -694,9 +661,9 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
     return Container(
       constraints: const BoxConstraints(minWidth: 245, maxWidth: 360),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.045),
+        color: color.withValues(alpha: 0.045),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.18)),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -740,7 +707,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
         return Card(
           margin: EdgeInsets.zero,
           child: Container(
-            color: color.withOpacity(0.08),
+            color: color.withValues(alpha: 0.08),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -860,12 +827,12 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
       headline = controller.lastStatus.value.isEmpty ? 'Aktion fehlgeschlagen.' : controller.lastStatus.value;
     } else if (controller.waitingForResponse.value) {
       accent = Theme.of(context).primaryColor;
-      background = accent.withOpacity(0.06);
+      background = accent.withValues(alpha: 0.06);
       icon = Icons.sync;
       headline = controller.lastStatus.value.isEmpty ? 'Warte auf Serverantwort ...' : controller.lastStatus.value;
     } else {
       accent = Theme.of(context).primaryColor;
-      background = accent.withOpacity(0.04);
+      background = accent.withValues(alpha: 0.04);
       icon = Icons.info_outline;
       headline = controller.lastStatus.value.isEmpty ? 'Noch kein Protokoll empfangen.' : controller.lastStatus.value;
     }
@@ -875,7 +842,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: background,
-        border: Border.all(color: accent.withOpacity(0.28)),
+        border: Border.all(color: accent.withValues(alpha: 0.28)),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
@@ -924,7 +891,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
         borderRadius: BorderRadius.circular(6),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 4,
             offset: const Offset(0, 1),
           ),
@@ -969,7 +936,7 @@ class _StatusTransitionLogScreenState extends State<StatusTransitionLogScreen> {
               labelText: 'statustransition_log.json',
               alignLabelWithHint: true,
               helperText: 'Rohdaten aus statustransition_log/json. Der Inhalt ist in dieser Ansicht nur lesbar.',
-              helperStyle: TextStyle(color: color.withOpacity(0.9)),
+              helperStyle: TextStyle(color: color.withValues(alpha: 0.9)),
             ),
             style: const TextStyle(fontFamily: 'monospace'),
           ),

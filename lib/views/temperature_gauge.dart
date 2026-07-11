@@ -24,7 +24,7 @@ class TemperatureGauge extends LinearGauge {
               Pointer(
                 value: sensor?.minValue ?? 40,
                 shape: PointerShape.diamond,
-                color: Color(0xFF81C784), // Colors.green[300]
+                color: const Color(0xFF81C784), // Colors.green[300]
                 width: 8,
                 height: 8,
               ),
@@ -32,7 +32,7 @@ class TemperatureGauge extends LinearGauge {
               Pointer(
                 value: sensor?.maxValue ?? 80,
                 shape: PointerShape.diamond,
-                color: Color(0xFFFFB74D), // Colors.orange[300]
+                color: const Color(0xFFFFB74D), // Colors.orange[300]
                 width: 8,
                 height: 8,
               ),

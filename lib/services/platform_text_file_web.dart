@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:html' as html;
+import 'dart:js_interop';
+import 'dart:typed_data';
+
+import 'package:web/web.dart' as web;
 
 class PlatformTextFile {
   const PlatformTextFile({required this.name, required this.content});
@@ -14,17 +17,21 @@ Future<void> saveTextFile({
   required String content,
   String mimeType = 'text/plain',
 }) async {
-  final bytes = utf8.encode(content);
-  final blob = html.Blob(<Object>[bytes], mimeType);
-  final url = html.Url.createObjectUrlFromBlob(blob);
-  final anchor = html.AnchorElement(href: url)
+  final bytes = Uint8List.fromList(utf8.encode(content));
+  final blob = web.Blob(
+    <web.BlobPart>[bytes.toJS].toJS,
+    web.BlobPropertyBag(type: mimeType),
+  );
+  final url = web.URL.createObjectURL(blob);
+  final anchor = web.HTMLAnchorElement()
+    ..href = url
     ..download = fileName
     ..style.display = 'none';
 
-  html.document.body?.children.add(anchor);
+  web.document.body?.append(anchor);
   anchor.click();
   anchor.remove();
-  html.Url.revokeObjectUrl(url);
+  web.URL.revokeObjectURL(url);
 }
 
 Future<PlatformTextFile?> pickTextFile({
@@ -34,25 +41,33 @@ Future<PlatformTextFile?> pickTextFile({
   final accept = allowedExtensions
       .map((extension) => extension.startsWith('.') ? extension : '.$extension')
       .join(',');
-  final input = html.FileUploadInputElement()
-    ..accept = accept.isEmpty ? 'text/plain,application/json' : '$accept,text/plain,application/json';
+  final input = web.HTMLInputElement()
+    ..type = 'file'
+    ..accept = accept.isEmpty
+        ? 'text/plain,application/json'
+        : '$accept,text/plain,application/json';
 
   input.onChange.listen((_) {
     final files = input.files;
-    if (files == null || files.isEmpty) {
+    if (files == null || files.length == 0) {
       if (!completer.isCompleted) completer.complete(null);
       return;
     }
 
-    final file = files.first;
-    final reader = html.FileReader();
+    final file = files.item(0);
+    if (file == null) {
+      if (!completer.isCompleted) completer.complete(null);
+      return;
+    }
+
+    final reader = web.FileReader();
     reader.onError.listen((_) {
       if (!completer.isCompleted) {
         completer.completeError(Exception('Datei konnte nicht gelesen werden.'));
       }
     });
     reader.onLoadEnd.listen((_) {
-      final result = reader.result;
+      final result = reader.result?.dartify();
       if (!completer.isCompleted) {
         if (result is String) {
           completer.complete(PlatformTextFile(name: file.name, content: result));

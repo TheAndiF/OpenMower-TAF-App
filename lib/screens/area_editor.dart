@@ -188,7 +188,8 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<int?>(
-            value: selectedAreaIndex,
+            key: ValueKey('selected-area-$selectedAreaIndex'),
+            initialValue: selectedAreaIndex,
             isExpanded: true,
             decoration: const InputDecoration(
               labelText: 'Fläche zur Bearbeitung',
@@ -215,8 +216,8 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: Theme.of(context).primaryColor.withOpacity(0.05),
-              border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.18)),
+              color: Theme.of(context).primaryColor.withValues(alpha: 0.05),
+              border: Border.all(color: Theme.of(context).primaryColor.withValues(alpha: 0.18)),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Wrap(
@@ -267,7 +268,7 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.8)),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.8)),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Wrap(
@@ -382,7 +383,7 @@ class _AreaEditorScreenState extends State<AreaEditorScreen> {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.8)),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.8)),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Wrap(

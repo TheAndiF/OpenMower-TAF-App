@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_material_design_icons/flutter_material_design_icons.dart';
 import 'package:get/get.dart';
+import 'package:open_mower_app/controllers/gps_state_controller.dart';
 import 'package:open_mower_app/controllers/robot_state_controller.dart';
 import 'package:open_mower_app/controllers/settings_controller.dart';
 import 'package:open_mower_app/views/emergency_widget.dart';
@@ -201,14 +202,19 @@ class RobotStateWidget extends GetView<RobotStateController> {
     );
   }
 
-  Icon getGpsIcon(percent) {
-    // TODO: Need gps_enabled flag for a reliable gps_not_fixed/gps_off icon
+  Icon getGpsIcon(double percent) {
+    final gpsStateController = Get.find<GpsStateController>();
+    final gpsEnabled = gpsStateController.hasSettings
+        ? gpsStateController.settingBool('enabled', fallback: true)
+        : null;
+
+    if (gpsEnabled == false) {
+      return Icon(Icons.gps_off, color: Colors.grey[400]);
+    }
     if (percent > 0.75) {
       return Icon(Icons.gps_fixed, color: Colors.green[200]);
-    } else if (percent >= 0.25) {
-      return Icon(Icons.gps_not_fixed, color: Colors.orange[200]);
     }
-    return Icon(Icons.gps_off, color: Colors.grey[400]);
+    return Icon(Icons.gps_not_fixed, color: Colors.orange[200]);
   }
 
   @override

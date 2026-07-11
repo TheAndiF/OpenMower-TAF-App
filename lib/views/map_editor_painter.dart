@@ -1,6 +1,4 @@
 import 'dart:math' as math;
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:open_mower_app/models/editable_map_model.dart';
 
@@ -98,13 +96,13 @@ class MapEditorPainter extends CustomPainter {
     ..strokeWidth = 1.4
     ..style = PaintingStyle.stroke;
   final Paint _mowFillPaint = Paint()
-    ..color = Colors.lightGreen.withOpacity(0.70)
+    ..color = Colors.lightGreen.withValues(alpha: 0.70)
     ..style = PaintingStyle.fill;
   final Paint _inactiveMowFillPaint = Paint()
-    ..color = Colors.lightGreen.withOpacity(0.20)
+    ..color = Colors.lightGreen.withValues(alpha: 0.20)
     ..style = PaintingStyle.fill;
   final Paint _navFillPaint = Paint()
-    ..color = Colors.white.withOpacity(0.92)
+    ..color = Colors.white.withValues(alpha: 0.92)
     ..style = PaintingStyle.fill;
   final Paint _obstacleFillPaint = Paint()
     ..color = const Color.fromRGBO(55, 55, 55, 0.90)
@@ -113,10 +111,10 @@ class MapEditorPainter extends CustomPainter {
     ..color = const Color.fromRGBO(120, 120, 120, 0.22)
     ..style = PaintingStyle.fill;
   final Paint _selectedAreaFillPaint = Paint()
-    ..color = Colors.cyanAccent.withOpacity(0.34)
+    ..color = Colors.cyanAccent.withValues(alpha: 0.34)
     ..style = PaintingStyle.fill;
   final Paint _replacementPreviewFillPaint = Paint()
-    ..color = Colors.deepPurpleAccent.withOpacity(0.26)
+    ..color = Colors.deepPurpleAccent.withValues(alpha: 0.26)
     ..style = PaintingStyle.fill;
   final Paint _outlinePaint = Paint()
     ..color = const Color.fromRGBO(55, 55, 55, 1)

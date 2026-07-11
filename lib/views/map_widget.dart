@@ -126,11 +126,11 @@ class MapPainter extends CustomPainter {
     ..color = Colors.lightGreen
     ..style = PaintingStyle.fill;
   final _mowDisabledFillPaint = Paint()
-    ..color = Colors.green.withOpacity(0.6)
+    ..color = Colors.green.withValues(alpha: 0.6)
     ..style = PaintingStyle.fill;
   final _mowDisabledOutlinePaint = Paint()
     ..strokeWidth = 0.02
-    ..color = Colors.green.withOpacity(0.6)
+    ..color = Colors.green.withValues(alpha: 0.6)
     ..style = PaintingStyle.stroke;
   final _currentAreaOverlayPaint = Paint()
     ..strokeWidth = 0.08
@@ -298,7 +298,7 @@ class MapPainter extends CustomPainter {
       Offset.zero,
       0.3,
       Paint()
-        ..color = Colors.greenAccent.withOpacity(0.4)
+        ..color = Colors.greenAccent.withValues(alpha: 0.4)
         ..style = PaintingStyle.fill,
     );
     canvas.scale(0.5);
@@ -316,7 +316,7 @@ class MapPainter extends CustomPainter {
       Offset.zero,
       0.3,
       Paint()
-        ..color = Colors.blueAccent.withOpacity(0.4)
+        ..color = Colors.blueAccent.withValues(alpha: 0.4)
         ..style = PaintingStyle.fill,
     );
     canvas.rotate(-(robotState.heading - pi / 2) % (2.0 * pi));
@@ -476,7 +476,7 @@ class MapPainter extends CustomPainter {
       Offset(center.dx - radius * 0.60, dividerY),
       Offset(center.dx + radius * 0.60, dividerY),
       Paint()
-        ..color = textColor.withOpacity(0.75)
+        ..color = textColor.withValues(alpha: 0.75)
         ..strokeWidth = 0.035
         ..style = PaintingStyle.stroke,
     );

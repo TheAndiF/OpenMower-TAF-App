@@ -15,7 +15,6 @@ import 'package:open_mower_app/controllers/satellite_logging_controller.dart';
 import 'package:open_mower_app/controllers/gps_state_controller.dart';
 import 'package:open_mower_app/models/map_model.dart';
 import 'package:open_mower_app/models/robot_state.dart';
-import 'package:open_mower_app/models/sensor_state.dart';
 import 'package:open_mower_app/models/map_overlay_model.dart';
 import 'package:open_mower_app/models/mowing_progress_model.dart';
 
@@ -192,10 +191,7 @@ class MqttConnection  {
       return null;
     }
     final decoded = BsonCodec.deserialize(BsonBinary.from(bytes));
-    if (decoded is Map) {
-      return Map<String, dynamic>.from(decoded);
-    }
-    return null;
+    return Map<String, dynamic>.from(decoded);
   }
 
   Map<String, dynamic>? _decodeMap(MqttPublishMessage payload, {bool bson = false}) {
@@ -1378,7 +1374,6 @@ class MqttConnection  {
     double maxY = double.negativeInfinity;
     for (final area in areas) {
       final properties = area["properties"] ?? {};
-      final type = properties["type"];
       if (!parseAreaActive(properties["active"] ?? area["active"])) {
         continue;
       }
@@ -1733,13 +1728,6 @@ class MqttConnection  {
 
 
 
-  double _sensorDoubleValue(dynamic value) {
-    if (value is num) {
-      return value.toDouble();
-    }
-    return double.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
   void parseSensorSettings(MqttPublishMessage payload, {bool bson = false}) {
     try {
       final map = _decodeMap(payload, bson: bson);
@@ -1821,8 +1809,7 @@ class MqttConnection  {
       }
 
       debugPrint("available actions: $newActionSet");
-      // FIXME: invalid_use_of_protected_member
-      robotStateController.availableActions.value = newActionSet;
+      robotStateController.availableActions.assignAll(newActionSet);
   }
 
   void onConnected() {

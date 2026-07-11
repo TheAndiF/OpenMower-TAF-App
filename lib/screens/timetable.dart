@@ -126,8 +126,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: initiallyExpanded,
-          backgroundColor: color.withOpacity(0.08),
-          collapsedBackgroundColor: color.withOpacity(0.08),
+          backgroundColor: color.withValues(alpha: 0.08),
+          collapsedBackgroundColor: color.withValues(alpha: 0.08),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           leading: Icon(icon, color: color, size: 32),
@@ -140,52 +140,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
               width: double.infinity,
               color: Theme.of(context).cardColor,
               padding: EdgeInsets.zero,
-              child: child,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStaticSection(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Widget child,
-  }) {
-    final color = Theme.of(context).primaryColor;
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Container(
-        color: color.withOpacity(0.08),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(icon, color: color, size: 32),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
-                        Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              width: double.infinity,
-              color: Theme.of(context).cardColor,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: child,
             ),
           ],
@@ -219,7 +173,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
               child: SizedBox(
                 width: isMobile ? double.infinity : 420,
                 child: DropdownButtonFormField<String>(
-                  value: _safeValue(controller.selectedTimezone, TimetableController.availableTimezones),
+                  key: ValueKey('timezone-${controller.selectedTimezone}'),
+                  initialValue: _safeValue(controller.selectedTimezone, TimetableController.availableTimezones),
                   decoration: const InputDecoration(
                     isDense: true,
                     border: UnderlineInputBorder(),
@@ -268,9 +223,9 @@ class _TimetableScreenState extends State<TimetableScreen> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
-                border: Border.all(color: color.withOpacity(0.35)),
+                border: Border.all(color: color.withValues(alpha: 0.35)),
                 borderRadius: BorderRadius.circular(4),
-                color: color.withOpacity(0.03),
+                color: color.withValues(alpha: 0.03),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -314,11 +269,11 @@ class _TimetableScreenState extends State<TimetableScreen> {
   }
 
   Widget _timeDivider(BuildContext context) {
-    return Divider(height: 24, color: Theme.of(context).dividerColor.withOpacity(0.75));
+    return Divider(height: 24, color: Theme.of(context).dividerColor.withValues(alpha: 0.75));
   }
 
   Widget _timeSourceSelector(BuildContext context, {required String source, required bool isMobile}) {
-    final entries = const <String>['system', 'ntp', 'gps', 'manual'];
+    const entries = <String>['system', 'ntp', 'gps', 'manual'];
     if (isMobile) {
       return Row(
         children: entries
@@ -354,7 +309,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           border: Border.all(color: active ? color : Theme.of(context).dividerColor),
-          color: active ? color.withOpacity(0.08) : Theme.of(context).cardColor,
+          color: active ? color.withValues(alpha: 0.08) : Theme.of(context).cardColor,
         ),
         child: Text(
           label,
@@ -648,7 +603,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
       height: 42,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(color: color.withOpacity(0.65), width: 2),
+        border: Border.all(color: color.withValues(alpha: 0.65), width: 2),
       ),
       child: Icon(Icons.nights_stay_outlined, color: color, size: 24),
     );
@@ -671,7 +626,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
         icon = Icons.pause;
         break;
     }
-    final bgColor = isNone ? Colors.green.withOpacity(0.10) : color.withOpacity(0.10);
+    final bgColor = isNone ? Colors.green.withValues(alpha: 0.10) : color.withValues(alpha: 0.10);
     final iconColor = isNone ? Colors.green : color;
     return Container(
       width: 132,
@@ -765,65 +720,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
     return '(in ${parts.join(', ')})';
   }
 
-  Widget _toggleButton(BuildContext context, {required bool active, required IconData icon, required String label, required VoidCallback onPressed}) {
-    return active
-        ? ElevatedButton.icon(onPressed: onPressed, icon: Icon(icon), label: Text('✓ $label'))
-        : OutlinedButton.icon(onPressed: onPressed, icon: Icon(icon), label: Text(label));
-  }
-
-  Widget _buildSourceRow(
-    BuildContext context, {
-    required bool selected,
-    required bool selectable,
-    required String label,
-    required List<Widget> children,
-    VoidCallback? onTap,
-  }) {
-    final color = Theme.of(context).primaryColor;
-    final labelBox = Container(
-      width: 220,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(4),
-        color: selectable ? Colors.white : Colors.grey.shade100,
-      ),
-      child: Text(label, style: TextStyle(color: selected ? color : null)),
-    );
-
-    final row = Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        SizedBox(
-          width: 36,
-          child: selected ? Icon(Icons.check, color: color, size: 22) : const SizedBox.shrink(),
-        ),
-        labelBox,
-        const SizedBox(width: 16),
-        Flexible(
-          child: Wrap(
-            spacing: 16,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: children,
-          ),
-        ),
-      ],
-    );
-
-    if (!selectable) {
-      return row;
-    }
-
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: row,
-      ),
-    );
-  }
-
   Widget _buildEntriesSection(BuildContext context, Map<String, dynamic> timetable) {
     final entries = timetable.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
 
@@ -860,7 +756,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
     final isCurrent = controller.isCurrentMowEntry(id);
     final color = Theme.of(context).primaryColor;
     final borderColor = isCurrent ? color : Theme.of(context).dividerColor;
-    final backgroundColor = isCurrent ? color.withOpacity(0.08) : Theme.of(context).cardColor;
+    final backgroundColor = isCurrent ? color.withValues(alpha: 0.08) : Theme.of(context).cardColor;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
@@ -872,7 +768,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
         boxShadow: isCurrent
             ? [
                 BoxShadow(
-                  color: color.withOpacity(0.10),
+                  color: color.withValues(alpha: 0.10),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -947,7 +843,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
@@ -1155,7 +1051,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
           SizedBox(
             width: 150,
             child: DropdownButtonFormField<String>(
-              value: _safeValue((draft['day'] ?? 'Sunday').toString(), days),
+              key: ValueKey('new-entry-day-${draft['day']}'),
+              initialValue: _safeValue((draft['day'] ?? 'Sunday').toString(), days),
               decoration: const InputDecoration(labelText: 'Tag'),
               items: days.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
               onChanged: (value) {
@@ -1170,7 +1067,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
           SizedBox(
             width: 220,
             child: DropdownButtonFormField<String>(
-              value: _safeValue((draft['end_behavior'] ?? 'return_to_dock').toString(), endBehaviors),
+              key: ValueKey('new-entry-end-${draft['end_behavior']}'),
+              initialValue: _safeValue((draft['end_behavior'] ?? 'return_to_dock').toString(), endBehaviors),
               decoration: const InputDecoration(labelText: 'Verhalten bei Ende'),
               items: endBehaviors.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
               onChanged: (value) {
@@ -1213,7 +1111,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
     return SizedBox(
       width: 150,
       child: DropdownButtonFormField<String>(
-        value: _safeValue((item['day'] ?? 'Monday').toString(), days),
+        key: ValueKey('entry-day-$id-${item['day']}'),
+        initialValue: _safeValue((item['day'] ?? 'Monday').toString(), days),
         decoration: const InputDecoration(labelText: 'Tag'),
         items: days.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
         onChanged: enabled
@@ -1229,7 +1128,8 @@ class _TimetableScreenState extends State<TimetableScreen> {
     return SizedBox(
       width: 220,
       child: DropdownButtonFormField<String>(
-        value: _safeValue((item['end_behavior'] ?? 'return_to_dock').toString(), endBehaviors),
+        key: ValueKey('entry-end-$id-${item['end_behavior']}'),
+        initialValue: _safeValue((item['end_behavior'] ?? 'return_to_dock').toString(), endBehaviors),
         decoration: const InputDecoration(labelText: 'Verhalten bei Ende'),
         items: endBehaviors.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
         onChanged: enabled
@@ -1487,7 +1387,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
         return Card(
           margin: EdgeInsets.zero,
           child: Container(
-            color: color.withOpacity(0.08),
+            color: color.withValues(alpha: 0.08),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1630,12 +1530,12 @@ class _TimetableScreenState extends State<TimetableScreen> {
       headline = controller.lastStatus.value.isEmpty ? 'Aktion fehlgeschlagen.' : controller.lastStatus.value;
     } else if (controller.waitingForResponse.value) {
       accent = Theme.of(context).primaryColor;
-      background = accent.withOpacity(0.06);
+      background = accent.withValues(alpha: 0.06);
       icon = Icons.sync;
       headline = controller.lastStatus.value.isEmpty ? 'Warte auf Serverantwort ...' : controller.lastStatus.value;
     } else {
       accent = Theme.of(context).primaryColor;
-      background = accent.withOpacity(0.04);
+      background = accent.withValues(alpha: 0.04);
       icon = Icons.info_outline;
       headline = controller.lastStatus.value.isEmpty ? 'Noch keine Rückmeldung.' : controller.lastStatus.value;
     }
@@ -1645,7 +1545,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: background,
-        border: Border.all(color: accent.withOpacity(0.28)),
+        border: Border.all(color: accent.withValues(alpha: 0.28)),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
@@ -1705,7 +1605,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
         borderRadius: BorderRadius.circular(6),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 4,
             offset: const Offset(0, 1),
           ),
@@ -1752,9 +1652,9 @@ class _TimetableScreenState extends State<TimetableScreen> {
               helperText: _jsonEditUnlocked
                   ? 'JSON-Bearbeitung ist freigegeben. Speichern übernimmt lokal und sendet per MQTT.'
                   : 'JSON ist gesperrt. Zum Bearbeiten bitte JSON entsperren.',
-              helperStyle: TextStyle(color: color.withOpacity(0.9)),
+              helperStyle: TextStyle(color: color.withValues(alpha: 0.9)),
               filled: !_jsonEditUnlocked,
-              fillColor: !_jsonEditUnlocked ? Colors.grey.withOpacity(0.06) : null,
+              fillColor: !_jsonEditUnlocked ? Colors.grey.withValues(alpha: 0.06) : null,
             ),
             style: const TextStyle(fontFamily: 'monospace'),
           ),
@@ -1895,23 +1795,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
     }
   }
 
-  bool _suspensionLooksLikeDays(int days) {
-    final value = controller.autoMowSuspension;
-    if (value == null || value == 0) return false;
-    final until = DateTime.tryParse(value.toString());
-    if (until == null) return false;
-    final diffHours = until.difference(DateTime.now()).inHours;
-    if (days == 1) return diffHours <= 48;
-    if (days == 3) return diffHours > 48;
-    return false;
-  }
-
   String _safeValue(String value, List<String> allowed) => allowed.contains(value) ? value : allowed.first;
-
-  String _currentTimeText() {
-    final now = DateTime.now();
-    return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-  }
 
   String _formatTime(DateTime time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:${time.second.toString().padLeft(2, '0')}';
