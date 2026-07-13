@@ -1,0 +1,22 @@
+BL_Add GPS logging settings workflow
+
+Date: 2026-07-14
+
+Summary:
+- Added a GPS logging settings editor aligned with the software and hardware settings workflow.
+- Added draft reset, session apply, persistent save, targeted renew and active/persistent/default value display.
+- Start requests now use active backend settings when available and keep the previous explicit command as a compatibility fallback.
+- Preserved unrelated GPS setting drafts while logging settings are validated and refreshed.
+- Documented the required backend settings, validation, request snapshot and runtime status behavior.
+
+Changed files:
+- lib/controllers/gps_state_controller.dart
+- lib/io/mqtt_connection.dart
+- lib/screens/gps_state.dart
+- docs/bedienungsanleitung.md
+- docs/mqtt-schnittstelle.md
+- _Dokumentation/2026-07-14 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-Logging-Einstellungen und Backend-Vertrag - v0.13.docx
+- _Dokumentation/2026-07-14 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-Logging-Einstellungen und Backend-Vertrag - v0.13.pdf
+- _Dokumentation/2026-07-14 - OpenMower-TAF-App - Patch - GPS-Logging-Einstellungen und Backend-Vertrag - v0.13.patch
+- _Dokumentation/2026-07-14 - OpenMower-TAF-App - Pruefprotokoll - GPS-Logging-Einstellungen und Backend-Vertrag - v0.13.json
+- commit_message_gps_logging_settings_v0.13.txt

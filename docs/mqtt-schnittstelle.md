@@ -12,10 +12,10 @@ Diese Seite beschreibt die MQTT-Schnittstelle, die von der OpenMower TAF App ver
 
 | Punkt | Stand |
 |---|---|
-| Dokumentversion | `MQTT-API-Doku 1.2 GPS-State v3 Standardisierung` |
+| Dokumentversion | `MQTT-API-Doku 1.3 GPS-Logging-Einstellungen` |
 | App | `OpenMower-TAF-App 1.0.0+1` |
 | ROS / Backend | OpenMower mit `ROS Noetic / ROS 1` |
-| Doku-Stand | `13.07.2026` |
+| Doku-Stand | `14.07.2026` |
 | Quelle | aktuelles App-Paket, Datei `lib/io/mqtt_connection.dart` und Controller unter `lib/controllers/` |
 
 Wenn App oder Backend in einem anderen Release-Stand betrieben werden, können einzelne Topics oder Payload-Felder abweichen. Die App ist JSON-first ausgelegt, akzeptiert an einigen Stellen aber weiterhin BSON- oder Legacy-Topics.
@@ -93,8 +93,11 @@ Die App verwendet unterschiedliche QoS-Stufen:
 | `gps_state/state3/status` | JSON | atMostOnce | Momentaufnahme der verwendeten Satelliten. |
 | `gps_state/state4/definition` | JSON | atLeastOnce | Retained Definition der vollständigen Satellitenliste. |
 | `gps_state/state4/status` | JSON | atMostOnce | Nicht-retained Momentaufnahme aller sichtbaren Satelliten. |
-| `gps_state/settings/json` | JSON | atLeastOnce | GPS-State-Einstellungen und Metadaten. |
+| `gps_state/settings/json` | JSON | atLeastOnce | GPS-State-Einstellungen und Metadaten einschließlich der Logging-Vorgaben. |
 | `gps_state/settings/validation/json` | JSON | atLeastOnce | Validierungsantwort für GPS-State-Einstellungen. |
+| `gps_state/logging/status/json` | JSON | atLeastOnce | Retained Laufzeitstatus der GPS-/RTK-Aufzeichnung. |
+| `gps_state/logging/last/json` | JSON | atLeastOnce | Retained letzte abgeschlossene oder abgebrochene Logging-Session. |
+| `gps_state/logging/validation/json` | JSON | atLeastOnce | Validierung eines Start-, Stop- oder Abbruchbefehls. |
 
 ### Von der App veröffentlichte Topics
 
@@ -119,7 +122,9 @@ Die App verwendet unterschiedliche QoS-Stufen:
 | `gps_state/set/renew/json` | JSON | atLeastOnce | Zentraler Renew-Befehl für Definition und/oder Status ausgewählter GPS-States. |
 | `gps_state/settings/set/renew/json` | JSON | atLeastOnce | GPS-State-Einstellungen neu anfordern. |
 | `gps_state/settings/set/session/json` | JSON | exactlyOnce | GPS-State-Einstellungen für die laufende Session setzen. |
-| `gps_state/settings/set/persistent/json` | JSON | exactlyOnce | GPS-State-Einstellungen dauerhaft speichern. |
+| `gps_state/settings/set/persistent/json` | JSON | exactlyOnce | GPS-State-Einstellungen einschließlich Logging-Vorgaben dauerhaft speichern. |
+| `gps_state/logging/set/renew/json` | JSON | atLeastOnce | Logging-Laufzeitstatus und letzte Session neu anfordern. |
+| `gps_state/logging/set/control/json` | JSON | exactlyOnce | Logging starten, stoppen oder eine vorgemerkte Anforderung abbrechen. |
 
 ## Actions
 
@@ -370,6 +375,172 @@ Der F9P-Neustart bleibt im Namensraum `gps_state/restart`:
 Ein Neustart gilt in der App erst bei `status=success` als bestätigt. Dazu müssen nach dem Reset neue NAV-PVT- und NAV-SAT-Daten vorliegen und `receiver_restart_confirmed=true` sein. Während `resetting`, `waiting_for_receiver` oder `validating` sind weitere Neustartbefehle gesperrt. Fehlergründe wie `nav_pvt_not_received_after_reset` und `nav_sat_not_received_after_reset` werden in verständlichen Text übersetzt; der technische Originalwert bleibt sichtbar.
 
 State2 bis State4 werten `status=stale`, `stale=true` oder `available=false` als veralteten Datenstand. Die App zeigt dann einen Warnhinweis, graut die Messwerte aus und verwendet alte Qualitätswerte nicht als positive Freigabe.
+
+### GPS-/RTK-Logging: Einstellungen und Laufzeitsteuerung
+
+Die App trennt die **Vorgaben für die nächste Aufzeichnung** von der **bereits laufenden oder vorgemerkten Aufzeichnung**. Die Vorgaben werden wie Software- und Hardwareeinstellungen über `gps_state/settings/*` bearbeitet. Start, Stop, Abbruch und Laufzeitstatus bleiben im Namensraum `gps_state/logging/*`.
+
+#### Erforderliche Settings-Felder des Backends
+
+`gps_state/settings/json` muss die folgenden drei Felder dauerhaft und mit Metadaten ausliefern:
+
+```json
+{
+  "settings": {
+    "logging_default_trigger": {
+      "value": "next_cycle",
+      "session": "next_cycle",
+      "persistent": "next_cycle",
+      "default": "ad_hoc",
+      "type": "enum",
+      "options": ["ad_hoc", "next_cycle", "area_id"],
+      "label": "Startbedingung",
+      "description": "Legt fest, wann die nächste Aufzeichnung startet.",
+      "group": "logging",
+      "order": 10,
+      "session_apply_supported": true
+    },
+    "logging_default_mode": {
+      "value": "from_start_to_docking",
+      "session": "from_start_to_docking",
+      "persistent": "from_start_to_docking",
+      "default": "until_docking",
+      "type": "enum",
+      "options": [
+        "manual",
+        "until_docking",
+        "from_start_to_docking",
+        "from_docking_to_docking"
+      ],
+      "label": "Aufzeichnungszeitraum",
+      "description": "Legt fest, welcher Arbeitsabschnitt aufgezeichnet wird.",
+      "group": "logging",
+      "order": 20,
+      "session_apply_supported": true
+    },
+    "logging_default_area_id": {
+      "value": null,
+      "session": null,
+      "persistent": null,
+      "default": null,
+      "type": "string",
+      "label": "Zielfläche",
+      "description": "Pflichtfeld bei trigger=area_id.",
+      "group": "logging",
+      "order": 30,
+      "session_apply_supported": true
+    }
+  }
+}
+```
+
+Die App akzeptiert die Settings entweder direkt im Wurzelobjekt oder unter `settings`. Für `logging_default_trigger` und `logging_default_mode` werden die vom Backend gelieferten `options` verwendet; fehlen sie, zeigt die App die oben dokumentierten kanonischen Werte.
+
+#### Session- und Persistent-Änderungen
+
+Die App sendet nur geänderte Felder. Beispiel für **Jetzt anwenden**:
+
+Topic: `gps_state/settings/set/session/json`
+
+```json
+{
+  "logging_default_trigger": { "value": "next_cycle" },
+  "logging_default_mode": { "value": "from_start_to_docking" }
+}
+```
+
+Für **Dauerhaft speichern** wird derselbe Aufbau an `gps_state/settings/set/persistent/json` gesendet. Das Backend muss die Änderung über `gps_state/settings/validation/json` bestätigen und danach den aktualisierten Stand auf `gps_state/settings/json` veröffentlichen.
+
+Empfohlene erfolgreiche Validierung:
+
+```json
+{
+  "valid": true,
+  "status": "applied",
+  "scope": "session",
+  "accepted": [
+    "logging_default_trigger",
+    "logging_default_mode"
+  ],
+  "remarks": []
+}
+```
+
+Bei Fehlern soll `valid=false` geliefert werden. Zusätzlich werden `field`, `reason` oder `remarks` empfohlen. Mindestvalidierung:
+
+- `logging_default_trigger` ist nur `ad_hoc`, `next_cycle` oder `area_id`.
+- `logging_default_mode` ist nur `manual`, `until_docking`, `from_start_to_docking` oder `from_docking_to_docking`.
+- Bei `trigger=area_id` ist eine existierende `logging_default_area_id` erforderlich.
+- Bei anderen Triggern darf `logging_default_area_id` `null` sein.
+- Session-Änderungen verändern keine persistenten Werte.
+- Persistent-Änderungen aktualisieren persistent und wirksam; das Backend publiziert anschließend beide Stände erneut.
+
+#### Start einer Aufzeichnung
+
+Wenn alle drei Logging-Settings vorhanden sind, sendet die App beim normalen Start nur:
+
+Topic: `gps_state/logging/set/control/json`
+
+```json
+{
+  "command": "start",
+  "request_id": "gps-ui-..."
+}
+```
+
+Das Backend muss beim Empfang einen unveränderlichen Request-Snapshot aus den zu diesem Zeitpunkt aktiven Sessionwerten erstellen. Änderungen an den Settings wirken daher nur auf die nächste Aufzeichnung und verändern keine laufende oder bereits vorgemerkte Session.
+
+Für alte Backends bleibt die App kompatibel. Fehlen die drei Settings-Felder, sendet sie weiterhin:
+
+```json
+{
+  "command": "start",
+  "trigger": "ad_hoc",
+  "mode": "until_docking",
+  "request_id": "gps-ui-..."
+}
+```
+
+Das Backend sollte auch künftig explizite `trigger`, `mode` und `target_area_id` im Startbefehl als einmalige Überschreibung akzeptieren. Empfohlene Priorität:
+
+1. explizite Werte im Startbefehl,
+2. aktive Sessionwerte,
+3. persistente Werte,
+4. Backend-Standardwerte.
+
+#### Laufzeitstatus
+
+`gps_state/logging/status/json` muss die tatsächlich für die konkrete Anforderung übernommenen Werte zurückmelden, nicht nur die inzwischen aktuellen Standardwerte:
+
+```json
+{
+  "schema": "openmower.gps_state.logging.v2",
+  "summary": "Aufzeichnung für den nächsten Mähzyklus vorgemerkt",
+  "runtime": {
+    "state": "armed",
+    "running": false,
+    "armed": true,
+    "request_active": true,
+    "session_id": null,
+    "duration_s": 0
+  },
+  "request": {
+    "trigger": "next_cycle",
+    "mode": "from_start_to_docking",
+    "target_area_id": null
+  }
+}
+```
+
+Weitere Anforderungen:
+
+- `status/json` soll retained veröffentlicht werden.
+- `last/json` soll die letzte abgeschlossene oder abgebrochene Session retained enthalten.
+- `set/renew/json` mit `{}` publiziert Status und letzte Session erneut.
+- `command=stop` beendet eine laufende Session.
+- `command=cancel` entfernt eine vorgemerkte, aber noch nicht laufende Anforderung.
+- Jede Steuerung wird auf `gps_state/logging/validation/json` bestätigt oder abgelehnt.
+- Eine laufende Session behält den beim Start erzeugten Request-Snapshot bis zu ihrem Ende.
 
 
 ## Karte, Flächen und Editor

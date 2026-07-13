@@ -17,6 +17,29 @@ class GpsStateController extends GetxController {
     'good_cn0_threshold',
   ];
 
+  /// Logging defaults are exposed through the same GPS-State settings API as
+  /// the other editable values. The runtime logger remains on
+  /// gps_state/logging/* and snapshots the effective values when a request is
+  /// started.
+  static const List<String> loggingSettingKeys = <String>[
+    'logging_default_trigger',
+    'logging_default_mode',
+    'logging_default_area_id',
+  ];
+
+  static const List<String> loggingTriggerFallbackOptions = <String>[
+    'ad_hoc',
+    'next_cycle',
+    'area_id',
+  ];
+
+  static const List<String> loggingModeFallbackOptions = <String>[
+    'manual',
+    'until_docking',
+    'from_start_to_docking',
+    'from_docking_to_docking',
+  ];
+
   static const List<String> restartModes = <String>[
     'hot_start',
     'warm_start',
@@ -60,6 +83,7 @@ class GpsStateController extends GetxController {
   final restartValidationPayload = <String, dynamic>{}.obs;
   final draftValues = <String, dynamic>{}.obs;
   final dirtyKeys = <String>{}.obs;
+  final _pendingSettingKeys = <String>{};
 
   final lastStatus = ''.obs;
   final lastTopic = ''.obs;
@@ -90,6 +114,11 @@ class GpsStateController extends GetxController {
 
   bool get hasState => stateDefinitionPayloads.isNotEmpty || stateStatusPayloads.isNotEmpty;
   bool get hasSettings => settingsPayload.isNotEmpty;
+  bool get hasLoggingSettings =>
+      loggingSettingKeys.every(hasSetting);
+  bool get hasLoggingDrafts => loggingSettingKeys.any(dirtyKeys.contains);
+  int get loggingDirtyCount =>
+      loggingSettingKeys.where(dirtyKeys.contains).length;
   bool get state0Active => settingBool('publish_state0', fallback: state0Definition.isNotEmpty || state0Status.isNotEmpty);
   bool get state4Active => settingBool('publish_state4', fallback: state4.isNotEmpty);
   bool get hasRestartStatus =>
@@ -159,6 +188,13 @@ class GpsStateController extends GetxController {
           'has_unsaved_changes': dirtyKeys.isNotEmpty,
           'dirty_keys': dirtyKeys.toList(growable: false)..sort(),
           'draft_values': _deepCopy(draftValues),
+          'logging': <String, dynamic>{
+            'backend_supported': hasLoggingSettings,
+            'dirty_count': loggingDirtyCount,
+            'effective_trigger': confirmedSettingValue('logging_default_trigger'),
+            'effective_mode': confirmedSettingValue('logging_default_mode'),
+            'effective_area_id': confirmedSettingValue('logging_default_area_id'),
+          },
         },
       },
       'settings': _partSnapshot(
@@ -215,6 +251,21 @@ class GpsStateController extends GetxController {
     _armResponseTimeout('Keine GPS-State-Antwort empfangen. Bitte Topic gps_state/# prüfen.');
     Get.find<MqttConnection>().requestGpsState();
     Get.find<MqttConnection>().requestGpsRestartStatus();
+  }
+
+  /// Requests only the GPS-State settings payload. This mirrors the renew
+  /// action on the software and hardware settings screens and avoids a full
+  /// State0-State4 refresh when only logging defaults are being edited.
+  void requestSettings() {
+    waitingForResponse.value = true;
+    lastStatusOk.value = null;
+    lastStatus.value = 'GPS-State-Settings werden neu angefordert ...';
+    lastTopic.value = MqttConnection.gpsStateSettingsRenewJsonTopic;
+    lastUpdated.value = DateTime.now();
+    _armResponseTimeout(
+      'Keine GPS-State-Settings empfangen. Bitte Topic gps_state/settings/json prüfen.',
+    );
+    Get.find<MqttConnection>().requestGpsStateSettings();
   }
 
   /// Requests only the live State0 status through the central v3 renew topic.
@@ -335,8 +386,12 @@ class GpsStateController extends GetxController {
     final root = _root(payload);
     settingsPayload.assignAll(_deepCopy(root));
     settingsReceivedAt.value = DateTime.now();
-    draftValues.clear();
-    dirtyKeys.clear();
+    // Keep unrelated local drafts during a backend refresh, matching the
+    // software and hardware settings editors. Only fields no longer published
+    // by the backend are discarded.
+    draftValues.removeWhere((key, value) => !hasSetting(key));
+    dirtyKeys.removeWhere((key) => !hasSetting(key));
+    _pendingSettingKeys.removeWhere((key) => !hasSetting(key));
     editorRevision.value++;
     lastStatusOk.value = true;
     lastStatus.value = 'GPS-State-Settings empfangen.';
@@ -360,9 +415,20 @@ class GpsStateController extends GetxController {
     waitingForResponse.value = false;
     _clearResponseTimeout();
     if (valid) {
-      draftValues.clear();
-      dirtyKeys.clear();
-      requestStatus();
+      if (_pendingSettingKeys.isEmpty) {
+        draftValues.clear();
+        dirtyKeys.clear();
+      } else {
+        for (final key in _pendingSettingKeys) {
+          draftValues.remove(key);
+          dirtyKeys.remove(key);
+        }
+      }
+      _pendingSettingKeys.clear();
+      editorRevision.value++;
+      requestSettings();
+    } else {
+      _pendingSettingKeys.clear();
     }
   }
 
@@ -479,7 +545,32 @@ class GpsStateController extends GetxController {
 
   void setDraftValue(String key, dynamic value) {
     draftValues[key] = value;
-    dirtyKeys.add(key);
+    final confirmed = confirmedSettingValue(key);
+    if (_valuesEqual(value, confirmed)) {
+      dirtyKeys.remove(key);
+      draftValues.remove(key);
+    } else {
+      dirtyKeys.add(key);
+    }
+  }
+
+  void resetDrafts(Iterable<String> keys, {String? message}) {
+    for (final key in keys) {
+      draftValues.remove(key);
+      dirtyKeys.remove(key);
+    }
+    editorRevision.value++;
+    lastStatusOk.value = null;
+    lastStatus.value = message ?? 'Lokale GPS-State-Entwürfe wurden zurückgesetzt.';
+    lastTopic.value = 'local/reset';
+    lastUpdated.value = DateTime.now();
+  }
+
+  void resetLoggingDrafts() {
+    resetDrafts(
+      loggingSettingKeys,
+      message: 'Logging-Entwürfe wurden auf die bestätigten Backendwerte zurückgesetzt.',
+    );
   }
 
   void applySession() {
@@ -488,6 +579,22 @@ class GpsStateController extends GetxController {
 
   void applyPersistent() {
     _publishDraft(persistent: true);
+  }
+
+  void applyLoggingSession() {
+    _publishDraft(
+      persistent: false,
+      onlyKeys: loggingSettingKeys,
+      actionLabel: 'Logging-Einstellungen',
+    );
+  }
+
+  void applyLoggingPersistent() {
+    _publishDraft(
+      persistent: true,
+      onlyKeys: loggingSettingKeys,
+      actionLabel: 'Logging-Einstellungen',
+    );
   }
 
   void setState4Enabled(bool enabled) {
@@ -503,27 +610,43 @@ class GpsStateController extends GetxController {
     lastTopic.value = MqttConnection.gpsStateSetSessionJsonTopic;
     lastUpdated.value = DateTime.now();
     _armResponseTimeout('Keine Validierung für State4-Änderung empfangen.');
+    _pendingSettingKeys
+      ..clear()
+      ..add('publish_state4');
     Get.find<MqttConnection>().publishGpsStateSessionSettings(payload);
   }
 
-  void _publishDraft({required bool persistent}) {
-    if (dirtyKeys.isEmpty) {
-      requestStatus();
+  void _publishDraft({
+    required bool persistent,
+    Iterable<String>? onlyKeys,
+    String actionLabel = 'GPS-State-Settings',
+  }) {
+    final candidateKeys = onlyKeys ?? dirtyKeys;
+    final keys = candidateKeys.where(dirtyKeys.contains).toList(growable: false);
+    if (keys.isEmpty) {
+      lastStatusOk.value = null;
+      lastStatus.value = 'Es gibt keine geänderten $actionLabel.';
+      lastTopic.value = 'local/info';
+      lastUpdated.value = DateTime.now();
       return;
     }
+
     final payload = <String, dynamic>{};
-    for (final key in dirtyKeys) {
+    for (final key in keys) {
       payload[key] = <String, dynamic>{'value': draftValues[key]};
     }
     waitingForResponse.value = true;
     lastStatusOk.value = null;
     lastStatus.value = persistent
-        ? 'GPS-State-Settings werden dauerhaft gespeichert ...'
-        : 'GPS-State-Settings werden für die Session angewendet ...';
+        ? '$actionLabel werden dauerhaft gespeichert ...'
+        : '$actionLabel werden für die Session angewendet ...';
     lastTopic.value = persistent
         ? MqttConnection.gpsStateSetPersistentJsonTopic
         : MqttConnection.gpsStateSetSessionJsonTopic;
     lastUpdated.value = DateTime.now();
+    _pendingSettingKeys
+      ..clear()
+      ..addAll(keys);
     _armResponseTimeout('Keine GPS-State-Validierung empfangen.');
     if (persistent) {
       Get.find<MqttConnection>().publishGpsStatePersistentSettings(payload);
@@ -532,24 +655,17 @@ class GpsStateController extends GetxController {
     }
   }
 
-  bool settingBool(String key, {bool fallback = false}) => _bool(_settingValue(key), fallback: fallback);
+  bool settingBool(String key, {bool fallback = false}) =>
+      _bool(settingValue(key), fallback: fallback);
 
-  double settingDouble(String key, {double fallback = 0.0}) => _double(_settingValue(key), fallback: fallback);
+  double settingDouble(String key, {double fallback = 0.0}) =>
+      _double(settingValue(key), fallback: fallback);
 
-  dynamic settingValue(String key) => draftValues.containsKey(key) ? draftValues[key] : _settingValue(key);
+  dynamic settingValue(String key) =>
+      draftValues.containsKey(key) ? draftValues[key] : confirmedSettingValue(key);
 
-  dynamic _settingValue(String key) {
-    if (draftValues.containsKey(key)) {
-      return draftValues[key];
-    }
-    final direct = settingsPayload[key];
-    final fromSettings = settingsPayload['settings'];
-    dynamic item;
-    if (direct != null) {
-      item = direct;
-    } else if (fromSettings is Map) {
-      item = fromSettings[key];
-    }
+  dynamic confirmedSettingValue(String key) {
+    final item = _settingItem(key);
     if (item is Map) {
       if (item.containsKey('value')) return item['value'];
       if (item.containsKey('session')) return item['session'];
@@ -557,6 +673,70 @@ class GpsStateController extends GetxController {
       if (item.containsKey('default')) return item['default'];
     }
     return item;
+  }
+
+  dynamic persistentSettingValue(String key) {
+    final item = _settingItem(key);
+    if (item is Map) {
+      if (item.containsKey('persistent')) return item['persistent'];
+      if (item.containsKey('stored')) return item['stored'];
+      if (item.containsKey('value')) return item['value'];
+    }
+    return item;
+  }
+
+  dynamic defaultSettingValue(String key) {
+    final item = _settingItem(key);
+    if (item is Map && item.containsKey('default')) {
+      return item['default'];
+    }
+    return null;
+  }
+
+  bool hasSetting(String key) => _settingItem(key) != null;
+
+  dynamic _settingItem(String key) {
+    final direct = settingsPayload[key];
+    final fromSettings = settingsPayload['settings'];
+    if (direct != null) return direct;
+    if (fromSettings is Map) return fromSettings[key];
+    return null;
+  }
+
+  List<String> optionsFor(String key, {List<String> fallback = const <String>[]}) {
+    final item = _settingMeta(key);
+    final raw = item['options'] ?? item['allowed_values'] ?? item['enum'];
+    if (raw is Iterable) {
+      final values = <String>[];
+      for (final entry in raw) {
+        if (entry is Map) {
+          final value = entry['value'] ?? entry['id'] ?? entry['key'];
+          if (value != null && value.toString().trim().isNotEmpty) {
+            values.add(value.toString());
+          }
+        } else if (entry != null && entry.toString().trim().isNotEmpty) {
+          values.add(entry.toString());
+        }
+      }
+      if (values.isNotEmpty) return values;
+    }
+    return List<String>.from(fallback);
+  }
+
+  Map<String, dynamic> buildLoggingStartPayload() {
+    final payload = <String, dynamic>{
+      'command': 'start',
+      'request_id': 'gps-ui-${DateTime.now().millisecondsSinceEpoch}',
+    };
+
+    // New backends resolve a start request from the active GPS-State settings.
+    // Older backends do not expose these settings, so retain the previous
+    // explicit command as a compatibility fallback.
+    if (!hasLoggingSettings) {
+      payload['trigger'] = 'ad_hoc';
+      payload['mode'] = 'until_docking';
+    }
+    return payload;
   }
 
   String labelFor(String key) {
@@ -584,6 +764,12 @@ class GpsStateController extends GetxController {
         return 'Schwellwert schwach';
       case 'good_cn0_threshold':
         return 'Schwellwert gut';
+      case 'logging_default_trigger':
+        return 'Startbedingung';
+      case 'logging_default_mode':
+        return 'Aufzeichnungszeitraum';
+      case 'logging_default_area_id':
+        return 'Zielfläche';
     }
     return key;
   }
@@ -600,7 +786,18 @@ class GpsStateController extends GetxController {
   String descriptionFor(String key) {
     final item = _settingMeta(key);
     final raw = item['description'] ?? item['help'];
-    return raw?.toString() ?? '';
+    if (raw != null && raw.toString().trim().isNotEmpty) {
+      return raw.toString();
+    }
+    switch (key) {
+      case 'logging_default_trigger':
+        return 'Legt fest, wann die nächste GPS-/RTK-Aufzeichnung startet.';
+      case 'logging_default_mode':
+        return 'Legt fest, welcher Arbeitsabschnitt aufgezeichnet wird.';
+      case 'logging_default_area_id':
+        return 'Wird nur für die Startbedingung „Bestimmte Fläche“ verwendet.';
+    }
+    return '';
   }
 
   Map<String, dynamic> _settingMeta(String key) {
@@ -638,6 +835,12 @@ class GpsStateController extends GetxController {
       'available': available,
       'payload': available ? _deepCopy(payload!) : <String, dynamic>{},
     };
+  }
+
+  bool _valuesEqual(dynamic a, dynamic b) {
+    if (a == null && b == null) return true;
+    if (a is num && b is num) return a.toDouble() == b.toDouble();
+    return a?.toString() == b?.toString();
   }
 
   bool _bool(dynamic value, {bool fallback = false}) {

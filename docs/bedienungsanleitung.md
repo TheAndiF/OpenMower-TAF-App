@@ -14,7 +14,7 @@ Diese Anleitung bezieht sich auf folgenden Stand:
 
 - **App:** OpenMower-TAF-App `1.0.0+1`
 - **ROS:** OpenMower mit **ROS Noetic / ROS 1**
-- **Dokustand:** 24.06.2026
+- **Dokustand:** 14.07.2026
 
 Wenn App- oder ROS-Stand abweichen, können Bezeichnungen, Funktionen oder Positionen einzelner Bedienelemente leicht unterschiedlich sein.
 
@@ -138,6 +138,17 @@ Die GPS-State-Unterseite ist eine Diagnose- und Bedieneranzeige für GPS-Empfang
 - Wenn das Backend `drive_diagnostics` liefert, blendet State2 eine technische Fahrfreigabe-Diagnose mit Entscheidungsquelle, RTK-Quelle, Low-Level-GPS-Werten, Pose-Alter, Timeout und Grace-Zeit ein.
 - `Verwendete Satelliten (State3)` listet die vom Backend verwendeten Satelliten.
 - `Alle Satelliten (State4)` kann temporär aktiviert werden. Diese vollständige Liste erzeugt mehr MQTT-Daten und ist daher vor allem für Diagnose gedacht.
+- `GPS-/RTK-Aufzeichnung` zeigt den tatsächlichen Laufzeitstatus, den übernommenen Trigger, den übernommenen Modus, die Session-ID und die Laufzeit.
+- Im einklappbaren Bereich `Logging-Einstellungen` werden die Vorgaben für die nächste Aufzeichnung wie bei Software- und Hardwareeinstellungen bearbeitet:
+  - `Startbedingung`: sofort, nächster Mähzyklus oder bestimmte Fläche.
+  - `Aufzeichnungszeitraum`: manuell, bis zum Andocken, Arbeitsstart bis Andocken oder Docking bis Docking.
+  - `Zielfläche`: nur sichtbar, wenn `Bestimmte Fläche` ausgewählt ist.
+  - `Zurücksetzen` verwirft lokale Entwürfe.
+  - `Jetzt anwenden` setzt die Vorgaben nur für die aktuelle Backend-Session.
+  - `Dauerhaft speichern` übernimmt sie als persistenten Standard.
+  - `Einstellungen neu laden` fordert ausschließlich `gps_state/settings/json` neu an.
+- Aktive, gespeicherte und Standardwerte werden unter den Auswahlfeldern getrennt angezeigt. Änderungen gelten erst für eine neue Aufzeichnung; eine laufende oder bereits vorgemerkte Session behält ihre beim Start übernommenen Werte.
+- Fehlen die erforderlichen Backendfelder, werden die Auswahlfelder deaktiviert und ein Kompatibilitätshinweis angezeigt. Die Starttaste verwendet dann weiterhin den bisherigen direkten Start mit `ad_hoc` und `until_docking`.
 - `JSON-Ansicht / GPS-Diagnose` zeigt einen read-only Snapshot mit Settings sowie Definition und Status aller fünf States. Zu jedem Teil werden MQTT-Topic und lokale Empfangszeit gespeichert.
 - `Download` speichert genau den aktuell angezeigten Snapshot als `openmower-gps-state-debug-YYYY-MM-DD_HH-mm-ss.json`. Aktualisieren und Herunterladen sind getrennte Aktionen; der Download löst keine neue MQTT-Anfrage aus.
 
@@ -146,6 +157,8 @@ Die GPS-State-Unterseite ist eine Diagnose- und Bedieneranzeige für GPS-Empfang
 - Bei `GPS reicht nicht zum Fahren aus` zuerst `gps_drive_reason` und `gps_drive_block_reason` lesen.
 - Danach in State2 prüfen, ob RTK Fixed fehlt, die Pose zu alt ist, die Genauigkeit oberhalb des Grenzwerts liegt oder ein GPS-Timeout angezeigt wird.
 - State4 nur vorübergehend einschalten, wenn eine vollständige Satellitenliste wirklich benötigt wird.
+- Für einen vollständigen nächsten Mähzyklus im Bereich `Logging-Einstellungen` die Kombination `Nächster Mähzyklus` und `Arbeitsstart bis Andocken` wählen, anschließend `Jetzt anwenden` oder `Dauerhaft speichern` drücken und erst danach die Aufzeichnung starten.
+- Während eine Aufzeichnung läuft oder vorgemerkt ist, können neue Vorgaben gespeichert werden; sie gelten aber erst für die nächste Aufzeichnung.
 
 
 ## Timetable

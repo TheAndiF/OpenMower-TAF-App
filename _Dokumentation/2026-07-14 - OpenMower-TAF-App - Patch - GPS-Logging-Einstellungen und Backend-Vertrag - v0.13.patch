@@ -1,0 +1,1054 @@
+diff --git a/docs/bedienungsanleitung.md b/docs/bedienungsanleitung.md
+index b7c552c..2569d61 100644
+--- a/docs/bedienungsanleitung.md
++++ b/docs/bedienungsanleitung.md
+@@ -14,7 +14,7 @@ Diese Anleitung bezieht sich auf folgenden Stand:
+ 
+ - **App:** OpenMower-TAF-App `1.0.0+1`
+ - **ROS:** OpenMower mit **ROS Noetic / ROS 1**
+-- **Dokustand:** 24.06.2026
++- **Dokustand:** 14.07.2026
+ 
+ Wenn App- oder ROS-Stand abweichen, können Bezeichnungen, Funktionen oder Positionen einzelner Bedienelemente leicht unterschiedlich sein.
+ 
+@@ -138,6 +138,17 @@ Die GPS-State-Unterseite ist eine Diagnose- und Bedieneranzeige für GPS-Empfang
+ - Wenn das Backend `drive_diagnostics` liefert, blendet State2 eine technische Fahrfreigabe-Diagnose mit Entscheidungsquelle, RTK-Quelle, Low-Level-GPS-Werten, Pose-Alter, Timeout und Grace-Zeit ein.
+ - `Verwendete Satelliten (State3)` listet die vom Backend verwendeten Satelliten.
+ - `Alle Satelliten (State4)` kann temporär aktiviert werden. Diese vollständige Liste erzeugt mehr MQTT-Daten und ist daher vor allem für Diagnose gedacht.
++- `GPS-/RTK-Aufzeichnung` zeigt den tatsächlichen Laufzeitstatus, den übernommenen Trigger, den übernommenen Modus, die Session-ID und die Laufzeit.
++- Im einklappbaren Bereich `Logging-Einstellungen` werden die Vorgaben für die nächste Aufzeichnung wie bei Software- und Hardwareeinstellungen bearbeitet:
++  - `Startbedingung`: sofort, nächster Mähzyklus oder bestimmte Fläche.
++  - `Aufzeichnungszeitraum`: manuell, bis zum Andocken, Arbeitsstart bis Andocken oder Docking bis Docking.
++  - `Zielfläche`: nur sichtbar, wenn `Bestimmte Fläche` ausgewählt ist.
++  - `Zurücksetzen` verwirft lokale Entwürfe.
++  - `Jetzt anwenden` setzt die Vorgaben nur für die aktuelle Backend-Session.
++  - `Dauerhaft speichern` übernimmt sie als persistenten Standard.
++  - `Einstellungen neu laden` fordert ausschließlich `gps_state/settings/json` neu an.
++- Aktive, gespeicherte und Standardwerte werden unter den Auswahlfeldern getrennt angezeigt. Änderungen gelten erst für eine neue Aufzeichnung; eine laufende oder bereits vorgemerkte Session behält ihre beim Start übernommenen Werte.
++- Fehlen die erforderlichen Backendfelder, werden die Auswahlfelder deaktiviert und ein Kompatibilitätshinweis angezeigt. Die Starttaste verwendet dann weiterhin den bisherigen direkten Start mit `ad_hoc` und `until_docking`.
+ - `JSON-Ansicht / GPS-Diagnose` zeigt einen read-only Snapshot mit Settings sowie Definition und Status aller fünf States. Zu jedem Teil werden MQTT-Topic und lokale Empfangszeit gespeichert.
+ - `Download` speichert genau den aktuell angezeigten Snapshot als `openmower-gps-state-debug-YYYY-MM-DD_HH-mm-ss.json`. Aktualisieren und Herunterladen sind getrennte Aktionen; der Download löst keine neue MQTT-Anfrage aus.
+ 
+@@ -146,6 +157,8 @@ Die GPS-State-Unterseite ist eine Diagnose- und Bedieneranzeige für GPS-Empfang
+ - Bei `GPS reicht nicht zum Fahren aus` zuerst `gps_drive_reason` und `gps_drive_block_reason` lesen.
+ - Danach in State2 prüfen, ob RTK Fixed fehlt, die Pose zu alt ist, die Genauigkeit oberhalb des Grenzwerts liegt oder ein GPS-Timeout angezeigt wird.
+ - State4 nur vorübergehend einschalten, wenn eine vollständige Satellitenliste wirklich benötigt wird.
++- Für einen vollständigen nächsten Mähzyklus im Bereich `Logging-Einstellungen` die Kombination `Nächster Mähzyklus` und `Arbeitsstart bis Andocken` wählen, anschließend `Jetzt anwenden` oder `Dauerhaft speichern` drücken und erst danach die Aufzeichnung starten.
++- Während eine Aufzeichnung läuft oder vorgemerkt ist, können neue Vorgaben gespeichert werden; sie gelten aber erst für die nächste Aufzeichnung.
+ 
+ 
+ ## Timetable
+diff --git a/docs/mqtt-schnittstelle.md b/docs/mqtt-schnittstelle.md
+index 89cbb1f..dd34375 100644
+--- a/docs/mqtt-schnittstelle.md
++++ b/docs/mqtt-schnittstelle.md
+@@ -12,10 +12,10 @@ Diese Seite beschreibt die MQTT-Schnittstelle, die von der OpenMower TAF App ver
+ 
+ | Punkt | Stand |
+ |---|---|
+-| Dokumentversion | `MQTT-API-Doku 1.2 GPS-State v3 Standardisierung` |
++| Dokumentversion | `MQTT-API-Doku 1.3 GPS-Logging-Einstellungen` |
+ | App | `OpenMower-TAF-App 1.0.0+1` |
+ | ROS / Backend | OpenMower mit `ROS Noetic / ROS 1` |
+-| Doku-Stand | `13.07.2026` |
++| Doku-Stand | `14.07.2026` |
+ | Quelle | aktuelles App-Paket, Datei `lib/io/mqtt_connection.dart` und Controller unter `lib/controllers/` |
+ 
+ Wenn App oder Backend in einem anderen Release-Stand betrieben werden, können einzelne Topics oder Payload-Felder abweichen. Die App ist JSON-first ausgelegt, akzeptiert an einigen Stellen aber weiterhin BSON- oder Legacy-Topics.
+@@ -93,8 +93,11 @@ Die App verwendet unterschiedliche QoS-Stufen:
+ | `gps_state/state3/status` | JSON | atMostOnce | Momentaufnahme der verwendeten Satelliten. |
+ | `gps_state/state4/definition` | JSON | atLeastOnce | Retained Definition der vollständigen Satellitenliste. |
+ | `gps_state/state4/status` | JSON | atMostOnce | Nicht-retained Momentaufnahme aller sichtbaren Satelliten. |
+-| `gps_state/settings/json` | JSON | atLeastOnce | GPS-State-Einstellungen und Metadaten. |
++| `gps_state/settings/json` | JSON | atLeastOnce | GPS-State-Einstellungen und Metadaten einschließlich der Logging-Vorgaben. |
+ | `gps_state/settings/validation/json` | JSON | atLeastOnce | Validierungsantwort für GPS-State-Einstellungen. |
++| `gps_state/logging/status/json` | JSON | atLeastOnce | Retained Laufzeitstatus der GPS-/RTK-Aufzeichnung. |
++| `gps_state/logging/last/json` | JSON | atLeastOnce | Retained letzte abgeschlossene oder abgebrochene Logging-Session. |
++| `gps_state/logging/validation/json` | JSON | atLeastOnce | Validierung eines Start-, Stop- oder Abbruchbefehls. |
+ 
+ ### Von der App veröffentlichte Topics
+ 
+@@ -119,7 +122,9 @@ Die App verwendet unterschiedliche QoS-Stufen:
+ | `gps_state/set/renew/json` | JSON | atLeastOnce | Zentraler Renew-Befehl für Definition und/oder Status ausgewählter GPS-States. |
+ | `gps_state/settings/set/renew/json` | JSON | atLeastOnce | GPS-State-Einstellungen neu anfordern. |
+ | `gps_state/settings/set/session/json` | JSON | exactlyOnce | GPS-State-Einstellungen für die laufende Session setzen. |
+-| `gps_state/settings/set/persistent/json` | JSON | exactlyOnce | GPS-State-Einstellungen dauerhaft speichern. |
++| `gps_state/settings/set/persistent/json` | JSON | exactlyOnce | GPS-State-Einstellungen einschließlich Logging-Vorgaben dauerhaft speichern. |
++| `gps_state/logging/set/renew/json` | JSON | atLeastOnce | Logging-Laufzeitstatus und letzte Session neu anfordern. |
++| `gps_state/logging/set/control/json` | JSON | exactlyOnce | Logging starten, stoppen oder eine vorgemerkte Anforderung abbrechen. |
+ 
+ ## Actions
+ 
+@@ -371,6 +376,172 @@ Ein Neustart gilt in der App erst bei `status=success` als bestätigt. Dazu müs
+ 
+ State2 bis State4 werten `status=stale`, `stale=true` oder `available=false` als veralteten Datenstand. Die App zeigt dann einen Warnhinweis, graut die Messwerte aus und verwendet alte Qualitätswerte nicht als positive Freigabe.
+ 
++### GPS-/RTK-Logging: Einstellungen und Laufzeitsteuerung
++
++Die App trennt die **Vorgaben für die nächste Aufzeichnung** von der **bereits laufenden oder vorgemerkten Aufzeichnung**. Die Vorgaben werden wie Software- und Hardwareeinstellungen über `gps_state/settings/*` bearbeitet. Start, Stop, Abbruch und Laufzeitstatus bleiben im Namensraum `gps_state/logging/*`.
++
++#### Erforderliche Settings-Felder des Backends
++
++`gps_state/settings/json` muss die folgenden drei Felder dauerhaft und mit Metadaten ausliefern:
++
++```json
++{
++  "settings": {
++    "logging_default_trigger": {
++      "value": "next_cycle",
++      "session": "next_cycle",
++      "persistent": "next_cycle",
++      "default": "ad_hoc",
++      "type": "enum",
++      "options": ["ad_hoc", "next_cycle", "area_id"],
++      "label": "Startbedingung",
++      "description": "Legt fest, wann die nächste Aufzeichnung startet.",
++      "group": "logging",
++      "order": 10,
++      "session_apply_supported": true
++    },
++    "logging_default_mode": {
++      "value": "from_start_to_docking",
++      "session": "from_start_to_docking",
++      "persistent": "from_start_to_docking",
++      "default": "until_docking",
++      "type": "enum",
++      "options": [
++        "manual",
++        "until_docking",
++        "from_start_to_docking",
++        "from_docking_to_docking"
++      ],
++      "label": "Aufzeichnungszeitraum",
++      "description": "Legt fest, welcher Arbeitsabschnitt aufgezeichnet wird.",
++      "group": "logging",
++      "order": 20,
++      "session_apply_supported": true
++    },
++    "logging_default_area_id": {
++      "value": null,
++      "session": null,
++      "persistent": null,
++      "default": null,
++      "type": "string",
++      "label": "Zielfläche",
++      "description": "Pflichtfeld bei trigger=area_id.",
++      "group": "logging",
++      "order": 30,
++      "session_apply_supported": true
++    }
++  }
++}
++```
++
++Die App akzeptiert die Settings entweder direkt im Wurzelobjekt oder unter `settings`. Für `logging_default_trigger` und `logging_default_mode` werden die vom Backend gelieferten `options` verwendet; fehlen sie, zeigt die App die oben dokumentierten kanonischen Werte.
++
++#### Session- und Persistent-Änderungen
++
++Die App sendet nur geänderte Felder. Beispiel für **Jetzt anwenden**:
++
++Topic: `gps_state/settings/set/session/json`
++
++```json
++{
++  "logging_default_trigger": { "value": "next_cycle" },
++  "logging_default_mode": { "value": "from_start_to_docking" }
++}
++```
++
++Für **Dauerhaft speichern** wird derselbe Aufbau an `gps_state/settings/set/persistent/json` gesendet. Das Backend muss die Änderung über `gps_state/settings/validation/json` bestätigen und danach den aktualisierten Stand auf `gps_state/settings/json` veröffentlichen.
++
++Empfohlene erfolgreiche Validierung:
++
++```json
++{
++  "valid": true,
++  "status": "applied",
++  "scope": "session",
++  "accepted": [
++    "logging_default_trigger",
++    "logging_default_mode"
++  ],
++  "remarks": []
++}
++```
++
++Bei Fehlern soll `valid=false` geliefert werden. Zusätzlich werden `field`, `reason` oder `remarks` empfohlen. Mindestvalidierung:
++
++- `logging_default_trigger` ist nur `ad_hoc`, `next_cycle` oder `area_id`.
++- `logging_default_mode` ist nur `manual`, `until_docking`, `from_start_to_docking` oder `from_docking_to_docking`.
++- Bei `trigger=area_id` ist eine existierende `logging_default_area_id` erforderlich.
++- Bei anderen Triggern darf `logging_default_area_id` `null` sein.
++- Session-Änderungen verändern keine persistenten Werte.
++- Persistent-Änderungen aktualisieren persistent und wirksam; das Backend publiziert anschließend beide Stände erneut.
++
++#### Start einer Aufzeichnung
++
++Wenn alle drei Logging-Settings vorhanden sind, sendet die App beim normalen Start nur:
++
++Topic: `gps_state/logging/set/control/json`
++
++```json
++{
++  "command": "start",
++  "request_id": "gps-ui-..."
++}
++```
++
++Das Backend muss beim Empfang einen unveränderlichen Request-Snapshot aus den zu diesem Zeitpunkt aktiven Sessionwerten erstellen. Änderungen an den Settings wirken daher nur auf die nächste Aufzeichnung und verändern keine laufende oder bereits vorgemerkte Session.
++
++Für alte Backends bleibt die App kompatibel. Fehlen die drei Settings-Felder, sendet sie weiterhin:
++
++```json
++{
++  "command": "start",
++  "trigger": "ad_hoc",
++  "mode": "until_docking",
++  "request_id": "gps-ui-..."
++}
++```
++
++Das Backend sollte auch künftig explizite `trigger`, `mode` und `target_area_id` im Startbefehl als einmalige Überschreibung akzeptieren. Empfohlene Priorität:
++
++1. explizite Werte im Startbefehl,
++2. aktive Sessionwerte,
++3. persistente Werte,
++4. Backend-Standardwerte.
++
++#### Laufzeitstatus
++
++`gps_state/logging/status/json` muss die tatsächlich für die konkrete Anforderung übernommenen Werte zurückmelden, nicht nur die inzwischen aktuellen Standardwerte:
++
++```json
++{
++  "schema": "openmower.gps_state.logging.v2",
++  "summary": "Aufzeichnung für den nächsten Mähzyklus vorgemerkt",
++  "runtime": {
++    "state": "armed",
++    "running": false,
++    "armed": true,
++    "request_active": true,
++    "session_id": null,
++    "duration_s": 0
++  },
++  "request": {
++    "trigger": "next_cycle",
++    "mode": "from_start_to_docking",
++    "target_area_id": null
++  }
++}
++```
++
++Weitere Anforderungen:
++
++- `status/json` soll retained veröffentlicht werden.
++- `last/json` soll die letzte abgeschlossene oder abgebrochene Session retained enthalten.
++- `set/renew/json` mit `{}` publiziert Status und letzte Session erneut.
++- `command=stop` beendet eine laufende Session.
++- `command=cancel` entfernt eine vorgemerkte, aber noch nicht laufende Anforderung.
++- Jede Steuerung wird auf `gps_state/logging/validation/json` bestätigt oder abgelehnt.
++- Eine laufende Session behält den beim Start erzeugten Request-Snapshot bis zu ihrem Ende.
++
+ 
+ ## Karte, Flächen und Editor
+ 
+diff --git a/lib/controllers/gps_state_controller.dart b/lib/controllers/gps_state_controller.dart
+index 06b6166..3df5a16 100644
+--- a/lib/controllers/gps_state_controller.dart
++++ b/lib/controllers/gps_state_controller.dart
+@@ -17,6 +17,29 @@ class GpsStateController extends GetxController {
+     'good_cn0_threshold',
+   ];
+ 
++  /// Logging defaults are exposed through the same GPS-State settings API as
++  /// the other editable values. The runtime logger remains on
++  /// gps_state/logging/* and snapshots the effective values when a request is
++  /// started.
++  static const List<String> loggingSettingKeys = <String>[
++    'logging_default_trigger',
++    'logging_default_mode',
++    'logging_default_area_id',
++  ];
++
++  static const List<String> loggingTriggerFallbackOptions = <String>[
++    'ad_hoc',
++    'next_cycle',
++    'area_id',
++  ];
++
++  static const List<String> loggingModeFallbackOptions = <String>[
++    'manual',
++    'until_docking',
++    'from_start_to_docking',
++    'from_docking_to_docking',
++  ];
++
+   static const List<String> restartModes = <String>[
+     'hot_start',
+     'warm_start',
+@@ -60,6 +83,7 @@ class GpsStateController extends GetxController {
+   final restartValidationPayload = <String, dynamic>{}.obs;
+   final draftValues = <String, dynamic>{}.obs;
+   final dirtyKeys = <String>{}.obs;
++  final _pendingSettingKeys = <String>{};
+ 
+   final lastStatus = ''.obs;
+   final lastTopic = ''.obs;
+@@ -90,6 +114,11 @@ class GpsStateController extends GetxController {
+ 
+   bool get hasState => stateDefinitionPayloads.isNotEmpty || stateStatusPayloads.isNotEmpty;
+   bool get hasSettings => settingsPayload.isNotEmpty;
++  bool get hasLoggingSettings =>
++      loggingSettingKeys.every(hasSetting);
++  bool get hasLoggingDrafts => loggingSettingKeys.any(dirtyKeys.contains);
++  int get loggingDirtyCount =>
++      loggingSettingKeys.where(dirtyKeys.contains).length;
+   bool get state0Active => settingBool('publish_state0', fallback: state0Definition.isNotEmpty || state0Status.isNotEmpty);
+   bool get state4Active => settingBool('publish_state4', fallback: state4.isNotEmpty);
+   bool get hasRestartStatus =>
+@@ -159,6 +188,13 @@ class GpsStateController extends GetxController {
+           'has_unsaved_changes': dirtyKeys.isNotEmpty,
+           'dirty_keys': dirtyKeys.toList(growable: false)..sort(),
+           'draft_values': _deepCopy(draftValues),
++          'logging': <String, dynamic>{
++            'backend_supported': hasLoggingSettings,
++            'dirty_count': loggingDirtyCount,
++            'effective_trigger': confirmedSettingValue('logging_default_trigger'),
++            'effective_mode': confirmedSettingValue('logging_default_mode'),
++            'effective_area_id': confirmedSettingValue('logging_default_area_id'),
++          },
+         },
+       },
+       'settings': _partSnapshot(
+@@ -217,6 +253,21 @@ class GpsStateController extends GetxController {
+     Get.find<MqttConnection>().requestGpsRestartStatus();
+   }
+ 
++  /// Requests only the GPS-State settings payload. This mirrors the renew
++  /// action on the software and hardware settings screens and avoids a full
++  /// State0-State4 refresh when only logging defaults are being edited.
++  void requestSettings() {
++    waitingForResponse.value = true;
++    lastStatusOk.value = null;
++    lastStatus.value = 'GPS-State-Settings werden neu angefordert ...';
++    lastTopic.value = MqttConnection.gpsStateSettingsRenewJsonTopic;
++    lastUpdated.value = DateTime.now();
++    _armResponseTimeout(
++      'Keine GPS-State-Settings empfangen. Bitte Topic gps_state/settings/json prüfen.',
++    );
++    Get.find<MqttConnection>().requestGpsStateSettings();
++  }
++
+   /// Requests only the live State0 status through the central v3 renew topic.
+   void requestState0Update({bool automatic = false}) {
+     final requestedAt = DateTime.now();
+@@ -335,8 +386,12 @@ class GpsStateController extends GetxController {
+     final root = _root(payload);
+     settingsPayload.assignAll(_deepCopy(root));
+     settingsReceivedAt.value = DateTime.now();
+-    draftValues.clear();
+-    dirtyKeys.clear();
++    // Keep unrelated local drafts during a backend refresh, matching the
++    // software and hardware settings editors. Only fields no longer published
++    // by the backend are discarded.
++    draftValues.removeWhere((key, value) => !hasSetting(key));
++    dirtyKeys.removeWhere((key) => !hasSetting(key));
++    _pendingSettingKeys.removeWhere((key) => !hasSetting(key));
+     editorRevision.value++;
+     lastStatusOk.value = true;
+     lastStatus.value = 'GPS-State-Settings empfangen.';
+@@ -360,9 +415,20 @@ class GpsStateController extends GetxController {
+     waitingForResponse.value = false;
+     _clearResponseTimeout();
+     if (valid) {
+-      draftValues.clear();
+-      dirtyKeys.clear();
+-      requestStatus();
++      if (_pendingSettingKeys.isEmpty) {
++        draftValues.clear();
++        dirtyKeys.clear();
++      } else {
++        for (final key in _pendingSettingKeys) {
++          draftValues.remove(key);
++          dirtyKeys.remove(key);
++        }
++      }
++      _pendingSettingKeys.clear();
++      editorRevision.value++;
++      requestSettings();
++    } else {
++      _pendingSettingKeys.clear();
+     }
+   }
+ 
+@@ -479,7 +545,32 @@ class GpsStateController extends GetxController {
+ 
+   void setDraftValue(String key, dynamic value) {
+     draftValues[key] = value;
+-    dirtyKeys.add(key);
++    final confirmed = confirmedSettingValue(key);
++    if (_valuesEqual(value, confirmed)) {
++      dirtyKeys.remove(key);
++      draftValues.remove(key);
++    } else {
++      dirtyKeys.add(key);
++    }
++  }
++
++  void resetDrafts(Iterable<String> keys, {String? message}) {
++    for (final key in keys) {
++      draftValues.remove(key);
++      dirtyKeys.remove(key);
++    }
++    editorRevision.value++;
++    lastStatusOk.value = null;
++    lastStatus.value = message ?? 'Lokale GPS-State-Entwürfe wurden zurückgesetzt.';
++    lastTopic.value = 'local/reset';
++    lastUpdated.value = DateTime.now();
++  }
++
++  void resetLoggingDrafts() {
++    resetDrafts(
++      loggingSettingKeys,
++      message: 'Logging-Entwürfe wurden auf die bestätigten Backendwerte zurückgesetzt.',
++    );
+   }
+ 
+   void applySession() {
+@@ -490,6 +581,22 @@ class GpsStateController extends GetxController {
+     _publishDraft(persistent: true);
+   }
+ 
++  void applyLoggingSession() {
++    _publishDraft(
++      persistent: false,
++      onlyKeys: loggingSettingKeys,
++      actionLabel: 'Logging-Einstellungen',
++    );
++  }
++
++  void applyLoggingPersistent() {
++    _publishDraft(
++      persistent: true,
++      onlyKeys: loggingSettingKeys,
++      actionLabel: 'Logging-Einstellungen',
++    );
++  }
++
+   void setState4Enabled(bool enabled) {
+     setDraftValue('publish_state4', enabled);
+     final payload = <String, dynamic>{
+@@ -503,27 +610,43 @@ class GpsStateController extends GetxController {
+     lastTopic.value = MqttConnection.gpsStateSetSessionJsonTopic;
+     lastUpdated.value = DateTime.now();
+     _armResponseTimeout('Keine Validierung für State4-Änderung empfangen.');
++    _pendingSettingKeys
++      ..clear()
++      ..add('publish_state4');
+     Get.find<MqttConnection>().publishGpsStateSessionSettings(payload);
+   }
+ 
+-  void _publishDraft({required bool persistent}) {
+-    if (dirtyKeys.isEmpty) {
+-      requestStatus();
++  void _publishDraft({
++    required bool persistent,
++    Iterable<String>? onlyKeys,
++    String actionLabel = 'GPS-State-Settings',
++  }) {
++    final candidateKeys = onlyKeys ?? dirtyKeys;
++    final keys = candidateKeys.where(dirtyKeys.contains).toList(growable: false);
++    if (keys.isEmpty) {
++      lastStatusOk.value = null;
++      lastStatus.value = 'Es gibt keine geänderten $actionLabel.';
++      lastTopic.value = 'local/info';
++      lastUpdated.value = DateTime.now();
+       return;
+     }
++
+     final payload = <String, dynamic>{};
+-    for (final key in dirtyKeys) {
++    for (final key in keys) {
+       payload[key] = <String, dynamic>{'value': draftValues[key]};
+     }
+     waitingForResponse.value = true;
+     lastStatusOk.value = null;
+     lastStatus.value = persistent
+-        ? 'GPS-State-Settings werden dauerhaft gespeichert ...'
+-        : 'GPS-State-Settings werden für die Session angewendet ...';
++        ? '$actionLabel werden dauerhaft gespeichert ...'
++        : '$actionLabel werden für die Session angewendet ...';
+     lastTopic.value = persistent
+         ? MqttConnection.gpsStateSetPersistentJsonTopic
+         : MqttConnection.gpsStateSetSessionJsonTopic;
+     lastUpdated.value = DateTime.now();
++    _pendingSettingKeys
++      ..clear()
++      ..addAll(keys);
+     _armResponseTimeout('Keine GPS-State-Validierung empfangen.');
+     if (persistent) {
+       Get.find<MqttConnection>().publishGpsStatePersistentSettings(payload);
+@@ -532,24 +655,17 @@ class GpsStateController extends GetxController {
+     }
+   }
+ 
+-  bool settingBool(String key, {bool fallback = false}) => _bool(_settingValue(key), fallback: fallback);
++  bool settingBool(String key, {bool fallback = false}) =>
++      _bool(settingValue(key), fallback: fallback);
+ 
+-  double settingDouble(String key, {double fallback = 0.0}) => _double(_settingValue(key), fallback: fallback);
++  double settingDouble(String key, {double fallback = 0.0}) =>
++      _double(settingValue(key), fallback: fallback);
+ 
+-  dynamic settingValue(String key) => draftValues.containsKey(key) ? draftValues[key] : _settingValue(key);
++  dynamic settingValue(String key) =>
++      draftValues.containsKey(key) ? draftValues[key] : confirmedSettingValue(key);
+ 
+-  dynamic _settingValue(String key) {
+-    if (draftValues.containsKey(key)) {
+-      return draftValues[key];
+-    }
+-    final direct = settingsPayload[key];
+-    final fromSettings = settingsPayload['settings'];
+-    dynamic item;
+-    if (direct != null) {
+-      item = direct;
+-    } else if (fromSettings is Map) {
+-      item = fromSettings[key];
+-    }
++  dynamic confirmedSettingValue(String key) {
++    final item = _settingItem(key);
+     if (item is Map) {
+       if (item.containsKey('value')) return item['value'];
+       if (item.containsKey('session')) return item['session'];
+@@ -559,6 +675,70 @@ class GpsStateController extends GetxController {
+     return item;
+   }
+ 
++  dynamic persistentSettingValue(String key) {
++    final item = _settingItem(key);
++    if (item is Map) {
++      if (item.containsKey('persistent')) return item['persistent'];
++      if (item.containsKey('stored')) return item['stored'];
++      if (item.containsKey('value')) return item['value'];
++    }
++    return item;
++  }
++
++  dynamic defaultSettingValue(String key) {
++    final item = _settingItem(key);
++    if (item is Map && item.containsKey('default')) {
++      return item['default'];
++    }
++    return null;
++  }
++
++  bool hasSetting(String key) => _settingItem(key) != null;
++
++  dynamic _settingItem(String key) {
++    final direct = settingsPayload[key];
++    final fromSettings = settingsPayload['settings'];
++    if (direct != null) return direct;
++    if (fromSettings is Map) return fromSettings[key];
++    return null;
++  }
++
++  List<String> optionsFor(String key, {List<String> fallback = const <String>[]}) {
++    final item = _settingMeta(key);
++    final raw = item['options'] ?? item['allowed_values'] ?? item['enum'];
++    if (raw is Iterable) {
++      final values = <String>[];
++      for (final entry in raw) {
++        if (entry is Map) {
++          final value = entry['value'] ?? entry['id'] ?? entry['key'];
++          if (value != null && value.toString().trim().isNotEmpty) {
++            values.add(value.toString());
++          }
++        } else if (entry != null && entry.toString().trim().isNotEmpty) {
++          values.add(entry.toString());
++        }
++      }
++      if (values.isNotEmpty) return values;
++    }
++    return List<String>.from(fallback);
++  }
++
++  Map<String, dynamic> buildLoggingStartPayload() {
++    final payload = <String, dynamic>{
++      'command': 'start',
++      'request_id': 'gps-ui-${DateTime.now().millisecondsSinceEpoch}',
++    };
++
++    // New backends resolve a start request from the active GPS-State settings.
++    // Older backends do not expose these settings, so retain the previous
++    // explicit command as a compatibility fallback.
++    if (!hasLoggingSettings) {
++      payload['trigger'] = 'ad_hoc';
++      payload['mode'] = 'until_docking';
++    }
++    return payload;
++  }
++
+   String labelFor(String key) {
+     final item = _settingMeta(key);
+     final raw = item['label'] ?? item['name'] ?? item['title'];
+@@ -584,6 +764,12 @@ class GpsStateController extends GetxController {
+         return 'Schwellwert schwach';
+       case 'good_cn0_threshold':
+         return 'Schwellwert gut';
++      case 'logging_default_trigger':
++        return 'Startbedingung';
++      case 'logging_default_mode':
++        return 'Aufzeichnungszeitraum';
++      case 'logging_default_area_id':
++        return 'Zielfläche';
+     }
+     return key;
+   }
+@@ -600,7 +786,18 @@ class GpsStateController extends GetxController {
+   String descriptionFor(String key) {
+     final item = _settingMeta(key);
+     final raw = item['description'] ?? item['help'];
+-    return raw?.toString() ?? '';
++    if (raw != null && raw.toString().trim().isNotEmpty) {
++      return raw.toString();
++    }
++    switch (key) {
++      case 'logging_default_trigger':
++        return 'Legt fest, wann die nächste GPS-/RTK-Aufzeichnung startet.';
++      case 'logging_default_mode':
++        return 'Legt fest, welcher Arbeitsabschnitt aufgezeichnet wird.';
++      case 'logging_default_area_id':
++        return 'Wird nur für die Startbedingung „Bestimmte Fläche“ verwendet.';
++    }
++    return '';
+   }
+ 
+   Map<String, dynamic> _settingMeta(String key) {
+@@ -640,6 +837,12 @@ class GpsStateController extends GetxController {
+     };
+   }
+ 
++  bool _valuesEqual(dynamic a, dynamic b) {
++    if (a == null && b == null) return true;
++    if (a is num && b is num) return a.toDouble() == b.toDouble();
++    return a?.toString() == b?.toString();
++  }
++
+   bool _bool(dynamic value, {bool fallback = false}) {
+     if (value is bool) return value;
+     if (value is num) return value != 0;
+diff --git a/lib/io/mqtt_connection.dart b/lib/io/mqtt_connection.dart
+index 48ab759..6883455 100644
+--- a/lib/io/mqtt_connection.dart
++++ b/lib/io/mqtt_connection.dart
+@@ -983,10 +983,20 @@ class MqttConnection  {
+       gpsStateController.setError("GPS-State-Anfrage konnte nicht gesendet werden.", topic: gpsStateRenewJsonTopic);
+       return;
+     }
++    requestGpsStateSettings(reportError: false);
++  }
++
++  void requestGpsStateSettings({bool reportError = true}) {
+     try {
+       _publishJson(gpsStateSettingsRenewJsonTopic, <String, dynamic>{});
+     } catch(e) {
+       debugPrint("error requesting gps state settings via mqtt");
++      if (reportError) {
++        gpsStateController.setError(
++          "GPS-State-Settings konnten nicht angefordert werden.",
++          topic: gpsStateSettingsRenewJsonTopic,
++        );
++      }
+     }
+   }
+ 
+diff --git a/lib/screens/gps_state.dart b/lib/screens/gps_state.dart
+index 71ceb2e..60c1869 100644
+--- a/lib/screens/gps_state.dart
++++ b/lib/screens/gps_state.dart
+@@ -1022,13 +1022,13 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+       title: 'GPS-/RTK-Aufzeichnung',
+       subtitle: lc.hasData ? (lc.summary.isEmpty ? 'Status: ${lc.state}' : lc.summary) : 'Noch kein retained Logging-Status empfangen',
+       active: lc.running || lc.armed,
+-      initiallyExpanded: lc.running || lc.armed || lc.errorText.isNotEmpty,
++      initiallyExpanded: lc.running || lc.armed || lc.errorText.isNotEmpty || controller.hasLoggingDrafts,
+       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+         Wrap(spacing: 8, runSpacing: 8, children: [
+           _metricTile(context, 'Zustand', lc.state.isEmpty ? '-' : lc.state, accent: lc.running || lc.armed, warning: lc.errorText.isNotEmpty),
+           _metricTile(context, 'Anforderung', lc.requestActive ? 'aktiv' : 'keine', accent: lc.requestActive),
+-          _metricTile(context, 'Trigger', lc.trigger.isEmpty ? '-' : lc.trigger),
+-          _metricTile(context, 'Modus', lc.mode.isEmpty ? '-' : lc.mode),
++          _metricTile(context, 'Trigger', lc.trigger.isEmpty ? '-' : _loggingTriggerLabel(lc.trigger)),
++          _metricTile(context, 'Modus', lc.mode.isEmpty ? '-' : _loggingModeLabel(lc.mode)),
+           _metricTile(context, 'Session-ID', _text(runtime['session_id'], fallback: '-')),
+           _metricTile(context, 'Dauer', '${_fmt(runtime['duration_s'])} s'),
+         ]),
+@@ -1041,7 +1041,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+               } else if (lc.armed || lc.requestActive) {
+                 lc.sendControl(<String, dynamic>{'command': 'cancel'});
+               } else {
+-                lc.sendControl(<String, dynamic>{'command': 'start', 'trigger': 'ad_hoc', 'mode': 'until_docking', 'request_id': 'gps-ui-${DateTime.now().millisecondsSinceEpoch}'});
++                lc.sendControl(controller.buildLoggingStartPayload());
+               }
+             },
+             icon: busy ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(actionIcon),
+@@ -1057,6 +1057,10 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+           const SizedBox(height: 10),
+           SelectableText(lc.errorText, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+         ],
++        const SizedBox(height: 12),
++        const Divider(height: 1),
++        _buildLoggingSettingsEditor(context),
++        const Divider(height: 1),
+         const SizedBox(height: 14),
+         Text('Letzte Session', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+         const SizedBox(height: 8),
+@@ -1083,6 +1087,347 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+     );
+   }
+ 
++  Widget _buildLoggingSettingsEditor(BuildContext context) {
++    final theme = Theme.of(context);
++    final supported = controller.hasLoggingSettings;
++    final settingsBusy = controller.waitingForResponse.value;
++    final triggerKey = GpsStateController.loggingSettingKeys[0];
++    final modeKey = GpsStateController.loggingSettingKeys[1];
++    final areaKey = GpsStateController.loggingSettingKeys[2];
++
++    final triggerOptions = controller.optionsFor(
++      triggerKey,
++      fallback: GpsStateController.loggingTriggerFallbackOptions,
++    );
++    final modeOptions = controller.optionsFor(
++      modeKey,
++      fallback: GpsStateController.loggingModeFallbackOptions,
++    );
++    final selectedTrigger = _optionValue(
++      controller.settingValue(triggerKey),
++      triggerOptions,
++      fallback: 'ad_hoc',
++    );
++    final selectedMode = _optionValue(
++      controller.settingValue(modeKey),
++      modeOptions,
++      fallback: 'until_docking',
++    );
++    final showArea = selectedTrigger == 'area_id';
++
++    return ExpansionTile(
++      tilePadding: EdgeInsets.zero,
++      childrenPadding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
++      initiallyExpanded: controller.hasLoggingDrafts,
++      leading: Icon(
++        Icons.tune,
++        color: supported ? theme.primaryColor : theme.disabledColor,
++      ),
++      title: Row(
++        children: [
++          const Expanded(child: Text('Logging-Einstellungen')),
++          if (controller.loggingDirtyCount > 0)
++            Chip(
++              visualDensity: VisualDensity.compact,
++              label: Text('${controller.loggingDirtyCount} Entwurf${controller.loggingDirtyCount == 1 ? '' : 'e'}'),
++            ),
++        ],
++      ),
++      subtitle: Text(
++        supported
++            ? 'Wie bei Software und Hardware: lokal ändern, für die Session anwenden oder dauerhaft speichern.'
++            : 'Das Backend liefert die drei benötigten Logging-Felder noch nicht vollständig über gps_state/settings/json.',
++      ),
++      children: [
++        Container(
++          width: double.infinity,
++          padding: const EdgeInsets.all(12),
++          decoration: BoxDecoration(
++            color: (supported ? theme.primaryColor : Colors.orange).withValues(alpha: 0.07),
++            border: Border.all(
++              color: (supported ? theme.primaryColor : Colors.orange).withValues(alpha: 0.25),
++            ),
++            borderRadius: BorderRadius.circular(6),
++          ),
++          child: Text(
++            supported
++                ? '„Jetzt anwenden“ ändert die aktiven Vorgaben bis zum Neustart. „Dauerhaft speichern“ übernimmt sie als persistenten Standard. Eine bereits laufende oder vorgemerkte Aufzeichnung behält ihren beim Start übernommenen Trigger und Modus.'
++                : 'Bis das Backend logging_default_trigger, logging_default_mode und logging_default_area_id bereitstellt, bleibt die Starttaste abwärtskompatibel und sendet ad_hoc / until_docking direkt im Startbefehl.',
++            style: theme.textTheme.bodySmall,
++          ),
++        ),
++        const SizedBox(height: 12),
++        LayoutBuilder(
++          builder: (context, constraints) {
++            final compact = constraints.maxWidth < 720;
++            final triggerField = _loggingDropdownField(
++              context,
++              keyName: triggerKey,
++              value: selectedTrigger,
++              options: triggerOptions,
++              enabled: supported && !settingsBusy,
++              labelForOption: _loggingTriggerLabel,
++            );
++            final modeField = _loggingDropdownField(
++              context,
++              keyName: modeKey,
++              value: selectedMode,
++              options: modeOptions,
++              enabled: supported && !settingsBusy,
++              labelForOption: _loggingModeLabel,
++            );
++            if (compact) {
++              return Column(
++                crossAxisAlignment: CrossAxisAlignment.stretch,
++                children: [
++                  triggerField,
++                  const SizedBox(height: 12),
++                  modeField,
++                ],
++              );
++            }
++            return Row(
++              crossAxisAlignment: CrossAxisAlignment.start,
++              children: [
++                Expanded(child: triggerField),
++                const SizedBox(width: 12),
++                Expanded(child: modeField),
++              ],
++            );
++          },
++        ),
++        if (showArea) ...[
++          const SizedBox(height: 12),
++          _loggingAreaField(
++            context,
++            keyName: areaKey,
++            enabled: supported && !settingsBusy,
++          ),
++        ],
++        if ((loggingController.running || loggingController.armed || loggingController.requestActive) &&
++            controller.hasLoggingDrafts) ...[
++          const SizedBox(height: 10),
++          _messageBox(
++            context,
++            'Gültigkeit',
++            'Die Entwürfe gelten erst nach dem Anwenden und nur für eine neue Aufzeichnung. Die aktuelle Anforderung wird nicht nachträglich verändert.',
++          ),
++        ],
++        const SizedBox(height: 12),
++        Wrap(
++          spacing: 8,
++          runSpacing: 8,
++          children: [
++            OutlinedButton.icon(
++              onPressed: controller.hasLoggingDrafts && !settingsBusy
++                  ? controller.resetLoggingDrafts
++                  : null,
++              icon: const Icon(Icons.undo),
++              label: const Text('Zurücksetzen'),
++            ),
++            ElevatedButton.icon(
++              onPressed: supported && controller.hasLoggingDrafts && !settingsBusy
++                  ? controller.applyLoggingSession
++                  : null,
++              icon: const Icon(Icons.play_arrow),
++              label: const Text('Jetzt anwenden'),
++            ),
++            ElevatedButton.icon(
++              onPressed: supported && controller.hasLoggingDrafts && !settingsBusy
++                  ? controller.applyLoggingPersistent
++                  : null,
++              icon: const Icon(Icons.save_outlined),
++              label: const Text('Dauerhaft speichern'),
++            ),
++            OutlinedButton.icon(
++              onPressed: settingsBusy ? null : controller.requestSettings,
++              icon: settingsBusy
++                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
++                  : const Icon(Icons.refresh),
++              label: const Text('Einstellungen neu laden'),
++            ),
++          ],
++        ),
++        if (controller.lastStatus.value.isNotEmpty &&
++            (controller.lastTopic.value.startsWith('gps_state/settings/') ||
++                controller.lastTopic.value.startsWith('local/'))) ...[
++          const SizedBox(height: 10),
++          Text(
++            controller.lastStatus.value,
++            style: theme.textTheme.bodySmall?.copyWith(
++              color: controller.lastStatusOk.value == false
++                  ? theme.colorScheme.error
++                  : theme.hintColor,
++            ),
++          ),
++        ],
++      ],
++    );
++  }
++
++  Widget _loggingDropdownField(
++    BuildContext context, {
++    required String keyName,
++    required String value,
++    required List<String> options,
++    required bool enabled,
++    required String Function(String) labelForOption,
++  }) {
++    final theme = Theme.of(context);
++    final description = controller.descriptionFor(keyName);
++    final effectiveOptions = <String>[
++      ...options,
++      if (value.isNotEmpty && !options.contains(value)) value,
++    ];
++
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.stretch,
++      children: [
++        Text(
++          controller.labelFor(keyName),
++          style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
++        ),
++        if (description.isNotEmpty) ...[
++          const SizedBox(height: 2),
++          Text(
++            description,
++            style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
++          ),
++        ],
++        const SizedBox(height: 6),
++        DropdownButtonFormField<String>(
++          key: ValueKey('${keyName}_${controller.editorRevision.value}'),
++          initialValue: value,
++          isExpanded: true,
++          decoration: const InputDecoration(
++            isDense: true,
++            border: OutlineInputBorder(),
++          ),
++          items: effectiveOptions
++              .map(
++                (option) => DropdownMenuItem<String>(
++                  value: option,
++                  child: Text(labelForOption(option)),
++                ),
++              )
++              .toList(growable: false),
++          onChanged: enabled
++              ? (newValue) {
++                  if (newValue != null) controller.setDraftValue(keyName, newValue);
++                }
++              : null,
++        ),
++        const SizedBox(height: 6),
++        _loggingSettingValues(context, keyName, labelForOption),
++      ],
++    );
++  }
++
++  Widget _loggingAreaField(
++    BuildContext context, {
++    required String keyName,
++    required bool enabled,
++  }) {
++    final theme = Theme.of(context);
++    final value = _text(controller.settingValue(keyName));
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.stretch,
++      children: [
++        Text(
++          controller.labelFor(keyName),
++          style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
++        ),
++        const SizedBox(height: 2),
++        Text(
++          controller.descriptionFor(keyName),
++          style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
++        ),
++        const SizedBox(height: 6),
++        TextFormField(
++          key: ValueKey('${keyName}_${controller.editorRevision.value}'),
++          initialValue: value,
++          enabled: enabled,
++          decoration: const InputDecoration(
++            isDense: true,
++            border: OutlineInputBorder(),
++            hintText: 'z. B. 3 oder mow_area_03',
++          ),
++          onChanged: (newValue) => controller.setDraftValue(
++            keyName,
++            newValue.trim().isEmpty ? null : newValue.trim(),
++          ),
++        ),
++        const SizedBox(height: 6),
++        _loggingSettingValues(context, keyName, (raw) => raw.isEmpty ? '-' : raw),
++      ],
++    );
++  }
++
++  Widget _loggingSettingValues(
++    BuildContext context,
++    String keyName,
++    String Function(String) labelForValue,
++  ) {
++    final active = _settingText(controller.confirmedSettingValue(keyName));
++    final persistent = _settingText(controller.persistentSettingValue(keyName));
++    final defaultValue = _settingText(controller.defaultSettingValue(keyName));
++    return Wrap(
++      spacing: 6,
++      runSpacing: 6,
++      children: [
++        _compactStatusChip(context, 'Aktiv', labelForValue(active)),
++        _compactStatusChip(context, 'Gespeichert', labelForValue(persistent)),
++        if (defaultValue != '-')
++          _compactStatusChip(context, 'Standard', labelForValue(defaultValue)),
++      ],
++    );
++  }
++
++  String _optionValue(dynamic raw, List<String> options, {required String fallback}) {
++    final value = raw?.toString() ?? '';
++    if (value.isNotEmpty) return value;
++    return options.contains(fallback)
++        ? fallback
++        : (options.isNotEmpty ? options.first : fallback);
++  }
++
++  String _settingText(dynamic value) {
++    if (value == null || value.toString().trim().isEmpty) return '-';
++    return value.toString();
++  }
++
++  String _loggingTriggerLabel(String value) {
++    switch (value) {
++      case 'ad_hoc':
++        return 'Sofort';
++      case 'next_cycle':
++        return 'Nächster Mähzyklus';
++      case 'area_id':
++        return 'Bestimmte Fläche';
++      case '-':
++        return '-';
++      default:
++        return value;
++    }
++  }
++
++  String _loggingModeLabel(String value) {
++    switch (value) {
++      case 'manual':
++        return 'Manuell stoppen';
++      case 'until_docking':
++        return 'Bis zum Andocken';
++      case 'from_start_to_docking':
++        return 'Arbeitsstart bis Andocken';
++      case 'from_docking_to_docking':
++        return 'Docking bis Docking';
++      case '-':
++        return '-';
++      default:
++        return value;
++    }
++  }
++
+   Widget _buildSettingsSection(BuildContext context) {
+     return _sectionCard(
+       context,

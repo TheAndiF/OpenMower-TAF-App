@@ -983,10 +983,20 @@ class MqttConnection  {
       gpsStateController.setError("GPS-State-Anfrage konnte nicht gesendet werden.", topic: gpsStateRenewJsonTopic);
       return;
     }
+    requestGpsStateSettings(reportError: false);
+  }
+
+  void requestGpsStateSettings({bool reportError = true}) {
     try {
       _publishJson(gpsStateSettingsRenewJsonTopic, <String, dynamic>{});
     } catch(e) {
       debugPrint("error requesting gps state settings via mqtt");
+      if (reportError) {
+        gpsStateController.setError(
+          "GPS-State-Settings konnten nicht angefordert werden.",
+          topic: gpsStateSettingsRenewJsonTopic,
+        );
+      }
     }
   }
 

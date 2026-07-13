@@ -1022,13 +1022,13 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       title: 'GPS-/RTK-Aufzeichnung',
       subtitle: lc.hasData ? (lc.summary.isEmpty ? 'Status: ${lc.state}' : lc.summary) : 'Noch kein retained Logging-Status empfangen',
       active: lc.running || lc.armed,
-      initiallyExpanded: lc.running || lc.armed || lc.errorText.isNotEmpty,
+      initiallyExpanded: lc.running || lc.armed || lc.errorText.isNotEmpty || controller.hasLoggingDrafts,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Wrap(spacing: 8, runSpacing: 8, children: [
           _metricTile(context, 'Zustand', lc.state.isEmpty ? '-' : lc.state, accent: lc.running || lc.armed, warning: lc.errorText.isNotEmpty),
           _metricTile(context, 'Anforderung', lc.requestActive ? 'aktiv' : 'keine', accent: lc.requestActive),
-          _metricTile(context, 'Trigger', lc.trigger.isEmpty ? '-' : lc.trigger),
-          _metricTile(context, 'Modus', lc.mode.isEmpty ? '-' : lc.mode),
+          _metricTile(context, 'Trigger', lc.trigger.isEmpty ? '-' : _loggingTriggerLabel(lc.trigger)),
+          _metricTile(context, 'Modus', lc.mode.isEmpty ? '-' : _loggingModeLabel(lc.mode)),
           _metricTile(context, 'Session-ID', _text(runtime['session_id'], fallback: '-')),
           _metricTile(context, 'Dauer', '${_fmt(runtime['duration_s'])} s'),
         ]),
@@ -1041,7 +1041,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
               } else if (lc.armed || lc.requestActive) {
                 lc.sendControl(<String, dynamic>{'command': 'cancel'});
               } else {
-                lc.sendControl(<String, dynamic>{'command': 'start', 'trigger': 'ad_hoc', 'mode': 'until_docking', 'request_id': 'gps-ui-${DateTime.now().millisecondsSinceEpoch}'});
+                lc.sendControl(controller.buildLoggingStartPayload());
               }
             },
             icon: busy ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(actionIcon),
@@ -1057,6 +1057,10 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           const SizedBox(height: 10),
           SelectableText(lc.errorText, style: TextStyle(color: Theme.of(context).colorScheme.error)),
         ],
+        const SizedBox(height: 12),
+        const Divider(height: 1),
+        _buildLoggingSettingsEditor(context),
+        const Divider(height: 1),
         const SizedBox(height: 14),
         Text('Letzte Session', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
@@ -1081,6 +1085,347 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
         ],
       ]),
     );
+  }
+
+  Widget _buildLoggingSettingsEditor(BuildContext context) {
+    final theme = Theme.of(context);
+    final supported = controller.hasLoggingSettings;
+    final settingsBusy = controller.waitingForResponse.value;
+    final triggerKey = GpsStateController.loggingSettingKeys[0];
+    final modeKey = GpsStateController.loggingSettingKeys[1];
+    final areaKey = GpsStateController.loggingSettingKeys[2];
+
+    final triggerOptions = controller.optionsFor(
+      triggerKey,
+      fallback: GpsStateController.loggingTriggerFallbackOptions,
+    );
+    final modeOptions = controller.optionsFor(
+      modeKey,
+      fallback: GpsStateController.loggingModeFallbackOptions,
+    );
+    final selectedTrigger = _optionValue(
+      controller.settingValue(triggerKey),
+      triggerOptions,
+      fallback: 'ad_hoc',
+    );
+    final selectedMode = _optionValue(
+      controller.settingValue(modeKey),
+      modeOptions,
+      fallback: 'until_docking',
+    );
+    final showArea = selectedTrigger == 'area_id';
+
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
+      initiallyExpanded: controller.hasLoggingDrafts,
+      leading: Icon(
+        Icons.tune,
+        color: supported ? theme.primaryColor : theme.disabledColor,
+      ),
+      title: Row(
+        children: [
+          const Expanded(child: Text('Logging-Einstellungen')),
+          if (controller.loggingDirtyCount > 0)
+            Chip(
+              visualDensity: VisualDensity.compact,
+              label: Text('${controller.loggingDirtyCount} Entwurf${controller.loggingDirtyCount == 1 ? '' : 'e'}'),
+            ),
+        ],
+      ),
+      subtitle: Text(
+        supported
+            ? 'Wie bei Software und Hardware: lokal ändern, für die Session anwenden oder dauerhaft speichern.'
+            : 'Das Backend liefert die drei benötigten Logging-Felder noch nicht vollständig über gps_state/settings/json.',
+      ),
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: (supported ? theme.primaryColor : Colors.orange).withValues(alpha: 0.07),
+            border: Border.all(
+              color: (supported ? theme.primaryColor : Colors.orange).withValues(alpha: 0.25),
+            ),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            supported
+                ? '„Jetzt anwenden“ ändert die aktiven Vorgaben bis zum Neustart. „Dauerhaft speichern“ übernimmt sie als persistenten Standard. Eine bereits laufende oder vorgemerkte Aufzeichnung behält ihren beim Start übernommenen Trigger und Modus.'
+                : 'Bis das Backend logging_default_trigger, logging_default_mode und logging_default_area_id bereitstellt, bleibt die Starttaste abwärtskompatibel und sendet ad_hoc / until_docking direkt im Startbefehl.',
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+        const SizedBox(height: 12),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 720;
+            final triggerField = _loggingDropdownField(
+              context,
+              keyName: triggerKey,
+              value: selectedTrigger,
+              options: triggerOptions,
+              enabled: supported && !settingsBusy,
+              labelForOption: _loggingTriggerLabel,
+            );
+            final modeField = _loggingDropdownField(
+              context,
+              keyName: modeKey,
+              value: selectedMode,
+              options: modeOptions,
+              enabled: supported && !settingsBusy,
+              labelForOption: _loggingModeLabel,
+            );
+            if (compact) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  triggerField,
+                  const SizedBox(height: 12),
+                  modeField,
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: triggerField),
+                const SizedBox(width: 12),
+                Expanded(child: modeField),
+              ],
+            );
+          },
+        ),
+        if (showArea) ...[
+          const SizedBox(height: 12),
+          _loggingAreaField(
+            context,
+            keyName: areaKey,
+            enabled: supported && !settingsBusy,
+          ),
+        ],
+        if ((loggingController.running || loggingController.armed || loggingController.requestActive) &&
+            controller.hasLoggingDrafts) ...[
+          const SizedBox(height: 10),
+          _messageBox(
+            context,
+            'Gültigkeit',
+            'Die Entwürfe gelten erst nach dem Anwenden und nur für eine neue Aufzeichnung. Die aktuelle Anforderung wird nicht nachträglich verändert.',
+          ),
+        ],
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: controller.hasLoggingDrafts && !settingsBusy
+                  ? controller.resetLoggingDrafts
+                  : null,
+              icon: const Icon(Icons.undo),
+              label: const Text('Zurücksetzen'),
+            ),
+            ElevatedButton.icon(
+              onPressed: supported && controller.hasLoggingDrafts && !settingsBusy
+                  ? controller.applyLoggingSession
+                  : null,
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Jetzt anwenden'),
+            ),
+            ElevatedButton.icon(
+              onPressed: supported && controller.hasLoggingDrafts && !settingsBusy
+                  ? controller.applyLoggingPersistent
+                  : null,
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('Dauerhaft speichern'),
+            ),
+            OutlinedButton.icon(
+              onPressed: settingsBusy ? null : controller.requestSettings,
+              icon: settingsBusy
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.refresh),
+              label: const Text('Einstellungen neu laden'),
+            ),
+          ],
+        ),
+        if (controller.lastStatus.value.isNotEmpty &&
+            (controller.lastTopic.value.startsWith('gps_state/settings/') ||
+                controller.lastTopic.value.startsWith('local/'))) ...[
+          const SizedBox(height: 10),
+          Text(
+            controller.lastStatus.value,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: controller.lastStatusOk.value == false
+                  ? theme.colorScheme.error
+                  : theme.hintColor,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _loggingDropdownField(
+    BuildContext context, {
+    required String keyName,
+    required String value,
+    required List<String> options,
+    required bool enabled,
+    required String Function(String) labelForOption,
+  }) {
+    final theme = Theme.of(context);
+    final description = controller.descriptionFor(keyName);
+    final effectiveOptions = <String>[
+      ...options,
+      if (value.isNotEmpty && !options.contains(value)) value,
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          controller.labelFor(keyName),
+          style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        if (description.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            description,
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+          ),
+        ],
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String>(
+          key: ValueKey('${keyName}_${controller.editorRevision.value}'),
+          initialValue: value,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
+          items: effectiveOptions
+              .map(
+                (option) => DropdownMenuItem<String>(
+                  value: option,
+                  child: Text(labelForOption(option)),
+                ),
+              )
+              .toList(growable: false),
+          onChanged: enabled
+              ? (newValue) {
+                  if (newValue != null) controller.setDraftValue(keyName, newValue);
+                }
+              : null,
+        ),
+        const SizedBox(height: 6),
+        _loggingSettingValues(context, keyName, labelForOption),
+      ],
+    );
+  }
+
+  Widget _loggingAreaField(
+    BuildContext context, {
+    required String keyName,
+    required bool enabled,
+  }) {
+    final theme = Theme.of(context);
+    final value = _text(controller.settingValue(keyName));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          controller.labelFor(keyName),
+          style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          controller.descriptionFor(keyName),
+          style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+        ),
+        const SizedBox(height: 6),
+        TextFormField(
+          key: ValueKey('${keyName}_${controller.editorRevision.value}'),
+          initialValue: value,
+          enabled: enabled,
+          decoration: const InputDecoration(
+            isDense: true,
+            border: OutlineInputBorder(),
+            hintText: 'z. B. 3 oder mow_area_03',
+          ),
+          onChanged: (newValue) => controller.setDraftValue(
+            keyName,
+            newValue.trim().isEmpty ? null : newValue.trim(),
+          ),
+        ),
+        const SizedBox(height: 6),
+        _loggingSettingValues(context, keyName, (raw) => raw.isEmpty ? '-' : raw),
+      ],
+    );
+  }
+
+  Widget _loggingSettingValues(
+    BuildContext context,
+    String keyName,
+    String Function(String) labelForValue,
+  ) {
+    final active = _settingText(controller.confirmedSettingValue(keyName));
+    final persistent = _settingText(controller.persistentSettingValue(keyName));
+    final defaultValue = _settingText(controller.defaultSettingValue(keyName));
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        _compactStatusChip(context, 'Aktiv', labelForValue(active)),
+        _compactStatusChip(context, 'Gespeichert', labelForValue(persistent)),
+        if (defaultValue != '-')
+          _compactStatusChip(context, 'Standard', labelForValue(defaultValue)),
+      ],
+    );
+  }
+
+  String _optionValue(dynamic raw, List<String> options, {required String fallback}) {
+    final value = raw?.toString() ?? '';
+    if (value.isNotEmpty) return value;
+    return options.contains(fallback)
+        ? fallback
+        : (options.isNotEmpty ? options.first : fallback);
+  }
+
+  String _settingText(dynamic value) {
+    if (value == null || value.toString().trim().isEmpty) return '-';
+    return value.toString();
+  }
+
+  String _loggingTriggerLabel(String value) {
+    switch (value) {
+      case 'ad_hoc':
+        return 'Sofort';
+      case 'next_cycle':
+        return 'Nächster Mähzyklus';
+      case 'area_id':
+        return 'Bestimmte Fläche';
+      case '-':
+        return '-';
+      default:
+        return value;
+    }
+  }
+
+  String _loggingModeLabel(String value) {
+    switch (value) {
+      case 'manual':
+        return 'Manuell stoppen';
+      case 'until_docking':
+        return 'Bis zum Andocken';
+      case 'from_start_to_docking':
+        return 'Arbeitsstart bis Andocken';
+      case 'from_docking_to_docking':
+        return 'Docking bis Docking';
+      case '-':
+        return '-';
+      default:
+        return value;
+    }
   }
 
   Widget _buildSettingsSection(BuildContext context) {

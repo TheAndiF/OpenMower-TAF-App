@@ -1,0 +1,117 @@
+{
+  "project": "OpenMower-TAF-App",
+  "topic": "GPS-Logging-Einstellungen und Backend-Vertrag",
+  "version": "v0.13",
+  "date": "2026-07-14",
+  "base_commit": "354002b",
+  "result": "passed_with_open_runtime_checks",
+  "summary": {
+    "passed": 17,
+    "failed": 0,
+    "not_run": 2
+  },
+  "checks": [
+    {
+      "check": "git_diff_check",
+      "status": "passed",
+      "detail": "No whitespace errors."
+    },
+    {
+      "check": "dart_structure:lib/controllers/gps_state_controller.dart",
+      "status": "passed",
+      "detail": "Balanced brackets, strings and comments."
+    },
+    {
+      "check": "dart_structure:lib/io/mqtt_connection.dart",
+      "status": "passed",
+      "detail": "Balanced brackets, strings and comments."
+    },
+    {
+      "check": "dart_structure:lib/screens/gps_state.dart",
+      "status": "passed",
+      "detail": "Balanced brackets, strings and comments."
+    },
+    {
+      "check": "controller_logging_keys",
+      "status": "passed",
+      "detail": "Required implementation/documentation marker found."
+    },
+    {
+      "check": "controller_session_persistent_methods",
+      "status": "passed",
+      "detail": "Required implementation/documentation marker found."
+    },
+    {
+      "check": "controller_start_fallback",
+      "status": "passed",
+      "detail": "Required implementation/documentation marker found."
+    },
+    {
+      "check": "targeted_settings_renew",
+      "status": "passed",
+      "detail": "Required implementation/documentation marker found."
+    },
+    {
+      "check": "ui_settings_workflow",
+      "status": "passed",
+      "detail": "Required implementation/documentation marker found."
+    },
+    {
+      "check": "ui_uses_controller_start_payload",
+      "status": "passed",
+      "detail": "Required implementation/documentation marker found."
+    },
+    {
+      "check": "ui_no_hardcoded_start_payload",
+      "status": "passed",
+      "detail": "Required implementation/documentation marker found."
+    },
+    {
+      "check": "backend_contract_topics",
+      "status": "passed",
+      "detail": "Required implementation/documentation marker found."
+    },
+    {
+      "check": "backend_contract_snapshot",
+      "status": "passed",
+      "detail": "Required implementation/documentation marker found."
+    },
+    {
+      "check": "manual_updated",
+      "status": "passed",
+      "detail": "Bedienungsanleitung documents the Logging-Einstellungen workflow, session/persistent actions and the recommended next-cycle combination."
+    },
+    {
+      "check": "patch_apply_check",
+      "status": "passed",
+      "detail": "git apply --check passed against base commit 354002b; patched target files matched byte-for-byte."
+    },
+    {
+      "check": "docx_render",
+      "status": "passed",
+      "detail": "DOCX rendered to 8 PNG pages and all pages were visually inspected; no clipping, overlap or blank continuation page."
+    },
+    {
+      "check": "pdf_render",
+      "status": "passed",
+      "detail": "PDF rendered to 8 PNG pages at 150 DPI and visually matched the verified DOCX layout."
+    },
+    {
+      "check": "flutter_analyze_build",
+      "status": "not_run",
+      "detail": "Flutter and Dart SDK are not installed in the execution environment; run flutter analyze and a Web/Android build in project CI."
+    },
+    {
+      "check": "backend_end_to_end",
+      "status": "not_run",
+      "detail": "The uploaded package contains the app. The required backend contract is documented but must be implemented and tested in OpenMower-TAF-ROS."
+    }
+  ],
+  "modified_file_sha256": {
+    "lib/controllers/gps_state_controller.dart": "a26877eabc8535108a31932b4ce78f0f6e487c53b55b988a46b49a46b397f702",
+    "lib/io/mqtt_connection.dart": "b04aa5713a6fcb3ea3ccdbfbbda9740f5492a0564ef5b619c7578e9b47fb8236",
+    "lib/screens/gps_state.dart": "63230629d2d8ba57c3b8f13c524891f2499abfa6abeb321cf57b5fb7c3171038",
+    "docs/bedienungsanleitung.md": "f3b2d4aef67afa038ed8260eaf62a08f4506ba722779f3584c3f0b3ef6e1f133",
+    "docs/mqtt-schnittstelle.md": "68b9d3aa3f1d997ccf8c8f8550cb9051c0574ac0e988af57e29c4f800c3619ef"
+  }
+}
