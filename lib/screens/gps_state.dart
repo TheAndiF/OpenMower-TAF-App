@@ -733,18 +733,23 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
   }) {
     final theme = Theme.of(context);
     final status = _text(payload['status']).toLowerCase();
+    final isIdle = status.isEmpty || status == 'idle';
     final statusColor = _restartStatusColor(status, theme);
-    final statusLabel = payload.isEmpty ? 'Kein Neustart aktiv' : _restartStatusLabel(status);
+    final statusLabel = isIdle ? 'Kein Neustart aktiv' : _restartStatusLabel(status);
     final inProgress = status == 'resetting' || status == 'waiting_for_receiver' || status == 'validating';
     final failed = status == 'failed' || status == 'error' || status == 'rejected' || status == 'send_failed';
-    final requestState = payload.isEmpty
+    final requestState = isIdle
         ? null
         : failed && (status == 'rejected' || status == 'send_failed')
             ? false
             : true;
-    final resetState = payload.isEmpty || status == 'sent' || status == 'requested' || status == 'accepted'
+    final resetState = isIdle ||
+            status == 'sent' ||
+            status == 'requested' ||
+            status == 'accepted' ||
+            status == 'resetting'
         ? null
-        : failed && status == 'send_failed'
+        : failed && (status == 'send_failed' || status == 'rejected')
             ? false
             : true;
     bool? navPvtState = _boolNullable(payload['nav_pvt_received']);
@@ -801,7 +806,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           _restartCheckRow(context, 'Neue NAV-PVT-Daten empfangen', navPvtState),
           _restartCheckRow(context, 'Neue NAV-SAT-Daten empfangen', navSatState),
           _restartCheckRow(context, 'Receiver-Neustart bestätigt', confirmedState),
-          if (payload.isNotEmpty) ...[
+          if (!isIdle) ...[
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
@@ -823,7 +828,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
               '${_restartReasonLabel(reason)}\nTechnischer Wert: $reason',
             ),
           ],
-          if (payload.isNotEmpty) ...[
+          if (!isIdle) ...[
             const SizedBox(height: 6),
             ExpansionTile(
               tilePadding: EdgeInsets.zero,
@@ -1987,6 +1992,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
         return 'F9P-Neustart fehlgeschlagen';
       case 'rejected':
         return 'F9P-Neustartbefehl abgelehnt';
+      case 'idle':
       case '':
         return 'Kein Neustart aktiv';
     }
