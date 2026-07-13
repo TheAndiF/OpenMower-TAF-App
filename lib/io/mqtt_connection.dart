@@ -119,11 +119,12 @@ class MqttConnection  {
   static const String mowLoadFactorSettingsSetSessionJsonTopic = mowerLogicSettingsSetSessionJsonTopic;
   static const String mowLoadFactorSettingsSetPersistentJsonTopic = mowerLogicSettingsSetPersistentJsonTopic;
 
-  // Satellite-Logging ist Runtime-Status/-Bedienung im settings/mower_logic-Namensraum,
-  // aber kein persistenter Settings-Wert.
-  static const String mowerLogicSatelliteLoggingJsonTopic = "settings/mower_logic/satellite_logging/json";
-  static const String mowerLogicSatelliteLoggingControlJsonTopic = "settings/mower_logic/satellite_logging/set/control/json";
-  static const String mowerLogicSatelliteLoggingRenewJsonTopic = "settings/mower_logic/satellite_logging/set/renew/json";
+  // Canonical legacy-free GPS logging contract.
+  static const String gpsStateLoggingStatusJsonTopic = "gps_state/logging/status/json";
+  static const String gpsStateLoggingLastJsonTopic = "gps_state/logging/last/json";
+  static const String gpsStateLoggingValidationJsonTopic = "gps_state/logging/validation/json";
+  static const String gpsStateLoggingControlJsonTopic = "gps_state/logging/set/control/json";
+  static const String gpsStateLoggingRenewJsonTopic = "gps_state/logging/set/renew/json";
 
   static const String lowLevelPowerJsonTopic = "settings/ll_board/json";
   static const String lowLevelPowerValidationJsonTopic = "settings/ll_board/validation/json";
@@ -624,17 +625,27 @@ class MqttConnection  {
     }
   }
 
-  void parseMowerLogicSatelliteLoggingStatus(MqttPublishMessage payload) {
+  void parseGpsStateLoggingStatus(MqttPublishMessage payload) {
     try {
       final map = _decodeMap(payload);
       if (map == null) {
-        satelliteLoggingController.setError("Leere oder ungültige Satellite-Logging-Nachricht empfangen.", topic: mowerLogicSatelliteLoggingJsonTopic);
+        satelliteLoggingController.setError("Leere oder ungültige GPS-Logging-Statusnachricht empfangen.", topic: gpsStateLoggingStatusJsonTopic);
         return;
       }
-      satelliteLoggingController.setStatusPayload(map, topic: mowerLogicSatelliteLoggingJsonTopic);
+      satelliteLoggingController.setStatusPayload(map, topic: gpsStateLoggingStatusJsonTopic);
     } catch (e) {
-      satelliteLoggingController.setError("Satellite-Logging-Status konnte nicht gelesen werden: $e", topic: mowerLogicSatelliteLoggingJsonTopic);
+      satelliteLoggingController.setError("GPS-Logging-Status konnte nicht gelesen werden: $e", topic: gpsStateLoggingStatusJsonTopic);
     }
+  }
+
+  void parseGpsStateLoggingLast(MqttPublishMessage payload) {
+    final map = _decodeMap(payload);
+    if (map != null) satelliteLoggingController.setLastPayload(map, topic: gpsStateLoggingLastJsonTopic);
+  }
+
+  void parseGpsStateLoggingValidation(MqttPublishMessage payload) {
+    final map = _decodeMap(payload);
+    if (map != null) satelliteLoggingController.setValidationPayload(map, topic: gpsStateLoggingValidationJsonTopic);
   }
 
   void parseLowLevelPowerSettings(MqttPublishMessage payload) {
@@ -903,21 +914,19 @@ class MqttConnection  {
     publishMowerLogicPersistentSettings(settings);
   }
 
-  void requestMowerLogicSatelliteLoggingStatus() {
+  void requestGpsStateLoggingStatus() {
     try {
-      _publishJson(mowerLogicSatelliteLoggingRenewJsonTopic, <String, dynamic>{});
+      _publishJson(gpsStateLoggingRenewJsonTopic, <String, dynamic>{});
     } catch(e) {
-      debugPrint("error requesting satellite logging status via mqtt");
-      satelliteLoggingController.setError("Satellite-Logging-Anfrage konnte nicht gesendet werden.", topic: mowerLogicSatelliteLoggingRenewJsonTopic);
+      satelliteLoggingController.setError("GPS-Logging-Anfrage konnte nicht gesendet werden.", topic: gpsStateLoggingRenewJsonTopic);
     }
   }
 
-  void publishMowerLogicSatelliteLoggingControl(Map<String, dynamic> control) {
+  void publishGpsStateLoggingControl(Map<String, dynamic> control) {
     try {
-      _publishJson(mowerLogicSatelliteLoggingControlJsonTopic, control, qos: MqttQos.exactlyOnce);
+      _publishJson(gpsStateLoggingControlJsonTopic, control, qos: MqttQos.exactlyOnce);
     } catch(e) {
-      debugPrint("error publishing satellite logging control via mqtt");
-      satelliteLoggingController.setError("Satellite-Logging-Control konnte nicht gesendet werden.", topic: mowerLogicSatelliteLoggingControlJsonTopic);
+      satelliteLoggingController.setError("GPS-Logging-Befehl konnte nicht gesendet werden.", topic: gpsStateLoggingControlJsonTopic);
     }
   }
 
@@ -1947,10 +1956,9 @@ class MqttConnection  {
               parseMowerLogicSettingsValidation(payload);
             }
             break;
-            case mowerLogicSatelliteLoggingJsonTopic: {
-              parseMowerLogicSatelliteLoggingStatus(payload);
-            }
-            break;
+            case gpsStateLoggingStatusJsonTopic: { parseGpsStateLoggingStatus(payload); } break;
+            case gpsStateLoggingLastJsonTopic: { parseGpsStateLoggingLast(payload); } break;
+            case gpsStateLoggingValidationJsonTopic: { parseGpsStateLoggingValidation(payload); } break;
             case gpsState0DefinitionTopic: {
               parseGpsState(0, payload, topic: gpsState0DefinitionTopic);
             }
@@ -2112,7 +2120,9 @@ class MqttConnection  {
     client.subscribe(statusTransitionLogJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mowerLogicSettingsJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mowerLogicSettingsValidationJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(mowerLogicSatelliteLoggingJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(gpsStateLoggingStatusJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(gpsStateLoggingLastJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(gpsStateLoggingValidationJsonTopic, MqttQos.atLeastOnce);
     // Mäh-Lastregelung wird ausschließlich über settings/mower_logic/... verarbeitet.
     client.subscribe(lowLevelPowerJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(lowLevelPowerValidationJsonTopic, MqttQos.atLeastOnce);

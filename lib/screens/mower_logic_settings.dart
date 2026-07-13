@@ -4,7 +4,6 @@ import 'package:open_mower_app/services/platform_text_file.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/mower_logic_settings_controller.dart';
 import 'package:open_mower_app/controllers/settings_controller.dart';
-import 'package:open_mower_app/controllers/satellite_logging_controller.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 
 class MowerLogicSettingsScreen extends StatefulWidget {
@@ -16,11 +15,9 @@ class MowerLogicSettingsScreen extends StatefulWidget {
 
 class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
   final MowerLogicSettingsController controller = Get.find<MowerLogicSettingsController>();
-  final SatelliteLoggingController satelliteLoggingController = Get.find<SatelliteLoggingController>();
   final SettingsController settingsController = Get.find<SettingsController>();
   bool _renewSent = false;
   bool _jsonExpanded = false;
-  bool _satelliteJsonExpanded = false;
 
   @override
   void initState() {
@@ -29,7 +26,6 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
       if (!_renewSent) {
         _renewSent = true;
         controller.requestSettings();
-        satelliteLoggingController.requestStatus();
       }
     });
   }
@@ -45,8 +41,6 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildOverviewSection(context),
-                const SizedBox(height: 16),
-                _buildSatelliteLoggingSection(context),
                 const SizedBox(height: 16),
                 _buildExpertModeSection(context),
                 const SizedBox(height: 16),
@@ -175,122 +169,6 @@ class _MowerLogicSettingsScreenState extends State<MowerLogicSettingsScreen> {
     );
   }
 
-
-  Widget _buildSatelliteLoggingSection(BuildContext context) {
-    final color = Theme.of(context).primaryColor;
-    return Obx(() {
-      final waiting = satelliteLoggingController.waitingForResponse.value;
-      final statusColor = satelliteLoggingController.lastStatusOk.value == false
-          ? Theme.of(context).colorScheme.error
-          : color;
-      return Card(
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isMobile = constraints.maxWidth < 720;
-                  final header = Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _headerIcon(context, Icons.settings_input_antenna, active: satelliteLoggingController.hasData),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Satellite-Logging Runtime',
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Runtime-Status aus settings/mower_logic/satellite_logging/json. Dieser Zweig wird getrennt von persistenten Software-Settings behandelt.',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).hintColor),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  );
-                  final refreshButton = OutlinedButton.icon(
-                    onPressed: waiting ? null : satelliteLoggingController.requestStatus,
-                    icon: waiting
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.refresh),
-                    label: const Text('Runtime neu laden'),
-                  );
-                  if (isMobile) {
-                    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [header, const SizedBox(height: 12), refreshButton]);
-                  }
-                  return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: header), const SizedBox(width: 16), refreshButton]);
-                },
-              ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _statusChip(context, 'running', satelliteLoggingController.running ? 'true' : 'false', Icons.play_circle_outline, statusColor),
-                  _statusChip(context, 'armed', satelliteLoggingController.armed ? 'true' : 'false', Icons.flag_outlined, statusColor),
-                  if (satelliteLoggingController.mode.isNotEmpty) _statusChip(context, 'mode', satelliteLoggingController.mode, Icons.tune, statusColor),
-                  if (satelliteLoggingController.trigger.isNotEmpty) _statusChip(context, 'trigger', satelliteLoggingController.trigger, Icons.bolt_outlined, statusColor),
-                  if (satelliteLoggingController.currentAreaId.isNotEmpty) _statusChip(context, 'current_area_id', satelliteLoggingController.currentAreaId, Icons.map_outlined, statusColor),
-                ],
-              ),
-              if (satelliteLoggingController.lastStatus.value.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.06),
-                    border: Border.all(color: statusColor.withValues(alpha: 0.24)),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(satelliteLoggingController.lastStatus.value, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: statusColor)),
-                      if (satelliteLoggingController.lastTopic.value.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(satelliteLoggingController.lastTopic.value, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () => setState(() => _satelliteJsonExpanded = !_satelliteJsonExpanded),
-                  icon: Icon(_satelliteJsonExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
-                  label: Text(_satelliteJsonExpanded ? 'Runtime-JSON ausblenden' : 'Runtime-JSON anzeigen'),
-                ),
-              ),
-              if (_satelliteJsonExpanded)
-                TextFormField(
-                  key: ValueKey('satellite-logging-json-${satelliteLoggingController.lastUpdated.value?.millisecondsSinceEpoch ?? 0}'),
-                  initialValue: satelliteLoggingController.rawStatusJson,
-                  readOnly: true,
-                  minLines: 4,
-                  maxLines: 14,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    labelText: 'settings/mower_logic/satellite_logging/json',
-                    alignLabelWithHint: true,
-                  ),
-                  style: const TextStyle(fontFamily: 'monospace'),
-                ),
-            ],
-          ),
-        ),
-      );
-    });
-  }
 
   Widget _buildExpertModeSection(BuildContext context) {
     final color = Theme.of(context).primaryColor;

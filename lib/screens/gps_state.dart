@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/gps_state_controller.dart';
+import 'package:open_mower_app/controllers/satellite_logging_controller.dart';
+import 'package:open_mower_app/controllers/settings_controller.dart';
 import 'package:open_mower_app/services/platform_text_file.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 
@@ -16,6 +18,8 @@ class GpsStateScreen extends StatefulWidget {
 
 class _GpsStateScreenState extends State<GpsStateScreen> {
   final GpsStateController controller = Get.find<GpsStateController>();
+  final SatelliteLoggingController loggingController = Get.find<SatelliteLoggingController>();
+  final SettingsController settingsController = Get.find<SettingsController>();
   bool _renewSent = false;
   bool _rawJsonExpanded = false;
   bool _snapshotDownloadInProgress = false;
@@ -27,6 +31,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       if (!_renewSent) {
         _renewSent = true;
         controller.requestStatus();
+        loggingController.requestStatus();
       }
     });
   }
@@ -53,6 +58,8 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                   _buildState4Section(context),
                   const SizedBox(height: 10),
                   _buildRestartSection(context),
+                  const SizedBox(height: 10),
+                  _buildGpsLoggingSection(context),
                   const SizedBox(height: 10),
                   _buildSettingsSection(context),
                   const SizedBox(height: 10),
@@ -999,6 +1006,80 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildGpsLoggingSection(BuildContext context) {
+    final lc = loggingController;
+    final runtime = lc.runtime;
+    final last = lc.lastPayload;
+    final busy = lc.waitingForResponse.value || lc.commandPending.value;
+    final actionLabel = lc.running ? 'Stop' : (lc.armed || lc.requestActive ? 'Abbrechen' : 'Start');
+    final actionIcon = lc.running ? Icons.stop : (lc.armed || lc.requestActive ? Icons.cancel_outlined : Icons.fiber_manual_record);
+    return _sectionCard(
+      context,
+      icon: Icons.settings_input_antenna,
+      title: 'GPS-/RTK-Aufzeichnung',
+      subtitle: lc.hasData ? (lc.summary.isEmpty ? 'Status: ${lc.state}' : lc.summary) : 'Noch kein retained Logging-Status empfangen',
+      active: lc.running || lc.armed,
+      initiallyExpanded: lc.running || lc.armed || lc.errorText.isNotEmpty,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          _metricTile(context, 'Zustand', lc.state.isEmpty ? '-' : lc.state, accent: lc.running || lc.armed, warning: lc.errorText.isNotEmpty),
+          _metricTile(context, 'Anforderung', lc.requestActive ? 'aktiv' : 'keine', accent: lc.requestActive),
+          _metricTile(context, 'Trigger', lc.trigger.isEmpty ? '-' : lc.trigger),
+          _metricTile(context, 'Modus', lc.mode.isEmpty ? '-' : lc.mode),
+          _metricTile(context, 'Session-ID', _text(runtime['session_id'], fallback: '-')),
+          _metricTile(context, 'Dauer', '${_fmt(runtime['duration_s'])} s'),
+        ]),
+        const SizedBox(height: 12),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          ElevatedButton.icon(
+            onPressed: busy ? null : () {
+              if (lc.running) {
+                lc.sendControl(<String, dynamic>{'command': 'stop'});
+              } else if (lc.armed || lc.requestActive) {
+                lc.sendControl(<String, dynamic>{'command': 'cancel'});
+              } else {
+                lc.sendControl(<String, dynamic>{'command': 'start', 'trigger': 'ad_hoc', 'mode': 'until_docking', 'request_id': 'gps-ui-${DateTime.now().millisecondsSinceEpoch}'});
+              }
+            },
+            icon: busy ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(actionIcon),
+            label: Text(actionLabel),
+          ),
+          OutlinedButton.icon(onPressed: busy ? null : lc.requestStatus, icon: const Icon(Icons.refresh), label: const Text('Renew')),
+        ]),
+        if (lc.lastStatus.value.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(lc.lastStatus.value, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: lc.lastStatusOk.value == false ? Theme.of(context).colorScheme.error : Theme.of(context).hintColor)),
+        ],
+        if (lc.errorText.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          SelectableText(lc.errorText, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        ],
+        const SizedBox(height: 14),
+        Text('Letzte Session', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        if (last.isEmpty)
+          Text('Noch keine abgeschlossene oder abgebrochene Session empfangen.', style: Theme.of(context).textTheme.bodySmall)
+        else
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            _metricTile(context, 'Ergebnis', _text(last['result'], fallback: '-'), warning: _text(last['result']) == 'error'),
+            _metricTile(context, 'Beendigungsgrund', _text(last['stop_reason'], fallback: '-')),
+            _metricTile(context, 'Dauer', '${_fmt(last['duration_s'])} s'),
+            _metricTile(context, 'Dateien', last['files'] is List ? (last['files'] as List).length.toString() : '0'),
+          ]),
+        if (settingsController.expertModeEnabled.value) ...[
+          const SizedBox(height: 14),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text('Expertendetails und Rohdaten'),
+            children: [
+              SelectableText('Status:\n${lc.rawStatusJson}\n\nLetzte Session:\n${lc.rawLastJson}', style: Theme.of(context).textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
+            ],
+          ),
+        ],
+      ]),
     );
   }
 

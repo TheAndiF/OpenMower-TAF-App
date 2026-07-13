@@ -1,0 +1,15 @@
+BL_Move GPS logging into GPS State
+Date: 2026-07-13
+
+Summary:
+- Removed the obsolete legacy satellite logging runtime block from Software Settings.
+- Switched MQTT handling to the canonical gps_state/logging v2 topics without legacy fallbacks.
+- Restored GPS logging status, request/session details, last-session information, controls, feedback and expert raw data on the GPS State screen.
+- Kept live status and last completed session separate and derived button state only from confirmed runtime fields.
+
+Changed files:
+- lib/controllers/satellite_logging_controller.dart
+- lib/io/mqtt_connection.dart
+- lib/screens/gps_state.dart
+- lib/screens/mower_logic_settings.dart
+- commit_message_gps_logging_under_gps_state_v0.12.txt
