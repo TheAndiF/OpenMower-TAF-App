@@ -124,6 +124,8 @@ Diese Seite dient der Diagnose. Sie zeigt zentrale Sensordaten des Mähers in ei
 
 ## GPS-State
 
+> **JSON-Snapshot:** Über die Schaltfläche **JSON-Snapshot** im Kopf der GPS-State-Seite wird eine JSON-Datei mit dem exakt zum Klickzeitpunkt in der App vorhandenen Stand erstellt. Enthalten sind Settings, Definitionen und Status von State0 bis State4, Topics, Empfangszeiten, Validierungen, F9P-Neustartinformationen sowie ungespeicherte Einstellungsentwürfe. Der Download löst bewusst keine zusätzliche MQTT-Aktualisierung aus; für neue Backendwerte zuerst **Status neu laden** verwenden.
+
 **Wofür ist diese Seite gedacht?**
 
 Die GPS-State-Unterseite ist eine Diagnose- und Bedieneranzeige für GPS-Empfang, Satellitenqualität und Fahrfreigabe. Sie verarbeitet das einheitliche Schema `gps_state.v3`: Für State0 bis State4 werden statische Definition und dynamischer Status getrennt empfangen.

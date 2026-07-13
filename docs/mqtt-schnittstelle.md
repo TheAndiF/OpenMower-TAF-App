@@ -898,3 +898,8 @@ Für den F9P-Neustart nutzt die App ausschließlich den Namensraum `gps_state/re
 | `gps_state/restart/set/renew/json` | App -> MQTT | Fordert Restart-Status und GPS-State-Settings erneut an. |
 
 Die App sendet standardmäßig `reset_mode=controlled_software`. Ein Status `sent` bedeutet, dass die UBX-CFG-RST-Nachricht geschrieben wurde; ein späterer GNSS-Fix oder ein ACK wird daraus nicht abgeleitet.
+
+
+### GPS-State JSON-Snapshot der App
+
+Die GPS-State-Seite kann den aktuell lokal vorhandenen Datenstand als `openmower-gps-state-snapshot-YYYY-MM-DD_HH-mm-ss.json` exportieren. Der Export umfasst die rohen Definition-/Status-Payloads von State0 bis State4, Settings, Validierungen, Restartdaten, die jeweils zugehörigen Topics und Empfangszeiten sowie den lokalen Einstellungsentwurf. Der Export publiziert selbst keine MQTT-Nachricht; bei Bedarf ist vorher `gps_state/set/renew/json` über **Status neu laden** auszulösen.

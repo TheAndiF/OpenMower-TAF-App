@@ -1,0 +1,19 @@
+BL_Add prominent GPS State JSON snapshot download
+
+Date: 2026-07-13
+
+Summary:
+- Added a prominent JSON-Snapshot button to the GPS-State page header.
+- Exported the exact local app state at click time with timestamped filename.
+- Included State0-State4 definitions/status, settings, MQTT topics, receive timestamps, validation/restart data, UI status and unsaved setting drafts.
+- Reused the same action in the JSON diagnosis section and prevented duplicate downloads while a save/share action is active.
+- Kept MQTT refresh and snapshot download separate so exports never trigger hidden backend changes.
+- Removed a duplicated GPS-State response-timeout arming call.
+- Updated the operating guide and MQTT interface documentation.
+
+Changed files:
+- lib/screens/gps_state.dart
+- lib/controllers/gps_state_controller.dart
+- docs/bedienungsanleitung.md
+- docs/mqtt-schnittstelle.md
+- commit_message_gps_state_json_snapshot_button_v0.9.txt

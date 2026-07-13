@@ -18,6 +18,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
   final GpsStateController controller = Get.find<GpsStateController>();
   bool _renewSent = false;
   bool _rawJsonExpanded = false;
+  bool _snapshotDownloadInProgress = false;
 
   @override
   void initState() {
@@ -137,10 +138,37 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                   : const Icon(Icons.refresh),
               label: const Text('Status neu laden'),
             );
+            final snapshot = FilledButton.icon(
+              onPressed: _snapshotDownloadInProgress ? null : () => _downloadGpsSnapshot(context),
+              icon: _snapshotDownloadInProgress
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.download_outlined),
+              label: const Text('JSON-Snapshot'),
+            );
             if (isMobile) {
-              return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [title, const SizedBox(height: 10), refresh]);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  title,
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.end,
+                    children: [refresh, snapshot],
+                  ),
+                ],
+              );
             }
-            return Row(children: [Expanded(child: title), const SizedBox(width: 16), refresh]);
+            return Row(
+              children: [
+                Expanded(child: title),
+                const SizedBox(width: 16),
+                refresh,
+                const SizedBox(width: 8),
+                snapshot,
+              ],
+            );
           },
         ),
       ),
@@ -820,9 +848,9 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             TextButton.icon(
-              onPressed: () => _downloadGpsDebugJson(context, jsonText),
+              onPressed: _snapshotDownloadInProgress ? null : () => _downloadGpsSnapshot(context),
               icon: const Icon(Icons.download, size: 18),
-              label: const Text('Download'),
+              label: const Text('Snapshot'),
             ),
             Icon(_rawJsonExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
           ],
@@ -839,7 +867,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        'Der Download speichert den aktuell in der App vorhandenen Snapshot. Er löst keine neue MQTT-Aktualisierung aus.',
+                        'Der JSON-Snapshot enthält alle aktuell in der App vorhandenen GPS-State-Daten: Settings, Definitionen und Status von State0 bis State4, MQTT-Topics, Empfangszeiten, Validierungen, Neustartstatus und noch nicht gespeicherte Einstellungsentwürfe. Er löst keine neue MQTT-Aktualisierung aus.',
                         style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
                       ),
                     ),
@@ -869,9 +897,12 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     );
   }
 
-  Future<void> _downloadGpsDebugJson(BuildContext context, String jsonText) async {
+  Future<void> _downloadGpsSnapshot(BuildContext context) async {
+    if (_snapshotDownloadInProgress) return;
+    setState(() => _snapshotDownloadInProgress = true);
+
     final now = DateTime.now();
-    final fileName = 'openmower-gps-state-debug-'
+    final fileName = 'openmower-gps-state-snapshot-'
         '${now.year.toString().padLeft(4, '0')}-'
         '${now.month.toString().padLeft(2, '0')}-'
         '${now.day.toString().padLeft(2, '0')}_'
@@ -879,6 +910,9 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
         '${now.minute.toString().padLeft(2, '0')}-'
         '${now.second.toString().padLeft(2, '0')}.json';
     try {
+      // Build the JSON only when the button is pressed so generated_at and all
+      // exported values represent the exact local app state at that moment.
+      final jsonText = controller.exportJsonString();
       await saveTextFile(
         fileName: fileName,
         content: jsonText,
@@ -886,13 +920,17 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('GPS-Diagnose wurde als $fileName bereitgestellt.')),
+        SnackBar(content: Text('GPS-State-Snapshot wurde als $fileName bereitgestellt.')),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('GPS-Diagnose konnte nicht gespeichert werden: $error')),
+        SnackBar(content: Text('GPS-State-Snapshot konnte nicht gespeichert werden: $error')),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _snapshotDownloadInProgress = false);
+      }
     }
   }
 
