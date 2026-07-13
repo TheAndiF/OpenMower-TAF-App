@@ -124,7 +124,7 @@ Diese Seite dient der Diagnose. Sie zeigt zentrale Sensordaten des Mähers in ei
 
 ## GPS-State
 
-> **JSON-Snapshot:** Über die Schaltfläche **JSON-Snapshot** im Kopf der GPS-State-Seite wird eine JSON-Datei mit dem exakt zum Klickzeitpunkt in der App vorhandenen Stand erstellt. Enthalten sind Settings, Definitionen und Status von State0 bis State4, Topics, Empfangszeiten, Validierungen, F9P-Neustartinformationen sowie ungespeicherte Einstellungsentwürfe. Der Download löst bewusst keine zusätzliche MQTT-Aktualisierung aus; für neue Backendwerte zuerst **Status neu laden** verwenden.
+> **JSON-Download:** Die Schaltfläche **Download** befindet sich im Bereich **JSON-Ansicht** und verwendet dieselbe Position, Darstellung und Beschriftung wie die JSON-Ansicht der Flächenseite. Beim Klick wird eine JSON-Datei mit dem exakt zu diesem Zeitpunkt lokal in der App vorhandenen Stand erstellt. Enthalten sind Settings, Definitionen und Status von State0 bis State4, Topics, Empfangszeiten, Validierungen, F9P-Neustartinformationen sowie ungespeicherte Einstellungsentwürfe. Der Download löst bewusst keine zusätzliche MQTT-Aktualisierung aus; für neue Backendwerte zuerst **Status neu laden** verwenden.
 
 **Wofür ist diese Seite gedacht?**
 
@@ -423,6 +423,6 @@ Beim Aufklappen von State0 fordert die App automatisch einen neuen Snapshot an. 
 
 Die App verwendet keine dezentralen State-Renew-Topics mehr. Die allgemeine Aktualisierung sendet `{}` an `gps_state/set/renew/json`. Beim Öffnen oder manuellen Aktualisieren von State0 wird gezielt `{"states":[0],"parts":["status"]}` an dasselbe zentrale Topic gesendet. Erst eine danach empfangene Nachricht auf `gps_state/state0/status` gilt für die Freigabeanzeige als aktueller Snapshot.
 
-Unterhalb der GPS-Anzeigen befindet sich eine einklappbare read-only JSON-Ansicht. Der Export enthält die GPS-State-Settings sowie Definition und Status von State0 bis State4, jeweils mit dem tatsächlich verwendeten Topic und der lokalen Empfangszeit. Validierungs- und F9P-Neustartantworten werden als Zusatzdaten beigefügt. Der Download nutzt den plattformabhängigen Textdatei-Service der App und verändert keine MQTT-Daten.
+Unterhalb der GPS-Anzeigen befindet sich eine einklappbare read-only **JSON-Ansicht**. Wie auf der Flächenseite steht die Aktion **Download** rechts im Abschnittskopf; auf schmalen Ansichten wird sie als breite Schaltfläche **Herunterladen** unter der Überschrift dargestellt. Der Export enthält die GPS-State-Settings sowie Definition und Status von State0 bis State4, jeweils mit dem tatsächlich verwendeten Topic und der lokalen Empfangszeit. Validierungs- und F9P-Neustartantworten werden als Zusatzdaten beigefügt. Der Download nutzt den plattformabhängigen Textdatei-Service der App und verändert keine MQTT-Daten.
 
 Im Bereich **F9P-Neustart unter gps_state** können Hot Start, Warm Start und Cold Start ausgelöst werden. Als Reset-Mode ist `controlled_software` voreingestellt. Der angezeigte Status bestätigt das Senden beziehungsweise Schreiben des Restart-Befehls; er bedeutet nicht automatisch, dass sofort wieder RTK Fixed verfügbar ist.

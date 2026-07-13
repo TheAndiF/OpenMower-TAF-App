@@ -138,25 +138,13 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                   : const Icon(Icons.refresh),
               label: const Text('Status neu laden'),
             );
-            final snapshot = FilledButton.icon(
-              onPressed: _snapshotDownloadInProgress ? null : () => _downloadGpsSnapshot(context),
-              icon: _snapshotDownloadInProgress
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.download_outlined),
-              label: const Text('JSON-Snapshot'),
-            );
             if (isMobile) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   title,
                   const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.end,
-                    children: [refresh, snapshot],
-                  ),
+                  Align(alignment: Alignment.centerRight, child: refresh),
                 ],
               );
             }
@@ -165,8 +153,6 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                 Expanded(child: title),
                 const SizedBox(width: 16),
                 refresh,
-                const SizedBox(width: 8),
-                snapshot,
               ],
             );
           },
@@ -834,65 +820,135 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
 
   Widget _buildRawJsonSection(BuildContext context) {
     final theme = Theme.of(context);
+    final color = theme.primaryColor;
     final jsonText = controller.exportJsonString();
-    return Card(
-      margin: EdgeInsets.zero,
-      child: ExpansionTile(
-        initiallyExpanded: _rawJsonExpanded,
-        onExpansionChanged: (expanded) => setState(() => _rawJsonExpanded = expanded),
-        leading: const Icon(Icons.code),
-        title: const Text('JSON-Ansicht / GPS-Diagnose'),
-        subtitle: const Text('Settings sowie Definition und Status aller States als read-only Snapshot'),
-        trailing: Wrap(
-          spacing: 4,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            TextButton.icon(
-              onPressed: _snapshotDownloadInProgress ? null : () => _downloadGpsSnapshot(context),
-              icon: const Icon(Icons.download, size: 18),
-              label: const Text('Snapshot'),
-            ),
-            Icon(_rawJsonExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
-          ],
-        ),
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            color: const Color(0xFFF7F7F7),
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 720;
+        return Card(
+          margin: EdgeInsets.zero,
+          child: Container(
+            color: color.withValues(alpha: 0.08),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Der JSON-Snapshot enthält alle aktuell in der App vorhandenen GPS-State-Daten: Settings, Definitionen und Status von State0 bis State4, MQTT-Topics, Empfangszeiten, Validierungen, Neustartstatus und noch nicht gespeicherte Einstellungsentwürfe. Er löst keine neue MQTT-Aktualisierung aus.',
-                        style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 12, isMobile ? 8 : 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.code, color: color, size: 32),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'JSON-Ansicht',
+                                  style: theme.textTheme.titleLarge?.copyWith(color: color),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'GPS-State-Daten anzeigen und herunterladen',
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (!isMobile) _gpsJsonDownloadButton(context, isMobile: false),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: _rawJsonExpanded ? 'JSON-Ansicht einklappen' : 'JSON-Ansicht ausklappen',
+                            onPressed: () => setState(() => _rawJsonExpanded = !_rawJsonExpanded),
+                            icon: Icon(
+                              _rawJsonExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                              color: color,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    TextButton.icon(
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(text: jsonText));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('GPS-Diagnose-JSON wurde kopiert.')),
-                        );
-                      },
-                      icon: const Icon(Icons.copy, size: 18),
-                      label: const Text('Kopieren'),
-                    ),
-                  ],
+                      if (isMobile) ...[
+                        const SizedBox(height: 12),
+                        _gpsJsonDownloadButton(context, isMobile: true),
+                      ],
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 8),
-                SelectableText(
-                  jsonText,
-                  style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
-                ),
+                if (_rawJsonExpanded)
+                  Container(
+                    width: double.infinity,
+                    color: theme.cardColor,
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        LayoutBuilder(
+                          builder: (context, contentConstraints) {
+                            final compactContent = contentConstraints.maxWidth < 620;
+                            final description = Text(
+                              'Der Download enthält alle aktuell in der App vorhandenen GPS-State-Daten: Settings, Definitionen und Status von State0 bis State4, MQTT-Topics, Empfangszeiten, Validierungen, Neustartstatus und noch nicht gespeicherte Einstellungsentwürfe. Er löst keine neue MQTT-Aktualisierung aus.',
+                              style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+                            );
+                            final copyButton = TextButton.icon(
+                              onPressed: () {
+                                Clipboard.setData(ClipboardData(text: jsonText));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('GPS-Diagnose-JSON wurde kopiert.')),
+                                );
+                              },
+                              icon: const Icon(Icons.copy, size: 18),
+                              label: const Text('Kopieren'),
+                            );
+                            if (compactContent) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  description,
+                                  const SizedBox(height: 8),
+                                  Align(alignment: Alignment.centerRight, child: copyButton),
+                                ],
+                              );
+                            }
+                            return Row(
+                              children: [
+                                Expanded(child: description),
+                                const SizedBox(width: 8),
+                                copyButton,
+                              ],
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        SelectableText(
+                          jsonText,
+                          style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
-        ],
+        );
+      },
+    );
+  }
+
+  Widget _gpsJsonDownloadButton(BuildContext context, {required bool isMobile}) {
+    // Keep placement, outline style, icon and wording aligned with the JSON
+    // download action on the areas page so both screens use the same pattern.
+    return SizedBox(
+      width: isMobile ? double.infinity : null,
+      child: OutlinedButton.icon(
+        onPressed: _snapshotDownloadInProgress ? null : () => _downloadGpsSnapshot(context),
+        icon: _snapshotDownloadInProgress
+            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.download),
+        label: Text(isMobile ? 'Herunterladen' : 'Download'),
       ),
     );
   }

@@ -1,0 +1,21 @@
+BL_Align GPS State JSON download with areas page
+
+Date: 2026-07-13
+
+Summary:
+- Moved the GPS State JSON export action from the page header into the JSON section.
+- Matched the areas page JSON action pattern with an outlined download button, download icon and the labels "Download" or "Herunterladen" depending on screen width.
+- Kept the timestamped GPS snapshot content and download behavior unchanged.
+- Added responsive layout handling for the JSON description and copy action.
+- Documented the UI alignment in the operating guide and MQTT interface documentation.
+- Added an inline source comment explaining that the shared visual pattern is intentional.
+
+Changed files:
+- lib/screens/gps_state.dart
+- docs/bedienungsanleitung.md
+- docs/mqtt-schnittstelle.md
+- commit_message_gps_state_json_download_ui_alignment_v0.10.txt
+- _Dokumentation/2026-07-13 - OpenMower-TAF-App - Aenderungsnotiz - GPS-State JSON-Download UI-Angleichung - v0.10.md
+- _Dokumentation/2026-07-13 - OpenMower-TAF-App - Patch - GPS-State JSON-Download UI-Angleichung - v0.10.patch
+- _Dokumentation/2026-07-13 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State JSON-Download UI-Angleichung - v0.10.docx
+- _Dokumentation/2026-07-13 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State JSON-Download UI-Angleichung - v0.10.pdf
