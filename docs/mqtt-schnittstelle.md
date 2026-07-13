@@ -12,10 +12,10 @@ Diese Seite beschreibt die MQTT-Schnittstelle, die von der OpenMower TAF App ver
 
 | Punkt | Stand |
 |---|---|
-| Dokumentversion | `MQTT-API-Doku 1.1 GPS-State Fahrfreigabe` |
+| Dokumentversion | `MQTT-API-Doku 1.2 GPS-State v3 Standardisierung` |
 | App | `OpenMower-TAF-App 1.0.0+1` |
 | ROS / Backend | OpenMower mit `ROS Noetic / ROS 1` |
-| Doku-Stand | `24.06.2026` |
+| Doku-Stand | `13.07.2026` |
 | Quelle | aktuelles App-Paket, Datei `lib/io/mqtt_connection.dart` und Controller unter `lib/controllers/` |
 
 Wenn App oder Backend in einem anderen Release-Stand betrieben werden, können einzelne Topics oder Payload-Felder abweichen. Die App ist JSON-first ausgelegt, akzeptiert an einigen Stellen aber weiterhin BSON- oder Legacy-Topics.
@@ -83,10 +83,16 @@ Die App verwendet unterschiedliche QoS-Stufen:
 | `settings/mower_logic/validation/json` | JSON | atLeastOnce | Validierung der Software-Einstellungen. |
 | `settings/ll_board/json` | JSON | atLeastOnce | Hardware-/Low-Level-Board-Einstellungen. |
 | `settings/ll_board/validation/json` | JSON | atLeastOnce | Validierung der Hardware-Einstellungen. |
-| `gps_state/state1` | JSON | atLeastOnce | Kompakte GPS-Übersicht und Fahrfreigabe-Aussage für die Anzeige. |
-| `gps_state/state2` | JSON | atLeastOnce | Erweiterte Signalqualität und technische Fahrfreigabe-Diagnose. |
-| `gps_state/state3` | JSON | atMostOnce | Liste der verwendeten Satelliten. |
-| `gps_state/state4` | JSON | atMostOnce | Optionale vollständige Satellitenliste; standardmäßig ressourcenschonend deaktivierbar. |
+| `gps_state/state0/definition` | JSON | atLeastOnce | Retained Definition der 12-stufigen Fahrfähigkeitsdiagnose. |
+| `gps_state/state0/status` | JSON | atLeastOnce | Dynamischer State0-Status. |
+| `gps_state/state1/definition` | JSON | atLeastOnce | Retained Definition des kompakten Bedienerstatus. |
+| `gps_state/state1/status` | JSON | atLeastOnce | Kompakte Fahrfreigabe-Aussage für die Anzeige. |
+| `gps_state/state2/definition` | JSON | atLeastOnce | Retained Definition der technischen GNSS-/Pose-Zusammenfassung. |
+| `gps_state/state2/status` | JSON | atLeastOnce | Technische GNSS-/Pose- und Signalqualitätsdaten. |
+| `gps_state/state3/definition` | JSON | atLeastOnce | Retained Definition der verwendeten Satellitenliste. |
+| `gps_state/state3/status` | JSON | atMostOnce | Momentaufnahme der verwendeten Satelliten. |
+| `gps_state/state4/definition` | JSON | atLeastOnce | Retained Definition der vollständigen Satellitenliste. |
+| `gps_state/state4/status` | JSON | atMostOnce | Nicht-retained Momentaufnahme aller sichtbaren Satelliten. |
 | `gps_state/settings/json` | JSON | atLeastOnce | GPS-State-Einstellungen und Metadaten. |
 | `gps_state/settings/validation/json` | JSON | atLeastOnce | Validierungsantwort für GPS-State-Einstellungen. |
 
@@ -110,7 +116,8 @@ Die App verwendet unterschiedliche QoS-Stufen:
 | `settings/ll_board/set/renew/json` | JSON | atLeastOnce | Hardwarewerte neu anfordern. |
 | `settings/ll_board/set/session/json` | JSON | exactlyOnce | Hardwarewerte live für die Session setzen. |
 | `settings/ll_board/set/persistent/json` | JSON | exactlyOnce | Hardwarewerte dauerhaft speichern. |
-| `gps_state/settings/set/renew/json` | JSON | atLeastOnce | GPS-State-Daten und Einstellungen neu anfordern. |
+| `gps_state/set/renew/json` | JSON | atLeastOnce | Zentraler Renew-Befehl für Definition und/oder Status ausgewählter GPS-States. |
+| `gps_state/settings/set/renew/json` | JSON | atLeastOnce | GPS-State-Einstellungen neu anfordern. |
 | `gps_state/settings/set/session/json` | JSON | exactlyOnce | GPS-State-Einstellungen für die laufende Session setzen. |
 | `gps_state/settings/set/persistent/json` | JSON | exactlyOnce | GPS-State-Einstellungen dauerhaft speichern. |
 
@@ -263,123 +270,101 @@ oder:
 Die App kann Änderungen an Anzeige-Metadaten über `sensors/settings/set/persistent/json` senden. Das Backend bestätigt über `sensors/settings/validation/json`. Bearbeitet werden nur Metadaten wie `label`, `description`, `group`, `order`, `visible` und `expert`; Sensorwerte selbst bleiben readonly.
 
 
-## GPS-State und Fahrfreigabe
+## GPS-State v3, Fahrfreigabe und Diagnoseexport
 
-Die GPS-State-Unterseite liest `gps_state/state0/definition`, `gps_state/state0/status`, `gps_state/state1` bis `gps_state/state4` sowie die zugehörigen Settings. Die Payloads dürfen direkt als JSON-Objekt oder unter `d` gekapselt gesendet werden. Die App wertet die neuen Fahrfreigabe-Felder additiv aus; ältere Backends ohne diese Felder bleiben weiterhin darstellbar.
+Die App verwendet für State0 bis State4 ausschließlich die kanonischen Topic-Paare `gps_state/stateN/definition` und `gps_state/stateN/status`. Definitionen und Status werden im Controller getrennt gespeichert. Der gemeinsame Statusrahmen `gps_state.v3` bleibt vollständig erhalten; der state-spezifische `data`-Block wird für die Anzeige zusätzlich in eine interne View überführt. Dadurch ist die Oberfläche nicht von den vorübergehend noch vorhandenen Top-Level-Kompatibilitätsfeldern abhängig.
 
-### `gps_state/state1`
-
-State1 ist die kompakte Bedieneransicht. Neben den bisherigen Feldern für Verfügbarkeit, Qualität und Satellitenzahlen kann das Backend die direkte Fahrfreigabe-Aussage liefern.
+### Gemeinsamer Definitionsrahmen
 
 ```json
 {
+  "schema": "gps_state.v3",
+  "state": "state1",
+  "type": "definition",
+  "definition_version": 3,
+  "name": "gps_operator_status",
+  "label": "GPS-Fahrstatus",
+  "description": "Kompakter Bedienerstatus",
+  "role": "operator",
+  "order": 10,
+  "status_retained": true,
+  "update_mode": "periodic_and_event",
+  "fields": {}
+}
+```
+
+### Gemeinsamer Statusrahmen
+
+```json
+{
+  "schema": "gps_state.v3",
+  "state": "state1",
+  "type": "status",
+  "definition_version": 3,
+  "published_at": 1783940400.25,
+  "source_at": 1783940400.10,
+  "age_ms": 150,
   "available": true,
-  "quality": "very_good",
-  "visible": 28,
-  "used": 18,
-  "avg_cn0": 38.5,
-  "gps_drive_ready": true,
-  "gps_drive_state": "ready",
-  "gps_drive_label": "GPS reicht zum Fahren aus",
-  "gps_drive_reason": "RTK Fixed, Pose aktuell, Genauigkeit ausreichend",
-  "gps_drive_block_reason": null,
-  "rtk_state": "fixed",
-  "position_accuracy_m": 0.04,
-  "max_position_accuracy_m": 0.2,
-  "orientation_valid": true,
-  "recent_absolute_pose": true,
-  "gps_timeout": false,
-  "age_ms": 420,
-  "updated_at": "2026-06-24T12:00:00Z"
-}
-```
-
-| Feld | Verwendung in der App |
-|---|---|
-| `gps_drive_ready` | Steuert die obere Fahrfreigabe-Karte: grün bei `true`, Warn-/Blockzustand bei `false`. |
-| `gps_drive_state` | Kompakter Maschinenstatus, z. B. `ready` oder `blocked`. |
-| `gps_drive_label` | Bedienertext in der Anzeige. |
-| `gps_drive_reason` | Kurzbegründung unter dem Bedienertext. |
-| `gps_drive_block_reason` | Technischer Blockiergrund, sofern vorhanden. |
-| `rtk_state` | Anzeige des RTK-Zustands, z. B. `fixed`, `float`, `rtk`, `none` oder `unknown`. |
-| `position_accuracy_m` | Von OpenMower verwendete Positionsgenauigkeit in Metern. |
-| `max_position_accuracy_m` | Grenzwert aus der Mäherlogik. |
-| `orientation_valid` | Anzeige, ob die Orientierung gültig ist. |
-| `recent_absolute_pose` | Anzeige, ob eine aktuelle Sensor-Fusion-Pose vorhanden ist. |
-| `gps_timeout` | Anzeige, ob aus Sicht des Backend-Monitorings ein GPS-Timeout erreicht ist. |
-| `age_ms` | Alter der zuletzt ausgewerteten Pose. |
-
-### `gps_state/state0/definition` und `gps_state/state0/status`
-
-State0 ist die Experten-/Debugansicht der vollständigen Fahrfähigkeits-Entscheidungskette. Die App wertet die statische Definition und den Live-Status gemeinsam über die stabile Check-ID aus, zum Beispiel `03_gps_input_accuracy`.
-
-| Payload | Verwendung in der App |
-|---|---|
-| `gps_state/state0/definition` | Liefert Titel, Beschreibung, Quelle, Operator, erwarteten Wert oder Grenzwert je Prüfschritt. |
-| `gps_state/state0/status` | Liefert Live-Wert, Anzeige-Text, Status, Severity, Zusammenfassung sowie optional `blocking_stage` und `blocking_key`. |
-
-Darstellung in der App:
-
-- Grün: Bedingung erfüllt (`status=ok`, `ok=true`, `passed=true` oder Severity 0).
-- Gelb: Wert unklar, fehlend oder prüfbedürftig, zum Beispiel Definition ohne Live-Status.
-- Rot: Bedingung blockiert, fehlgeschlagen oder vom Backend als blockierende Stufe gemeldet.
-
-Die frühere breite Kennzahlen-Zusammenfassung wird nicht mehr als Chip-Leiste dargestellt. Stattdessen zeigt die App oben nur einen kompakten Banner mit Fahrfreigabe und Blockierstelle. Die eigentliche Diagnose erfolgt über 12 kompakte, einzeilige Zeilen mit `Stufe | Entscheidungsknoten | aktueller Wert | Bedingung | Ergebnis`. Die Quelle wird im normalen Layout nicht angezeigt.
-
-#### State0-Snapshot und manuelle Aktualisierung
-
-Beim Öffnen der State0-Expansion fordert die App automatisch einen aktuellen Snapshot an. Zusätzlich steht die Taste **State0 aktualisieren** zur Verfügung. Während die Antwort aussteht, stuft die App den bisherigen Inhalt nicht als aktuell ein. Erst eine nach dem Anforderungszeitpunkt empfangene Nachricht auf `gps_state/state0/status` oder ein kompatibles Legacy-Paket auf `gps_state/state0` beendet den Wartezustand.
-
-| Topic | Richtung | Payload / Verhalten |
-|---|---|---|
-| `gps_state/state0/set/renew/json` | App -> MQTT | Bevorzugte Snapshot-Anfrage mit `request_id`, `requested_at` und `evaluate_all_checks=true`. |
-| `gps_state/settings/set/renew/json` | App -> MQTT | Wird zusätzlich als Fallback gesendet, damit bestehende ROS-Versionen State0 erneut veröffentlichen können. |
-| `gps_state/state0/status` | MQTT -> App | Beendet den State0-Wartezustand und gilt als aktueller Snapshot, wenn die Nachricht nach der Anfrage empfangen wurde. |
-
-Beispiel der bevorzugten Anfrage:
-
-```json
-{
-  "request_id": "state0-1783591200123",
-  "requested_at": 1783591200.123,
-  "evaluate_all_checks": true
-}
-```
-
-`evaluate_all_checks=true` ist eine Anforderung an neuere Backends: Auch wenn eine frühe Stufe bereits blockiert, sollen alle technisch verfügbaren Diagnosewerte weiter ausgewertet werden. Unterstützt das Backend diese Option noch nicht, bleiben übersprungene Stufen gelb als **Nicht bewertet**. Die App erfindet dafür keine Ersatzwerte.
-
-Ein gemeldetes `drive_ready=true` wird nicht sofort grün dargestellt, wenn die Einzelprüfungen noch fehlen oder widersprüchlich sind. In diesem Fall zeigt die App einen gelben Konsistenzhinweis, bis ein vollständiger und aktueller State0-Status vorliegt.
-
-### `gps_state/state2`
-
-State2 bleibt die erweiterte Signal- und Diagnoseansicht. Wenn `drive_diagnostics` vorhanden ist, blendet die App zusätzlich eine technische Diagnosegruppe ein.
-
-```json
-{
-  "min_cn0": 18.0,
-  "max_cn0": 44.0,
-  "weak_count": 1,
-  "good_count": 17,
-  "systems": { "GPS": 10, "GALILEO": 8 },
-  "drive_diagnostics": {
-    "decision_source": "/xbot_positioning/xb_pose",
-    "rtk_source": "/ll/position/gps",
-    "ll_gps_rtk_fixed": true,
-    "ll_gps_position_accuracy_m": 0.03,
-    "xb_pose_accuracy_ok_for_mower_logic": true,
-    "xb_pose_age_ms": 420,
-    "last_drive_ready_age_ms": 420,
-    "mower_logic_gps_timeout_s": 5.0,
-    "mower_logic_gps_grace_remaining_s": 4.6
+  "stale": false,
+  "status": "ok",
+  "severity": 0,
+  "summary": "GPS reicht zum Fahren aus",
+  "data": {
+    "gps_drive_ready": true,
+    "gps_drive_state": "ready",
+    "gps_drive_label": "GPS reicht zum Fahren aus",
+    "gps_drive_reason": "RTK Fixed, Pose aktuell, Genauigkeit ausreichend",
+    "rtk_state": "fixed",
+    "position_accuracy_m": 0.04,
+    "max_position_accuracy_m": 0.20,
+    "pose_age_ms": 150
   }
 }
 ```
 
-Die App zeigt daraus die Quellen der Entscheidung, RTK-Fixed-Status, Low-Level-GPS-Genauigkeit, Pose-Alter, letzte Fahrfreigabe, Timeout und verbleibende Grace-Zeit. Fehlt das Objekt, wird keine leere Diagnosekarte angezeigt.
+### Zentrale Aktualisierung
 
-### `gps_state/state3` und `gps_state/state4`
+Die App sendet keine dezentralen State-Renew-Befehle mehr.
 
-State3 enthält die verwendeten Satelliten. State4 enthält optional alle sichtbaren Satelliten und sollte nur bei Diagnose aktiviert werden, da die vollständige Liste mehr MQTT-Daten erzeugt. Die App kann State4 über `gps_state/settings/set/session/json` temporär aktivieren oder deaktivieren.
+| Aktion | Topic | Payload |
+|---|---|---|
+| Alle aktivierten States aktualisieren | `gps_state/set/renew/json` | `{}` |
+| Nur State0-Status aktualisieren | `gps_state/set/renew/json` | `{"states":[0],"parts":["status"]}` |
+| GPS-State-Settings neu anfordern | `gps_state/settings/set/renew/json` | `{}` |
+
+Beim Öffnen der State0-Expansion und beim Drücken von **State0 aktualisieren** wird ausschließlich die gezielte zentrale State0-Anfrage gesendet. Erst eine nach dem lokalen Anforderungszeitpunkt empfangene Nachricht auf `gps_state/state0/status` beendet den State0-Wartezustand. Alte Alias-Topics wie `gps_state/state1` oder `gps_state/state0/set/renew/json` werden von dieser App-Version weder abonniert noch veröffentlicht.
+
+### Fachliche Aufteilung
+
+| State | Anzeige |
+|---|---|
+| State0 | 12-stufige Fahrfähigkeits-Entscheidungskette; Definition und Live-Status werden per stabiler Check-ID zusammengeführt. |
+| State1 | Kompakter Bedienerstatus mit Fahrfreigabe, Grund, RTK, Genauigkeit und Pose-Alter; keine zusätzliche Aktualisiert-Doppelanzeige. |
+| State2 | Technische GNSS-/Pose-Zusammenfassung mit Satellitenstatistik, C/N0, Systemverteilung, Diagnose und gemeinsamem `age_ms`-/`stale`-Status. |
+| State3 | Aktuell verwendete Satelliten. |
+| State4 | Alle sichtbaren Satelliten für Experten-/Debugzwecke; temporär über `publish_state4` schaltbar. |
+
+### Read-only JSON-Diagnoseexport
+
+Die GPS-Seite besitzt eine einklappbare JSON-Ansicht mit Kopier- und Download-Funktion. Der Export enthält:
+
+- `settings` mit Topic, lokaler Empfangszeit und Payload,
+- `state0` bis `state4`, jeweils getrennt in `definition` und `status`,
+- pro Teil `topic`, `received_at`, `available` und `payload`,
+- Zusatzdaten für Settings-Validierung und F9P-Neustartstatus.
+
+Das Export-Schema lautet `openmower.gps_state_debug.v1`. Der Dateiname folgt dem Muster `openmower-gps-state-debug-YYYY-MM-DD_HH-mm-ss.json`. Der Download speichert den aktuellen lokalen Snapshot und löst keine MQTT-Anforderung aus.
+
+### F9P-Neustart
+
+Der F9P-Neustart bleibt im Namensraum `gps_state/restart`:
+
+| Topic | Richtung | Verwendung |
+|---|---|---|
+| `gps_state/restart/set/json` | App -> MQTT | Sendet `{"mode":"hot_start|warm_start|cold_start","reset_mode":"controlled_software|gnss_only|hardware_watchdog"}`. |
+| `gps_state/restart/status/json` | MQTT -> App | Letzter Neustartstatus. |
+| `gps_state/restart/validation/json` | MQTT -> App | Annahme oder Validierungsfehler des Befehls. |
+| `gps_state/restart/set/renew/json` | App -> MQTT | Neustartstatus erneut anfordern. |
 
 
 ## Karte, Flächen und Editor
@@ -891,9 +876,9 @@ mosquitto_pub -h <host> -t 'robot_state/json' -m '{"d":{"current_state":"IDLE","
 
 [Zurück zur Dokumentations-Startseite](../) · [PDF-Version herunterladen](../assets/OpenMower_App_MQTT_Schnittstelle.pdf)
 
-## GPS-State v2 und F9P-Neustart (2026-07-08)
+## Historischer Stand: GPS-State v2 und F9P-Neustart (2026-07-08)
 
-Die GPS-State-Unterseite ist auf das Payload-Schema `gps_state.v2` vorbereitet. Die App trennt die fünf States fachlich:
+Dieser Abschnitt dokumentiert den früheren App-Stand und ist durch die oben beschriebene `gps_state.v3`-Anbindung ersetzt. Die damalige App trennte die fünf States fachlich:
 
 | Topic | Verwendung in der App |
 |---|---|

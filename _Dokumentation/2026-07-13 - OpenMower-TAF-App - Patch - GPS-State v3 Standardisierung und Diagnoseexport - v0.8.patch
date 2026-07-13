@@ -1,0 +1,1066 @@
+--- a/lib/controllers/gps_state_controller.dart
++++ b/lib/controllers/gps_state_controller.dart
+@@ -29,14 +29,30 @@
+     'hardware_watchdog',
+   ];
+ 
+-  final state0 = <String, dynamic>{}.obs;
+-  final state0Legacy = <String, dynamic>{}.obs;
+   final state0Definition = <String, dynamic>{}.obs;
+   final state0Status = <String, dynamic>{}.obs;
+   final state1 = <String, dynamic>{}.obs;
++  final state1Definition = <String, dynamic>{}.obs;
++  final state1Status = <String, dynamic>{}.obs;
+   final state2 = <String, dynamic>{}.obs;
++  final state2Definition = <String, dynamic>{}.obs;
++  final state2Status = <String, dynamic>{}.obs;
+   final state3 = <String, dynamic>{}.obs;
++  final state3Definition = <String, dynamic>{}.obs;
++  final state3Status = <String, dynamic>{}.obs;
+   final state4 = <String, dynamic>{}.obs;
++  final state4Definition = <String, dynamic>{}.obs;
++  final state4Status = <String, dynamic>{}.obs;
++
++  /// Raw canonical MQTT payloads and receive metadata. The display maps above
++  /// additionally flatten the state-specific `data` object so the UI remains
++  /// independent of transitional top-level compatibility fields.
++  final stateDefinitionPayloads = <int, Map<String, dynamic>>{}.obs;
++  final stateStatusPayloads = <int, Map<String, dynamic>>{}.obs;
++  final stateDefinitionTopics = <int, String>{}.obs;
++  final stateStatusTopics = <int, String>{}.obs;
++  final stateDefinitionReceivedAt = <int, DateTime>{}.obs;
++  final stateStatusReceivedAt = <int, DateTime>{}.obs;
+   final settingsPayload = <String, dynamic>{}.obs;
+   final validationPayload = <String, dynamic>{}.obs;
+   final restartStatusPayload = <String, dynamic>{}.obs;
+@@ -52,8 +68,13 @@
+   final editorRevision = 0.obs;
+   final restartResetMode = 'controlled_software'.obs;
+ 
+-  // State0 has its own refresh lifecycle. The general GPS-State renew can be
+-  // satisfied by State1-State4 first, therefore it must not be used as proof
++  final settingsReceivedAt = Rxn<DateTime>();
++  final validationReceivedAt = Rxn<DateTime>();
++  final restartStatusReceivedAt = Rxn<DateTime>();
++  final restartValidationReceivedAt = Rxn<DateTime>();
++
++  // State0 has its own refresh lifecycle. The central renew command can be
++  // satisfied by another State first, therefore it must not be used as proof
+   // that the 12 State0 decision checks are current.
+   final state0WaitingForUpdate = false.obs;
+   final state0UpdateMessage = ''.obs;
+@@ -65,9 +86,9 @@
+   int _responseWaitGeneration = 0;
+   int _state0WaitGeneration = 0;
+ 
+-  bool get hasState => state0.isNotEmpty || state0Legacy.isNotEmpty || state0Definition.isNotEmpty || state0Status.isNotEmpty || state1.isNotEmpty || state2.isNotEmpty || state3.isNotEmpty || state4.isNotEmpty;
++  bool get hasState => stateDefinitionPayloads.isNotEmpty || stateStatusPayloads.isNotEmpty;
+   bool get hasSettings => settingsPayload.isNotEmpty;
+-  bool get state0Active => settingBool('publish_state0', fallback: state0.isNotEmpty || state0Legacy.isNotEmpty || state0Definition.isNotEmpty || state0Status.isNotEmpty);
++  bool get state0Active => settingBool('publish_state0', fallback: state0Definition.isNotEmpty || state0Status.isNotEmpty);
+   bool get state4Active => settingBool('publish_state4', fallback: state4.isNotEmpty);
+   bool get hasRestartStatus => restartStatusPayload.isNotEmpty || restartValidationPayload.isNotEmpty;
+ 
+@@ -81,24 +102,63 @@
+     return !received.isBefore(requested) && state0UpdateMessage.value.isEmpty;
+   }
+ 
+-  String get rawJson {
+-    final data = <String, dynamic>{
+-      'state0': state0,
+-      'state0_legacy': state0Legacy,
+-      'state0_definition': state0Definition,
+-      'state0_status': state0Status,
+-      'state1': state1,
+-      'state2': state2,
+-      'state3': state3,
+-      'state4': state4,
+-      'settings': settingsPayload,
+-      'validation': validationPayload,
+-      'restart_status': restartStatusPayload,
+-      'restart_validation': restartValidationPayload,
++  String get rawJson => exportJsonString();
++
++  /// Builds the read-only GPS diagnosis snapshot used by the JSON view and by
++  /// the download action. Refreshing MQTT data and downloading this snapshot
++  /// intentionally remain separate actions.
++  Map<String, dynamic> buildDebugExport() {
++    final states = <String, dynamic>{};
++    for (var stateNumber = 0; stateNumber <= 4; stateNumber++) {
++      states['state$stateNumber'] = <String, dynamic>{
++        'definition': _partSnapshot(
++          payload: stateDefinitionPayloads[stateNumber],
++          topic: stateDefinitionTopics[stateNumber] ?? 'gps_state/state$stateNumber/definition',
++          receivedAt: stateDefinitionReceivedAt[stateNumber],
++        ),
++        'status': _partSnapshot(
++          payload: stateStatusPayloads[stateNumber],
++          topic: stateStatusTopics[stateNumber] ?? 'gps_state/state$stateNumber/status',
++          receivedAt: stateStatusReceivedAt[stateNumber],
++        ),
++      };
++    }
++
++    return <String, dynamic>{
++      'schema': 'openmower.gps_state_debug.v1',
++      'generated_at': DateTime.now().toUtc().toIso8601String(),
++      'source': 'OpenMower-TAF-App',
++      'gps_state_schema': 'gps_state.v3',
++      'renew_topic': MqttConnection.gpsStateRenewJsonTopic,
++      'settings_renew_topic': MqttConnection.gpsStateSettingsRenewJsonTopic,
++      'settings': _partSnapshot(
++        payload: settingsPayload,
++        topic: MqttConnection.gpsStateSettingsJsonTopic,
++        receivedAt: settingsReceivedAt.value,
++      ),
++      'states': states,
++      'auxiliary': <String, dynamic>{
++        'settings_validation': _partSnapshot(
++          payload: validationPayload,
++          topic: MqttConnection.gpsStateValidationJsonTopic,
++          receivedAt: validationReceivedAt.value,
++        ),
++        'restart_status': _partSnapshot(
++          payload: restartStatusPayload,
++          topic: MqttConnection.gpsStateRestartStatusJsonTopic,
++          receivedAt: restartStatusReceivedAt.value,
++        ),
++        'restart_validation': _partSnapshot(
++          payload: restartValidationPayload,
++          topic: MqttConnection.gpsStateRestartValidationJsonTopic,
++          receivedAt: restartValidationReceivedAt.value,
++        ),
++      },
+     };
+-    return const JsonEncoder.withIndent('  ').convert(data);
+   }
+ 
++  String exportJsonString() => const JsonEncoder.withIndent('  ').convert(buildDebugExport());
++
+   List<Map<String, dynamic>> satellitesForState(int stateNumber) {
+     final source = stateNumber == 4 ? state4 : state3;
+     final rawSatellites = source['satellites'];
+@@ -122,12 +182,9 @@
+     Get.find<MqttConnection>().requestGpsRestartStatus();
+   }
+ 
+-  /// Requests a fresh State0 snapshot. The MQTT layer sends the dedicated
+-  /// State0 renew request and the existing global renew request as a fallback
+-  /// for backends that do not yet implement the dedicated topic.
++  /// Requests only the live State0 status through the central v3 renew topic.
+   void requestState0Update({bool automatic = false}) {
+     final requestedAt = DateTime.now();
+-    final requestId = 'state0-${requestedAt.millisecondsSinceEpoch}';
+     state0WaitingForUpdate.value = true;
+     state0UpdateRequestedAt.value = requestedAt;
+     state0UpdateMessage.value = automatic
+@@ -135,93 +192,114 @@
+         : 'Aktuelle State0-Werte werden manuell angefordert ...';
+     lastStatusOk.value = null;
+     lastStatus.value = state0UpdateMessage.value;
+-    lastTopic.value = MqttConnection.gpsState0RenewJsonTopic;
++    lastTopic.value = MqttConnection.gpsStateRenewJsonTopic;
+     lastUpdated.value = requestedAt;
+     _armState0ResponseTimeout();
+-    Get.find<MqttConnection>().requestGpsState0Snapshot(requestId: requestId);
++    Get.find<MqttConnection>().requestGpsState0Snapshot();
+   }
+ 
+   void setStatePayload(int stateNumber, Map<String, dynamic> payload, {required String topic}) {
+     final root = _root(payload);
++    final type = root['type']?.toString().trim().toLowerCase();
++    final isDefinition = type == 'definition' || topic.endsWith('/definition');
++    final isStatus = type == 'status' || topic.endsWith('/status');
++
++    if (isDefinition) {
++      _setStateDefinition(stateNumber, root, topic: topic);
++    } else if (isStatus) {
++      _setStateStatus(stateNumber, root, topic: topic);
++    } else {
++      setError(
++        'GPS-State $stateNumber enthält weder type=definition noch type=status.',
++        topic: topic,
++      );
++      return;
++    }
++    lastStatusOk.value = true;
++    lastStatus.value = 'GPS-State $stateNumber empfangen.';
++    lastTopic.value = topic;
++    lastUpdated.value = DateTime.now();
++    waitingForResponse.value = false;
++    _clearResponseTimeout();
++  }
++
++
++  void _setStateDefinition(int stateNumber, Map<String, dynamic> root, {required String topic}) {
++    final receivedAt = DateTime.now();
++    final raw = _deepCopy(root);
++    stateDefinitionPayloads[stateNumber] = raw;
++    stateDefinitionTopics[stateNumber] = topic;
++    stateDefinitionReceivedAt[stateNumber] = receivedAt;
++
+     switch (stateNumber) {
+       case 0:
+-        _setState0Payload(root, topic: topic);
++        state0Definition.assignAll(raw);
+         break;
+       case 1:
+-        state1.assignAll(root);
++        state1Definition.assignAll(raw);
+         break;
+       case 2:
+-        state2.assignAll(root);
++        state2Definition.assignAll(raw);
+         break;
+       case 3:
+-        state3.assignAll(root);
++        state3Definition.assignAll(raw);
+         break;
+       case 4:
+-        state4.assignAll(root);
++        state4Definition.assignAll(raw);
+         break;
+     }
+-    lastStatusOk.value = true;
+-    lastStatus.value = 'GPS-State $stateNumber empfangen.';
+-    lastTopic.value = topic;
+-    lastUpdated.value = DateTime.now();
+-    waitingForResponse.value = false;
+-    _clearResponseTimeout();
+   }
+ 
++  void _setStateStatus(int stateNumber, Map<String, dynamic> root, {required String topic}) {
++    final receivedAt = DateTime.now();
++    final raw = _deepCopy(root);
++    final view = _statusView(raw);
++    stateStatusPayloads[stateNumber] = raw;
++    stateStatusTopics[stateNumber] = topic;
++    stateStatusReceivedAt[stateNumber] = receivedAt;
+ 
+-  void _setState0Payload(Map<String, dynamic> root, {required String topic}) {
+-    final type = root['type']?.toString().trim().toLowerCase();
+-    final isDefinition = type == 'definition' || topic == MqttConnection.gpsState0DefinitionTopic;
+-    final isStatus = type == 'status' || topic == MqttConnection.gpsState0StatusTopic;
+-    var statusUpdated = false;
+-
+-    // State0 is split by the ROS side into a retained static definition and a
+-    // frequently changing live status. Keep both payloads instead of allowing
+-    // the last received MQTT message to overwrite the other half.
+-    if (root['definition'] is Map || root['status'] is Map) {
+-      // Accept a combined State0 object as well, for example from tests or
+-      // older bridges that bundle definition and status in one retained value.
+-      if (root['definition'] is Map) {
+-        state0Definition.assignAll(_deepCopy(Map<String, dynamic>.from(root['definition'] as Map)));
+-      }
+-      if (root['status'] is Map) {
+-        state0Status.assignAll(_deepCopy(Map<String, dynamic>.from(root['status'] as Map)));
+-        statusUpdated = true;
+-      }
+-    } else if (isDefinition) {
+-      state0Definition.assignAll(_deepCopy(root));
+-    } else if (isStatus) {
+-      state0Status.assignAll(_deepCopy(root));
+-      statusUpdated = true;
+-    } else {
+-      // Backwards-compatible fallback for older packets that published a single
+-      // combined State0 object directly on gps_state/state0.
+-      state0Legacy.assignAll(_deepCopy(root));
+-      // A legacy packet on gps_state/state0 is a complete live snapshot.
+-      // Treat it as a valid update so older ROS installations can still use
+-      // the automatic/manual refresh workflow.
+-      statusUpdated = root.containsKey('checks') ||
+-          root.containsKey('drive_ready') ||
+-          root.containsKey('gps_drive_ready');
+-    }
+-
+-    final combined = <String, dynamic>{};
+-    if (state0Legacy.isNotEmpty) combined['legacy'] = _deepCopy(state0Legacy);
+-    if (state0Definition.isNotEmpty) combined['definition'] = _deepCopy(state0Definition);
+-    if (state0Status.isNotEmpty) combined['status'] = _deepCopy(state0Status);
+-    state0.assignAll(combined);
++    switch (stateNumber) {
++      case 0:
++        state0Status.assignAll(view);
++        state0StatusReceivedAt.value = receivedAt;
++        state0WaitingForUpdate.value = false;
++        state0UpdateMessage.value = '';
++        _clearState0ResponseTimeout();
++        break;
++      case 1:
++        state1Status.assignAll(view);
++        state1.assignAll(view);
++        break;
++      case 2:
++        state2Status.assignAll(view);
++        state2.assignAll(view);
++        break;
++      case 3:
++        state3Status.assignAll(view);
++        state3.assignAll(view);
++        break;
++      case 4:
++        state4Status.assignAll(view);
++        state4.assignAll(view);
++        break;
++    }
++  }
+ 
+-    if (statusUpdated) {
+-      state0StatusReceivedAt.value = DateTime.now();
+-      state0WaitingForUpdate.value = false;
+-      state0UpdateMessage.value = '';
+-      _clearState0ResponseTimeout();
++  Map<String, dynamic> _statusView(Map<String, dynamic> raw) {
++    final view = _deepCopy(raw);
++    final data = raw['data'];
++    if (data is Map) {
++      for (final entry in data.entries) {
++        view[entry.key.toString()] = _deepCopyValue(entry.value);
++      }
+     }
++    return view;
+   }
+ 
+   void setSettingsPayload(Map<String, dynamic> payload, {required String topic}) {
+     final root = _root(payload);
+     settingsPayload.assignAll(_deepCopy(root));
++    settingsReceivedAt.value = DateTime.now();
+     draftValues.clear();
+     dirtyKeys.clear();
+     editorRevision.value++;
+@@ -236,6 +314,7 @@
+   void setValidation(Map<String, dynamic> payload, {required String topic}) {
+     final root = _root(payload);
+     validationPayload.assignAll(_deepCopy(root));
++    validationReceivedAt.value = DateTime.now();
+     final valid = _bool(root['valid'] ?? root['ok'] ?? root['success']);
+     lastStatusOk.value = valid;
+     lastStatus.value = valid
+@@ -255,6 +334,7 @@
+   void setRestartStatus(Map<String, dynamic> payload, {required String topic}) {
+     final root = _root(payload);
+     restartStatusPayload.assignAll(_deepCopy(root));
++    restartStatusReceivedAt.value = DateTime.now();
+     final accepted = _bool(root['accepted'] ?? root['ok'] ?? root['success'], fallback: false);
+     final status = root['status']?.toString();
+     final normalizedStatus = status?.toLowerCase() ?? '';
+@@ -273,6 +353,7 @@
+   void setRestartValidation(Map<String, dynamic> payload, {required String topic}) {
+     final root = _root(payload);
+     restartValidationPayload.assignAll(_deepCopy(root));
++    restartValidationReceivedAt.value = DateTime.now();
+     final valid = _bool(root['valid'] ?? root['ok'] ?? root['success'] ?? root['accepted']);
+     lastStatusOk.value = valid;
+     lastStatus.value = valid
+@@ -317,7 +398,7 @@
+     lastTopic.value = topic;
+     lastUpdated.value = DateTime.now();
+     _clearResponseTimeout();
+-    if (topic == MqttConnection.gpsState0RenewJsonTopic) {
++    if (state0WaitingForUpdate.value && topic == MqttConnection.gpsStateRenewJsonTopic) {
+       state0WaitingForUpdate.value = false;
+       state0UpdateMessage.value = message;
+       _clearState0ResponseTimeout();
+@@ -471,6 +552,22 @@
+     return jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
+   }
+ 
++  dynamic _deepCopyValue(dynamic value) => jsonDecode(jsonEncode(value));
++
++  Map<String, dynamic> _partSnapshot({
++    required Map<String, dynamic>? payload,
++    required String topic,
++    required DateTime? receivedAt,
++  }) {
++    final available = payload != null && payload.isNotEmpty;
++    return <String, dynamic>{
++      'topic': topic,
++      'received_at': receivedAt?.toUtc().toIso8601String(),
++      'available': available,
++      'payload': available ? _deepCopy(payload!) : <String, dynamic>{},
++    };
++  }
++
+   bool _bool(dynamic value, {bool fallback = false}) {
+     if (value is bool) return value;
+     if (value is num) return value != 0;
+--- a/lib/io/mqtt_connection.dart
++++ b/lib/io/mqtt_connection.dart
+@@ -149,17 +149,20 @@
+   static const String sensorSettingsSetPersistentJsonTopic = "sensors/settings/set/persistent/json";
+   static const String sensorSettingsValidationJsonTopic = "sensors/settings/validation/json";
+ 
+-  static const String gpsState0Topic = "gps_state/state0";
+   static const String gpsState0DefinitionTopic = "gps_state/state0/definition";
+   static const String gpsState0StatusTopic = "gps_state/state0/status";
+-  static const String gpsState0RenewJsonTopic = "gps_state/state0/set/renew/json";
+-  static const String gpsState1Topic = "gps_state/state1";
+-  static const String gpsState2Topic = "gps_state/state2";
+-  static const String gpsState3Topic = "gps_state/state3";
+-  static const String gpsState4Topic = "gps_state/state4";
++  static const String gpsState1DefinitionTopic = "gps_state/state1/definition";
++  static const String gpsState1StatusTopic = "gps_state/state1/status";
++  static const String gpsState2DefinitionTopic = "gps_state/state2/definition";
++  static const String gpsState2StatusTopic = "gps_state/state2/status";
++  static const String gpsState3DefinitionTopic = "gps_state/state3/definition";
++  static const String gpsState3StatusTopic = "gps_state/state3/status";
++  static const String gpsState4DefinitionTopic = "gps_state/state4/definition";
++  static const String gpsState4StatusTopic = "gps_state/state4/status";
+   static const String gpsStateSettingsJsonTopic = "gps_state/settings/json";
+   static const String gpsStateValidationJsonTopic = "gps_state/settings/validation/json";
+-  static const String gpsStateRenewJsonTopic = "gps_state/settings/set/renew/json";
++  static const String gpsStateRenewJsonTopic = "gps_state/set/renew/json";
++  static const String gpsStateSettingsRenewJsonTopic = "gps_state/settings/set/renew/json";
+   static const String gpsStateSetSessionJsonTopic = "gps_state/settings/set/session/json";
+   static const String gpsStateSetPersistentJsonTopic = "gps_state/settings/set/persistent/json";
+   static const String gpsStateRestartSetJsonTopic = "gps_state/restart/set/json";
+@@ -949,27 +952,28 @@
+     } catch(e) {
+       debugPrint("error requesting gps state via mqtt");
+       gpsStateController.setError("GPS-State-Anfrage konnte nicht gesendet werden.", topic: gpsStateRenewJsonTopic);
++      return;
++    }
++    try {
++      _publishJson(gpsStateSettingsRenewJsonTopic, <String, dynamic>{});
++    } catch(e) {
++      debugPrint("error requesting gps state settings via mqtt");
+     }
+   }
+ 
+-  /// Requests a State0 snapshot for the instant at which the expert section
+-  /// is opened or the manual update button is pressed. New ROS versions can
+-  /// answer the dedicated topic and echo request_id. The global renew remains
+-  /// as a compatibility fallback for existing installations.
+-  void requestGpsState0Snapshot({required String requestId}) {
++  /// Requests a State0 live snapshot through the shared GPS-State v3 command.
++  void requestGpsState0Snapshot() {
+     final payload = <String, dynamic>{
+-      'request_id': requestId,
+-      'requested_at': DateTime.now().microsecondsSinceEpoch / 1000000.0,
+-      'evaluate_all_checks': true,
++      'states': <int>[0],
++      'parts': <String>['status'],
+     };
+     try {
+-      _publishJson(gpsState0RenewJsonTopic, payload);
+-      _publishJson(gpsStateRenewJsonTopic, <String, dynamic>{});
++      _publishJson(gpsStateRenewJsonTopic, payload);
+     } catch(e) {
+       debugPrint("error requesting gps state0 snapshot via mqtt");
+       gpsStateController.setError(
+         "State0-Aktualisierung konnte nicht gesendet werden.",
+-        topic: gpsState0RenewJsonTopic,
++        topic: gpsStateRenewJsonTopic,
+       );
+     }
+   }
+@@ -1927,10 +1931,6 @@
+               parseMowerLogicSatelliteLoggingStatus(payload);
+             }
+             break;
+-            case gpsState0Topic: {
+-              parseGpsState(0, payload, topic: gpsState0Topic);
+-            }
+-            break;
+             case gpsState0DefinitionTopic: {
+               parseGpsState(0, payload, topic: gpsState0DefinitionTopic);
+             }
+@@ -1939,20 +1939,36 @@
+               parseGpsState(0, payload, topic: gpsState0StatusTopic);
+             }
+             break;
+-            case gpsState1Topic: {
+-              parseGpsState(1, payload, topic: gpsState1Topic);
++            case gpsState1DefinitionTopic: {
++              parseGpsState(1, payload, topic: gpsState1DefinitionTopic);
++            }
++            break;
++            case gpsState1StatusTopic: {
++              parseGpsState(1, payload, topic: gpsState1StatusTopic);
++            }
++            break;
++            case gpsState2DefinitionTopic: {
++              parseGpsState(2, payload, topic: gpsState2DefinitionTopic);
++            }
++            break;
++            case gpsState2StatusTopic: {
++              parseGpsState(2, payload, topic: gpsState2StatusTopic);
++            }
++            break;
++            case gpsState3DefinitionTopic: {
++              parseGpsState(3, payload, topic: gpsState3DefinitionTopic);
+             }
+             break;
+-            case gpsState2Topic: {
+-              parseGpsState(2, payload, topic: gpsState2Topic);
++            case gpsState3StatusTopic: {
++              parseGpsState(3, payload, topic: gpsState3StatusTopic);
+             }
+             break;
+-            case gpsState3Topic: {
+-              parseGpsState(3, payload, topic: gpsState3Topic);
++            case gpsState4DefinitionTopic: {
++              parseGpsState(4, payload, topic: gpsState4DefinitionTopic);
+             }
+             break;
+-            case gpsState4Topic: {
+-              parseGpsState(4, payload, topic: gpsState4Topic);
++            case gpsState4StatusTopic: {
++              parseGpsState(4, payload, topic: gpsState4StatusTopic);
+             }
+             break;
+             case gpsStateSettingsJsonTopic: {
+@@ -2076,13 +2092,16 @@
+     // Mäh-Lastregelung wird ausschließlich über settings/mower_logic/... verarbeitet.
+     client.subscribe(lowLevelPowerJsonTopic, MqttQos.atLeastOnce);
+     client.subscribe(lowLevelPowerValidationJsonTopic, MqttQos.atLeastOnce);
+-    client.subscribe(gpsState0Topic, MqttQos.atLeastOnce);
+     client.subscribe(gpsState0DefinitionTopic, MqttQos.atLeastOnce);
+     client.subscribe(gpsState0StatusTopic, MqttQos.atLeastOnce);
+-    client.subscribe(gpsState1Topic, MqttQos.atLeastOnce);
+-    client.subscribe(gpsState2Topic, MqttQos.atLeastOnce);
+-    client.subscribe(gpsState3Topic, MqttQos.atMostOnce);
+-    client.subscribe(gpsState4Topic, MqttQos.atMostOnce);
++    client.subscribe(gpsState1DefinitionTopic, MqttQos.atLeastOnce);
++    client.subscribe(gpsState1StatusTopic, MqttQos.atLeastOnce);
++    client.subscribe(gpsState2DefinitionTopic, MqttQos.atLeastOnce);
++    client.subscribe(gpsState2StatusTopic, MqttQos.atLeastOnce);
++    client.subscribe(gpsState3DefinitionTopic, MqttQos.atLeastOnce);
++    client.subscribe(gpsState3StatusTopic, MqttQos.atMostOnce);
++    client.subscribe(gpsState4DefinitionTopic, MqttQos.atLeastOnce);
++    client.subscribe(gpsState4StatusTopic, MqttQos.atMostOnce);
+     client.subscribe(gpsStateSettingsJsonTopic, MqttQos.atLeastOnce);
+     client.subscribe(gpsStateValidationJsonTopic, MqttQos.atLeastOnce);
+     client.subscribe(gpsStateRestartStatusJsonTopic, MqttQos.atLeastOnce);
+--- a/lib/screens/gps_state.dart
++++ b/lib/screens/gps_state.dart
+@@ -4,6 +4,7 @@
+ import 'package:flutter/services.dart';
+ import 'package:get/get.dart';
+ import 'package:open_mower_app/controllers/gps_state_controller.dart';
++import 'package:open_mower_app/services/platform_text_file.dart';
+ import 'package:open_mower_app/views/robot_state_widget.dart';
+ 
+ class GpsStateScreen extends StatefulWidget {
+@@ -104,7 +105,7 @@
+                       ),
+                       const SizedBox(height: 2),
+                       Text(
+-                        'Auswertung von gps_state.v2: Bedienerstatus, technische Diagnose, Satellitenlisten und F9P-Neustart.',
++                        'Auswertung von gps_state.v3: getrennte Definitionen und Statusdaten, zentrale Aktualisierung und Diagnoseexport.',
+                         style: theme.textTheme.bodyMedium?.copyWith(color: theme.hintColor),
+                       ),
+                       if (controller.lastStatus.value.isNotEmpty) ...[
+@@ -159,8 +160,6 @@
+         crossAxisAlignment: CrossAxisAlignment.stretch,
+         children: [
+           _buildDriveReadinessCard(context, state),
+-          const SizedBox(height: 10),
+-          _freshnessHint(context, state['updated_at']),
+         ],
+       ),
+     );
+@@ -197,7 +196,13 @@
+               _metricTile(context, 'Orientierung', _boolText(state['orientation_valid']), accent: _boolNullable(state['orientation_valid']) == true, warning: _boolNullable(state['orientation_valid']) == false),
+               _metricTile(context, 'Pose aktuell', _boolText(state['recent_absolute_pose']), accent: _boolNullable(state['recent_absolute_pose']) == true, warning: _boolNullable(state['recent_absolute_pose']) == false),
+               _metricTile(context, 'GPS Timeout', _boolText(state['gps_timeout']), accent: _boolNullable(state['gps_timeout']) == false, warning: _boolNullable(state['gps_timeout']) == true),
+-              _metricTile(context, 'Aktualisiert', _updatedAtText(state['updated_at'])),
++              _metricTile(
++                context,
++                'Quelldaten-Alter',
++                _millisecondsText(state['age_ms']),
++                warning: _boolNullable(state['stale']) == true,
++                accent: _boolNullable(state['stale']) == false,
++              ),
+             ],
+           ),
+           const SizedBox(height: 12),
+@@ -311,11 +316,10 @@
+   Widget _buildState0Section(BuildContext context) {
+     final definition = controller.state0Definition;
+     final status = controller.state0Status;
+-    final legacy = controller.state0Legacy;
+-    final rows = _state0DecisionRows(definition, status, legacy);
+-    final summarySource = status.isNotEmpty ? Map<String, dynamic>.from(status) : legacy;
++    final rows = _state0DecisionRows(definition, status);
++    final summarySource = status;
+     final definitionVersion = _text(
+-      status['definition_version'] ?? definition['definition_version'] ?? legacy['definition_version'],
++      status['definition_version'] ?? definition['definition_version'],
+       fallback: '-',
+     );
+     final waiting = controller.state0WaitingForUpdate.value;
+@@ -802,13 +806,27 @@
+ 
+   Widget _buildRawJsonSection(BuildContext context) {
+     final theme = Theme.of(context);
++    final jsonText = controller.exportJsonString();
+     return Card(
+       margin: EdgeInsets.zero,
+       child: ExpansionTile(
+         initiallyExpanded: _rawJsonExpanded,
+         onExpansionChanged: (expanded) => setState(() => _rawJsonExpanded = expanded),
+         leading: const Icon(Icons.code),
+-        title: const Text('Raw JSON / Debug'),
++        title: const Text('JSON-Ansicht / GPS-Diagnose'),
++        subtitle: const Text('Settings sowie Definition und Status aller States als read-only Snapshot'),
++        trailing: Wrap(
++          spacing: 4,
++          crossAxisAlignment: WrapCrossAlignment.center,
++          children: [
++            TextButton.icon(
++              onPressed: () => _downloadGpsDebugJson(context, jsonText),
++              icon: const Icon(Icons.download, size: 18),
++              label: const Text('Download'),
++            ),
++            Icon(_rawJsonExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
++          ],
++        ),
+         children: [
+           Container(
+             width: double.infinity,
+@@ -819,16 +837,28 @@
+               children: [
+                 Row(
+                   children: [
+-                    const Spacer(),
++                    Expanded(
++                      child: Text(
++                        'Der Download speichert den aktuell in der App vorhandenen Snapshot. Er löst keine neue MQTT-Aktualisierung aus.',
++                        style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
++                      ),
++                    ),
++                    const SizedBox(width: 8),
+                     TextButton.icon(
+-                      onPressed: () => Clipboard.setData(ClipboardData(text: controller.rawJson)),
++                      onPressed: () {
++                        Clipboard.setData(ClipboardData(text: jsonText));
++                        ScaffoldMessenger.of(context).showSnackBar(
++                          const SnackBar(content: Text('GPS-Diagnose-JSON wurde kopiert.')),
++                        );
++                      },
+                       icon: const Icon(Icons.copy, size: 18),
+                       label: const Text('Kopieren'),
+                     ),
+                   ],
+                 ),
++                const SizedBox(height: 8),
+                 SelectableText(
+-                  const JsonEncoder.withIndent('  ').convert(jsonDecode(controller.rawJson)),
++                  jsonText,
+                   style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+                 ),
+               ],
+@@ -839,6 +869,33 @@
+     );
+   }
+ 
++  Future<void> _downloadGpsDebugJson(BuildContext context, String jsonText) async {
++    final now = DateTime.now();
++    final fileName = 'openmower-gps-state-debug-'
++        '${now.year.toString().padLeft(4, '0')}-'
++        '${now.month.toString().padLeft(2, '0')}-'
++        '${now.day.toString().padLeft(2, '0')}_'
++        '${now.hour.toString().padLeft(2, '0')}-'
++        '${now.minute.toString().padLeft(2, '0')}-'
++        '${now.second.toString().padLeft(2, '0')}.json';
++    try {
++      await saveTextFile(
++        fileName: fileName,
++        content: jsonText,
++        mimeType: 'application/json',
++      );
++      if (!mounted) return;
++      ScaffoldMessenger.of(context).showSnackBar(
++        SnackBar(content: Text('GPS-Diagnose wurde als $fileName bereitgestellt.')),
++      );
++    } catch (error) {
++      if (!mounted) return;
++      ScaffoldMessenger.of(context).showSnackBar(
++        SnackBar(content: Text('GPS-Diagnose konnte nicht gespeichert werden: $error')),
++      );
++    }
++  }
++
+   Widget _settingRow(BuildContext context, String key) {
+     final value = controller.settingValue(key);
+     final unit = controller.unitFor(key);
+@@ -1294,22 +1351,6 @@
+     return const Text('–');
+   }
+ 
+-  Widget _freshnessHint(BuildContext context, dynamic updatedAt) {
+-    final age = _updatedAge(updatedAt);
+-    final isOld = age == null || age.inSeconds > 5;
+-    final color = isOld ? Colors.orange.shade700 : Colors.green.shade700;
+-    final message = isOld
+-        ? 'GPS-State veraltet oder noch nicht zeitlich bewertbar.'
+-        : 'Daten sind aktuell.';
+-    return Row(
+-      children: [
+-        Icon(isOld ? Icons.warning_amber_outlined : Icons.info_outline, size: 18, color: color),
+-        const SizedBox(width: 6),
+-        Expanded(child: Text(message, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color))),
+-      ],
+-    );
+-  }
+-
+   Widget _headerIcon(BuildContext context, IconData icon, {required bool active}) {
+     final color = active ? Theme.of(context).primaryColor : Theme.of(context).hintColor;
+     return Container(
+@@ -1326,11 +1367,10 @@
+   List<_DecisionRow> _state0DecisionRows(
+     Map<String, dynamic> definition,
+     Map<String, dynamic> status,
+-    Map<String, dynamic> legacy,
+   ) {
+     final definitionChecks = _state0ChecksMap(definition);
+     final statusChecks = _state0ChecksMap(status);
+-    final rootStatus = status.isNotEmpty ? status : legacy;
++    final rootStatus = status;
+     final blockingStage = rootStatus['blocking_stage'];
+     final blockingKey = _text(rootStatus['blocking_key']);
+ 
+@@ -1364,9 +1404,8 @@
+       }).toList(growable: false);
+     }
+ 
+-    final legacyPayload = legacy.isNotEmpty ? legacy : definition;
+-    if (legacyPayload.isNotEmpty) {
+-      return _decisionRowsFromPayload(legacyPayload);
++    if (definition.isNotEmpty) {
++      return _decisionRowsFromPayload(definition);
+     }
+     return const <_DecisionRow>[];
+   }
+@@ -1732,32 +1771,6 @@
+     return '${two(local.hour)}:${two(local.minute)}:${two(local.second)}.${three(local.millisecond)}';
+   }
+ 
+-  String _updatedAtText(dynamic value) {
+-    if (value == null) return '-';
+-    final age = _updatedAge(value);
+-    if (age != null) {
+-      if (age.inSeconds < 60) return 'vor ${age.inSeconds} s';
+-      if (age.inMinutes < 60) return 'vor ${age.inMinutes} min';
+-    }
+-    return value.toString();
+-  }
+-
+-  Duration? _updatedAge(dynamic value) {
+-    if (value == null) return null;
+-    DateTime? parsed;
+-    if (value is num) {
+-      final raw = value.toDouble();
+-      parsed = DateTime.fromMillisecondsSinceEpoch(raw > 100000000000 ? raw.toInt() : (raw * 1000).toInt());
+-    } else {
+-      parsed = DateTime.tryParse(value.toString());
+-    }
+-    if (parsed == null) return null;
+-    final now = DateTime.now();
+-    if (parsed.isUtc) parsed = parsed.toLocal();
+-    final age = now.difference(parsed);
+-    if (age.isNegative) return Duration.zero;
+-    return age;
+-  }
+ }
+ 
+ enum _DecisionConditionState { passed, warning, failed, unknown }
+--- a/docs/bedienungsanleitung.md
++++ b/docs/bedienungsanleitung.md
+@@ -126,17 +126,18 @@
+ 
+ **Wofür ist diese Seite gedacht?**
+ 
+-Die GPS-State-Unterseite ist eine Diagnose- und Bedieneranzeige für GPS-Empfang, Satellitenqualität und Fahrfreigabe. Sie zeigt nicht nur, ob Satellitendaten vorhanden sind, sondern mit dem neuen State1-Bereich auch, ob die vom Backend ausgewertete GPS-/Pose-Lage aktuell zum Fahren ausreicht.
++Die GPS-State-Unterseite ist eine Diagnose- und Bedieneranzeige für GPS-Empfang, Satellitenqualität und Fahrfreigabe. Sie verarbeitet das einheitliche Schema `gps_state.v3`: Für State0 bis State4 werden statische Definition und dynamischer Status getrennt empfangen.
+ 
+ **Wichtige Bedienelemente und Anzeigen**
+-- `Status neu laden` fordert `gps_state/#` und die zugehörigen Einstellungen erneut vom Backend an.
++- `Status neu laden` sendet den zentralen State-Befehl `gps_state/set/renew/json` und fordert zusätzlich die GPS-State-Einstellungen über `gps_state/settings/set/renew/json` an.
+ - `Übersicht (State1)` zeigt oben die Fahrfreigabe-Karte. Grün bedeutet, dass `gps_drive_ready=true` gemeldet wurde. Bei blockierter Fahrfreigabe werden Bedienertext, Grund und optional ein technischer Blockiergrund angezeigt.
+ - In der State1-Karte werden zusätzlich `RTK`, Positionsgenauigkeit, Grenzwert, gültige Orientierung, aktuelle Pose, GPS-Timeout und Pose-Alter kompakt angezeigt.
+ - `Signalqualität (State2)` zeigt weiterhin C/N0-Minimum, C/N0-Maximum, schwache/gute Satelliten und die Systemverteilung.
+ - Wenn das Backend `drive_diagnostics` liefert, blendet State2 eine technische Fahrfreigabe-Diagnose mit Entscheidungsquelle, RTK-Quelle, Low-Level-GPS-Werten, Pose-Alter, Timeout und Grace-Zeit ein.
+ - `Verwendete Satelliten (State3)` listet die vom Backend verwendeten Satelliten.
+ - `Alle Satelliten (State4)` kann temporär aktiviert werden. Diese vollständige Liste erzeugt mehr MQTT-Daten und ist daher vor allem für Diagnose gedacht.
+-- `Raw JSON / Debug` zeigt die zuletzt empfangenen GPS-State-Payloads gesammelt und kann zur Fehlersuche kopiert werden.
++- `JSON-Ansicht / GPS-Diagnose` zeigt einen read-only Snapshot mit Settings sowie Definition und Status aller fünf States. Zu jedem Teil werden MQTT-Topic und lokale Empfangszeit gespeichert.
++- `Download` speichert genau den aktuell angezeigten Snapshot als `openmower-gps-state-debug-YYYY-MM-DD_HH-mm-ss.json`. Aktualisieren und Herunterladen sind getrennte Aktionen; der Download löst keine neue MQTT-Anfrage aus.
+ 
+ **Typische Bedienung**
+ - Vor einer Fehlersuche zuerst `Status neu laden` drücken und prüfen, ob State1 eine aktuelle Fahrfreigabe-Aussage anzeigt.
+@@ -410,14 +411,16 @@
+ - Punkte gezielt bearbeiten und das Ergebnis visuell prüfen.
+ - Nur speichern, wenn die Fläche weiterhin plausibel und geschlossen ist; sonst `Rückgängig` oder `Verwerfen` verwenden.
+ 
+-### GPS-State v2 und F9P-Neustart
++### GPS-State v3, Diagnoseexport und F9P-Neustart
+ 
+-Die GPS-State-Seite unterscheidet nun klar zwischen Bedieneranzeige und Experten-/Debugdaten. **State1** zeigt nur die kompakte Fahrfreigabe mit Grund, RTK-Zustand, Genauigkeit und Pose-Alter. **State2** zeigt die technische GNSS-/Pose-Zusammenfassung mit sichtbaren und verwendeten Satelliten, C/N0-Werten, Systemverteilung, Orientierung, Pose-Aktualität und Timeout. **State3** zeigt nur aktiv verwendete Satelliten. **State4** zeigt alle sichtbaren Satelliten inklusive Used-Status und sollte nur bei Diagnose aktiv sein. **State0** zeigt, sofern vom Backend geliefert, die vollständige Fahrfähigkeits-Entscheidungskette als Expertenansicht.
++Die GPS-State-Seite unterscheidet klar zwischen Bedieneranzeige und Experten-/Debugdaten. **State1** zeigt nur die kompakte Fahrfreigabe mit Grund, RTK-Zustand, Genauigkeit und Pose-Alter; eine zusätzliche Aktualisiert-Anzeige wird dort bewusst nicht wiederholt. **State2** zeigt die technische GNSS-/Pose-Zusammenfassung einschließlich des gemeinsamen `age_ms`-/`stale`-Status. **State3** zeigt nur aktiv verwendete Satelliten. **State4** zeigt alle sichtbaren Satelliten inklusive Used-Status und sollte nur bei Diagnose aktiv sein. **State0** zeigt die vollständige Fahrfähigkeits-Entscheidungskette als Expertenansicht. Die App liest für jeden State ausschließlich die kanonischen Topics `gps_state/stateN/definition` und `gps_state/stateN/status`.
+ 
+ In **State0** wird die bisherige, überladene Kennzahlen-Zusammenfassung durch einen kompakten Freigabe-Banner ersetzt. Die 12 Prüfpunkte erscheinen darunter als einzeilige Diagnosezeilen mit Stufennummer, Entscheidungsknoten, aktuellem Wert, Bedingung und Ergebnis. Die technische Quelle wird in der normalen Ansicht nicht mehr angezeigt; die Beschreibung bleibt als Tooltip verfügbar. Grün bedeutet erfüllt, gelb bedeutet nicht aktuell beziehungsweise nicht bewertet und rot bedeutet blockiert. Wenn das Backend `blocking_stage` oder `blocking_key` liefert, markiert die App den ersten blockierenden Prüfschritt zusätzlich mit **BLOCKIERT ZUERST**.
+ 
+ Beim Aufklappen von State0 fordert die App automatisch einen neuen Snapshot an. Über die Taste **State0 aktualisieren** kann derselbe Vorgang jederzeit manuell ausgelöst werden. Während die Antwort aussteht, werden vorhandene Werte bewusst gelb als **Aktualisierung** beziehungsweise **Nicht aktuell** dargestellt. Ein grüner Gesamtstatus erscheint erst, wenn ein nach der Anforderung empfangener State0-Status vorliegt und die Einzelprüfungen nicht im Widerspruch zum Gesamtstatus stehen.
+ 
+-Die App sendet für die Aktualisierung bevorzugt `gps_state/state0/set/renew/json` mit `request_id` und `evaluate_all_checks=true`. Zusätzlich wird aus Kompatibilitätsgründen der bestehende globale Renew-Befehl gesendet. Ältere ROS-Versionen können dadurch weiterhin aktualisieren. Damit wirklich alle 12 Werte trotz einer frühen Blockierung aktuell geliefert werden, muss das Backend `evaluate_all_checks` unterstützen; andernfalls bleiben nachfolgende, nicht ausgewertete Stufen korrekt gelb.
++Die App verwendet keine dezentralen State-Renew-Topics mehr. Die allgemeine Aktualisierung sendet `{}` an `gps_state/set/renew/json`. Beim Öffnen oder manuellen Aktualisieren von State0 wird gezielt `{"states":[0],"parts":["status"]}` an dasselbe zentrale Topic gesendet. Erst eine danach empfangene Nachricht auf `gps_state/state0/status` gilt für die Freigabeanzeige als aktueller Snapshot.
++
++Unterhalb der GPS-Anzeigen befindet sich eine einklappbare read-only JSON-Ansicht. Der Export enthält die GPS-State-Settings sowie Definition und Status von State0 bis State4, jeweils mit dem tatsächlich verwendeten Topic und der lokalen Empfangszeit. Validierungs- und F9P-Neustartantworten werden als Zusatzdaten beigefügt. Der Download nutzt den plattformabhängigen Textdatei-Service der App und verändert keine MQTT-Daten.
+ 
+ Im Bereich **F9P-Neustart unter gps_state** können Hot Start, Warm Start und Cold Start ausgelöst werden. Als Reset-Mode ist `controlled_software` voreingestellt. Der angezeigte Status bestätigt das Senden beziehungsweise Schreiben des Restart-Befehls; er bedeutet nicht automatisch, dass sofort wieder RTK Fixed verfügbar ist.
+--- a/docs/mqtt-schnittstelle.md
++++ b/docs/mqtt-schnittstelle.md
+@@ -12,10 +12,10 @@
+ 
+ | Punkt | Stand |
+ |---|---|
+-| Dokumentversion | `MQTT-API-Doku 1.1 GPS-State Fahrfreigabe` |
++| Dokumentversion | `MQTT-API-Doku 1.2 GPS-State v3 Standardisierung` |
+ | App | `OpenMower-TAF-App 1.0.0+1` |
+ | ROS / Backend | OpenMower mit `ROS Noetic / ROS 1` |
+-| Doku-Stand | `24.06.2026` |
++| Doku-Stand | `13.07.2026` |
+ | Quelle | aktuelles App-Paket, Datei `lib/io/mqtt_connection.dart` und Controller unter `lib/controllers/` |
+ 
+ Wenn App oder Backend in einem anderen Release-Stand betrieben werden, können einzelne Topics oder Payload-Felder abweichen. Die App ist JSON-first ausgelegt, akzeptiert an einigen Stellen aber weiterhin BSON- oder Legacy-Topics.
+@@ -83,10 +83,16 @@
+ | `settings/mower_logic/validation/json` | JSON | atLeastOnce | Validierung der Software-Einstellungen. |
+ | `settings/ll_board/json` | JSON | atLeastOnce | Hardware-/Low-Level-Board-Einstellungen. |
+ | `settings/ll_board/validation/json` | JSON | atLeastOnce | Validierung der Hardware-Einstellungen. |
+-| `gps_state/state1` | JSON | atLeastOnce | Kompakte GPS-Übersicht und Fahrfreigabe-Aussage für die Anzeige. |
+-| `gps_state/state2` | JSON | atLeastOnce | Erweiterte Signalqualität und technische Fahrfreigabe-Diagnose. |
+-| `gps_state/state3` | JSON | atMostOnce | Liste der verwendeten Satelliten. |
+-| `gps_state/state4` | JSON | atMostOnce | Optionale vollständige Satellitenliste; standardmäßig ressourcenschonend deaktivierbar. |
++| `gps_state/state0/definition` | JSON | atLeastOnce | Retained Definition der 12-stufigen Fahrfähigkeitsdiagnose. |
++| `gps_state/state0/status` | JSON | atLeastOnce | Dynamischer State0-Status. |
++| `gps_state/state1/definition` | JSON | atLeastOnce | Retained Definition des kompakten Bedienerstatus. |
++| `gps_state/state1/status` | JSON | atLeastOnce | Kompakte Fahrfreigabe-Aussage für die Anzeige. |
++| `gps_state/state2/definition` | JSON | atLeastOnce | Retained Definition der technischen GNSS-/Pose-Zusammenfassung. |
++| `gps_state/state2/status` | JSON | atLeastOnce | Technische GNSS-/Pose- und Signalqualitätsdaten. |
++| `gps_state/state3/definition` | JSON | atLeastOnce | Retained Definition der verwendeten Satellitenliste. |
++| `gps_state/state3/status` | JSON | atMostOnce | Momentaufnahme der verwendeten Satelliten. |
++| `gps_state/state4/definition` | JSON | atLeastOnce | Retained Definition der vollständigen Satellitenliste. |
++| `gps_state/state4/status` | JSON | atMostOnce | Nicht-retained Momentaufnahme aller sichtbaren Satelliten. |
+ | `gps_state/settings/json` | JSON | atLeastOnce | GPS-State-Einstellungen und Metadaten. |
+ | `gps_state/settings/validation/json` | JSON | atLeastOnce | Validierungsantwort für GPS-State-Einstellungen. |
+ 
+@@ -110,7 +116,8 @@
+ | `settings/ll_board/set/renew/json` | JSON | atLeastOnce | Hardwarewerte neu anfordern. |
+ | `settings/ll_board/set/session/json` | JSON | exactlyOnce | Hardwarewerte live für die Session setzen. |
+ | `settings/ll_board/set/persistent/json` | JSON | exactlyOnce | Hardwarewerte dauerhaft speichern. |
+-| `gps_state/settings/set/renew/json` | JSON | atLeastOnce | GPS-State-Daten und Einstellungen neu anfordern. |
++| `gps_state/set/renew/json` | JSON | atLeastOnce | Zentraler Renew-Befehl für Definition und/oder Status ausgewählter GPS-States. |
++| `gps_state/settings/set/renew/json` | JSON | atLeastOnce | GPS-State-Einstellungen neu anfordern. |
+ | `gps_state/settings/set/session/json` | JSON | exactlyOnce | GPS-State-Einstellungen für die laufende Session setzen. |
+ | `gps_state/settings/set/persistent/json` | JSON | exactlyOnce | GPS-State-Einstellungen dauerhaft speichern. |
+ 
+@@ -263,123 +270,101 @@
+ Die App kann Änderungen an Anzeige-Metadaten über `sensors/settings/set/persistent/json` senden. Das Backend bestätigt über `sensors/settings/validation/json`. Bearbeitet werden nur Metadaten wie `label`, `description`, `group`, `order`, `visible` und `expert`; Sensorwerte selbst bleiben readonly.
+ 
+ 
+-## GPS-State und Fahrfreigabe
++## GPS-State v3, Fahrfreigabe und Diagnoseexport
+ 
+-Die GPS-State-Unterseite liest `gps_state/state0/definition`, `gps_state/state0/status`, `gps_state/state1` bis `gps_state/state4` sowie die zugehörigen Settings. Die Payloads dürfen direkt als JSON-Objekt oder unter `d` gekapselt gesendet werden. Die App wertet die neuen Fahrfreigabe-Felder additiv aus; ältere Backends ohne diese Felder bleiben weiterhin darstellbar.
++Die App verwendet für State0 bis State4 ausschließlich die kanonischen Topic-Paare `gps_state/stateN/definition` und `gps_state/stateN/status`. Definitionen und Status werden im Controller getrennt gespeichert. Der gemeinsame Statusrahmen `gps_state.v3` bleibt vollständig erhalten; der state-spezifische `data`-Block wird für die Anzeige zusätzlich in eine interne View überführt. Dadurch ist die Oberfläche nicht von den vorübergehend noch vorhandenen Top-Level-Kompatibilitätsfeldern abhängig.
+ 
+-### `gps_state/state1`
+-
+-State1 ist die kompakte Bedieneransicht. Neben den bisherigen Feldern für Verfügbarkeit, Qualität und Satellitenzahlen kann das Backend die direkte Fahrfreigabe-Aussage liefern.
++### Gemeinsamer Definitionsrahmen
+ 
+ ```json
+ {
+-  "available": true,
+-  "quality": "very_good",
+-  "visible": 28,
+-  "used": 18,
+-  "avg_cn0": 38.5,
+-  "gps_drive_ready": true,
+-  "gps_drive_state": "ready",
+-  "gps_drive_label": "GPS reicht zum Fahren aus",
+-  "gps_drive_reason": "RTK Fixed, Pose aktuell, Genauigkeit ausreichend",
+-  "gps_drive_block_reason": null,
+-  "rtk_state": "fixed",
+-  "position_accuracy_m": 0.04,
+-  "max_position_accuracy_m": 0.2,
+-  "orientation_valid": true,
+-  "recent_absolute_pose": true,
+-  "gps_timeout": false,
+-  "age_ms": 420,
+-  "updated_at": "2026-06-24T12:00:00Z"
++  "schema": "gps_state.v3",
++  "state": "state1",
++  "type": "definition",
++  "definition_version": 3,
++  "name": "gps_operator_status",
++  "label": "GPS-Fahrstatus",
++  "description": "Kompakter Bedienerstatus",
++  "role": "operator",
++  "order": 10,
++  "status_retained": true,
++  "update_mode": "periodic_and_event",
++  "fields": {}
+ }
+ ```
+ 
+-| Feld | Verwendung in der App |
+-|---|---|
+-| `gps_drive_ready` | Steuert die obere Fahrfreigabe-Karte: grün bei `true`, Warn-/Blockzustand bei `false`. |
+-| `gps_drive_state` | Kompakter Maschinenstatus, z. B. `ready` oder `blocked`. |
+-| `gps_drive_label` | Bedienertext in der Anzeige. |
+-| `gps_drive_reason` | Kurzbegründung unter dem Bedienertext. |
+-| `gps_drive_block_reason` | Technischer Blockiergrund, sofern vorhanden. |
+-| `rtk_state` | Anzeige des RTK-Zustands, z. B. `fixed`, `float`, `rtk`, `none` oder `unknown`. |
+-| `position_accuracy_m` | Von OpenMower verwendete Positionsgenauigkeit in Metern. |
+-| `max_position_accuracy_m` | Grenzwert aus der Mäherlogik. |
+-| `orientation_valid` | Anzeige, ob die Orientierung gültig ist. |
+-| `recent_absolute_pose` | Anzeige, ob eine aktuelle Sensor-Fusion-Pose vorhanden ist. |
+-| `gps_timeout` | Anzeige, ob aus Sicht des Backend-Monitorings ein GPS-Timeout erreicht ist. |
+-| `age_ms` | Alter der zuletzt ausgewerteten Pose. |
+-
+-### `gps_state/state0/definition` und `gps_state/state0/status`
+-
+-State0 ist die Experten-/Debugansicht der vollständigen Fahrfähigkeits-Entscheidungskette. Die App wertet die statische Definition und den Live-Status gemeinsam über die stabile Check-ID aus, zum Beispiel `03_gps_input_accuracy`.
+-
+-| Payload | Verwendung in der App |
+-|---|---|
+-| `gps_state/state0/definition` | Liefert Titel, Beschreibung, Quelle, Operator, erwarteten Wert oder Grenzwert je Prüfschritt. |
+-| `gps_state/state0/status` | Liefert Live-Wert, Anzeige-Text, Status, Severity, Zusammenfassung sowie optional `blocking_stage` und `blocking_key`. |
++### Gemeinsamer Statusrahmen
+ 
+-Darstellung in der App:
+-
+-- Grün: Bedingung erfüllt (`status=ok`, `ok=true`, `passed=true` oder Severity 0).
+-- Gelb: Wert unklar, fehlend oder prüfbedürftig, zum Beispiel Definition ohne Live-Status.
+-- Rot: Bedingung blockiert, fehlgeschlagen oder vom Backend als blockierende Stufe gemeldet.
+-
+-Die frühere breite Kennzahlen-Zusammenfassung wird nicht mehr als Chip-Leiste dargestellt. Stattdessen zeigt die App oben nur einen kompakten Banner mit Fahrfreigabe und Blockierstelle. Die eigentliche Diagnose erfolgt über 12 kompakte, einzeilige Zeilen mit `Stufe | Entscheidungsknoten | aktueller Wert | Bedingung | Ergebnis`. Die Quelle wird im normalen Layout nicht angezeigt.
++```json
++{
++  "schema": "gps_state.v3",
++  "state": "state1",
++  "type": "status",
++  "definition_version": 3,
++  "published_at": 1783940400.25,
++  "source_at": 1783940400.10,
++  "age_ms": 150,
++  "available": true,
++  "stale": false,
++  "status": "ok",
++  "severity": 0,
++  "summary": "GPS reicht zum Fahren aus",
++  "data": {
++    "gps_drive_ready": true,
++    "gps_drive_state": "ready",
++    "gps_drive_label": "GPS reicht zum Fahren aus",
++    "gps_drive_reason": "RTK Fixed, Pose aktuell, Genauigkeit ausreichend",
++    "rtk_state": "fixed",
++    "position_accuracy_m": 0.04,
++    "max_position_accuracy_m": 0.20,
++    "pose_age_ms": 150
++  }
++}
++```
+ 
+-#### State0-Snapshot und manuelle Aktualisierung
++### Zentrale Aktualisierung
+ 
+-Beim Öffnen der State0-Expansion fordert die App automatisch einen aktuellen Snapshot an. Zusätzlich steht die Taste **State0 aktualisieren** zur Verfügung. Während die Antwort aussteht, stuft die App den bisherigen Inhalt nicht als aktuell ein. Erst eine nach dem Anforderungszeitpunkt empfangene Nachricht auf `gps_state/state0/status` oder ein kompatibles Legacy-Paket auf `gps_state/state0` beendet den Wartezustand.
++Die App sendet keine dezentralen State-Renew-Befehle mehr.
+ 
+-| Topic | Richtung | Payload / Verhalten |
++| Aktion | Topic | Payload |
+ |---|---|---|
+-| `gps_state/state0/set/renew/json` | App -> MQTT | Bevorzugte Snapshot-Anfrage mit `request_id`, `requested_at` und `evaluate_all_checks=true`. |
+-| `gps_state/settings/set/renew/json` | App -> MQTT | Wird zusätzlich als Fallback gesendet, damit bestehende ROS-Versionen State0 erneut veröffentlichen können. |
+-| `gps_state/state0/status` | MQTT -> App | Beendet den State0-Wartezustand und gilt als aktueller Snapshot, wenn die Nachricht nach der Anfrage empfangen wurde. |
++| Alle aktivierten States aktualisieren | `gps_state/set/renew/json` | `{}` |
++| Nur State0-Status aktualisieren | `gps_state/set/renew/json` | `{"states":[0],"parts":["status"]}` |
++| GPS-State-Settings neu anfordern | `gps_state/settings/set/renew/json` | `{}` |
+ 
+-Beispiel der bevorzugten Anfrage:
++Beim Öffnen der State0-Expansion und beim Drücken von **State0 aktualisieren** wird ausschließlich die gezielte zentrale State0-Anfrage gesendet. Erst eine nach dem lokalen Anforderungszeitpunkt empfangene Nachricht auf `gps_state/state0/status` beendet den State0-Wartezustand. Alte Alias-Topics wie `gps_state/state1` oder `gps_state/state0/set/renew/json` werden von dieser App-Version weder abonniert noch veröffentlicht.
+ 
+-```json
+-{
+-  "request_id": "state0-1783591200123",
+-  "requested_at": 1783591200.123,
+-  "evaluate_all_checks": true
+-}
+-```
++### Fachliche Aufteilung
+ 
+-`evaluate_all_checks=true` ist eine Anforderung an neuere Backends: Auch wenn eine frühe Stufe bereits blockiert, sollen alle technisch verfügbaren Diagnosewerte weiter ausgewertet werden. Unterstützt das Backend diese Option noch nicht, bleiben übersprungene Stufen gelb als **Nicht bewertet**. Die App erfindet dafür keine Ersatzwerte.
++| State | Anzeige |
++|---|---|
++| State0 | 12-stufige Fahrfähigkeits-Entscheidungskette; Definition und Live-Status werden per stabiler Check-ID zusammengeführt. |
++| State1 | Kompakter Bedienerstatus mit Fahrfreigabe, Grund, RTK, Genauigkeit und Pose-Alter; keine zusätzliche Aktualisiert-Doppelanzeige. |
++| State2 | Technische GNSS-/Pose-Zusammenfassung mit Satellitenstatistik, C/N0, Systemverteilung, Diagnose und gemeinsamem `age_ms`-/`stale`-Status. |
++| State3 | Aktuell verwendete Satelliten. |
++| State4 | Alle sichtbaren Satelliten für Experten-/Debugzwecke; temporär über `publish_state4` schaltbar. |
+ 
+-Ein gemeldetes `drive_ready=true` wird nicht sofort grün dargestellt, wenn die Einzelprüfungen noch fehlen oder widersprüchlich sind. In diesem Fall zeigt die App einen gelben Konsistenzhinweis, bis ein vollständiger und aktueller State0-Status vorliegt.
++### Read-only JSON-Diagnoseexport
+ 
+-### `gps_state/state2`
++Die GPS-Seite besitzt eine einklappbare JSON-Ansicht mit Kopier- und Download-Funktion. Der Export enthält:
+ 
+-State2 bleibt die erweiterte Signal- und Diagnoseansicht. Wenn `drive_diagnostics` vorhanden ist, blendet die App zusätzlich eine technische Diagnosegruppe ein.
++- `settings` mit Topic, lokaler Empfangszeit und Payload,
++- `state0` bis `state4`, jeweils getrennt in `definition` und `status`,
++- pro Teil `topic`, `received_at`, `available` und `payload`,
++- Zusatzdaten für Settings-Validierung und F9P-Neustartstatus.
+ 
+-```json
+-{
+-  "min_cn0": 18.0,
+-  "max_cn0": 44.0,
+-  "weak_count": 1,
+-  "good_count": 17,
+-  "systems": { "GPS": 10, "GALILEO": 8 },
+-  "drive_diagnostics": {
+-    "decision_source": "/xbot_positioning/xb_pose",
+-    "rtk_source": "/ll/position/gps",
+-    "ll_gps_rtk_fixed": true,
+-    "ll_gps_position_accuracy_m": 0.03,
+-    "xb_pose_accuracy_ok_for_mower_logic": true,
+-    "xb_pose_age_ms": 420,
+-    "last_drive_ready_age_ms": 420,
+-    "mower_logic_gps_timeout_s": 5.0,
+-    "mower_logic_gps_grace_remaining_s": 4.6
+-  }
+-}
+-```
++Das Export-Schema lautet `openmower.gps_state_debug.v1`. Der Dateiname folgt dem Muster `openmower-gps-state-debug-YYYY-MM-DD_HH-mm-ss.json`. Der Download speichert den aktuellen lokalen Snapshot und löst keine MQTT-Anforderung aus.
+ 
+-Die App zeigt daraus die Quellen der Entscheidung, RTK-Fixed-Status, Low-Level-GPS-Genauigkeit, Pose-Alter, letzte Fahrfreigabe, Timeout und verbleibende Grace-Zeit. Fehlt das Objekt, wird keine leere Diagnosekarte angezeigt.
++### F9P-Neustart
+ 
+-### `gps_state/state3` und `gps_state/state4`
++Der F9P-Neustart bleibt im Namensraum `gps_state/restart`:
+ 
+-State3 enthält die verwendeten Satelliten. State4 enthält optional alle sichtbaren Satelliten und sollte nur bei Diagnose aktiviert werden, da die vollständige Liste mehr MQTT-Daten erzeugt. Die App kann State4 über `gps_state/settings/set/session/json` temporär aktivieren oder deaktivieren.
++| Topic | Richtung | Verwendung |
++|---|---|---|
++| `gps_state/restart/set/json` | App -> MQTT | Sendet `{"mode":"hot_start|warm_start|cold_start","reset_mode":"controlled_software|gnss_only|hardware_watchdog"}`. |
++| `gps_state/restart/status/json` | MQTT -> App | Letzter Neustartstatus. |
++| `gps_state/restart/validation/json` | MQTT -> App | Annahme oder Validierungsfehler des Befehls. |
++| `gps_state/restart/set/renew/json` | App -> MQTT | Neustartstatus erneut anfordern. |
+ 
+ 
+ ## Karte, Flächen und Editor
+@@ -891,9 +876,9 @@
+ 
+ [Zurück zur Dokumentations-Startseite](../) · [PDF-Version herunterladen](../assets/OpenMower_App_MQTT_Schnittstelle.pdf)
+ 
+-## GPS-State v2 und F9P-Neustart (2026-07-08)
++## Historischer Stand: GPS-State v2 und F9P-Neustart (2026-07-08)
+ 
+-Die GPS-State-Unterseite ist auf das Payload-Schema `gps_state.v2` vorbereitet. Die App trennt die fünf States fachlich:
++Dieser Abschnitt dokumentiert den früheren App-Stand und ist durch die oben beschriebene `gps_state.v3`-Anbindung ersetzt. Die damalige App trennte die fünf States fachlich:
+ 
+ | Topic | Verwendung in der App |
+ |---|---|

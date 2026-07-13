@@ -126,17 +126,18 @@ Diese Seite dient der Diagnose. Sie zeigt zentrale Sensordaten des Mähers in ei
 
 **Wofür ist diese Seite gedacht?**
 
-Die GPS-State-Unterseite ist eine Diagnose- und Bedieneranzeige für GPS-Empfang, Satellitenqualität und Fahrfreigabe. Sie zeigt nicht nur, ob Satellitendaten vorhanden sind, sondern mit dem neuen State1-Bereich auch, ob die vom Backend ausgewertete GPS-/Pose-Lage aktuell zum Fahren ausreicht.
+Die GPS-State-Unterseite ist eine Diagnose- und Bedieneranzeige für GPS-Empfang, Satellitenqualität und Fahrfreigabe. Sie verarbeitet das einheitliche Schema `gps_state.v3`: Für State0 bis State4 werden statische Definition und dynamischer Status getrennt empfangen.
 
 **Wichtige Bedienelemente und Anzeigen**
-- `Status neu laden` fordert `gps_state/#` und die zugehörigen Einstellungen erneut vom Backend an.
+- `Status neu laden` sendet den zentralen State-Befehl `gps_state/set/renew/json` und fordert zusätzlich die GPS-State-Einstellungen über `gps_state/settings/set/renew/json` an.
 - `Übersicht (State1)` zeigt oben die Fahrfreigabe-Karte. Grün bedeutet, dass `gps_drive_ready=true` gemeldet wurde. Bei blockierter Fahrfreigabe werden Bedienertext, Grund und optional ein technischer Blockiergrund angezeigt.
 - In der State1-Karte werden zusätzlich `RTK`, Positionsgenauigkeit, Grenzwert, gültige Orientierung, aktuelle Pose, GPS-Timeout und Pose-Alter kompakt angezeigt.
 - `Signalqualität (State2)` zeigt weiterhin C/N0-Minimum, C/N0-Maximum, schwache/gute Satelliten und die Systemverteilung.
 - Wenn das Backend `drive_diagnostics` liefert, blendet State2 eine technische Fahrfreigabe-Diagnose mit Entscheidungsquelle, RTK-Quelle, Low-Level-GPS-Werten, Pose-Alter, Timeout und Grace-Zeit ein.
 - `Verwendete Satelliten (State3)` listet die vom Backend verwendeten Satelliten.
 - `Alle Satelliten (State4)` kann temporär aktiviert werden. Diese vollständige Liste erzeugt mehr MQTT-Daten und ist daher vor allem für Diagnose gedacht.
-- `Raw JSON / Debug` zeigt die zuletzt empfangenen GPS-State-Payloads gesammelt und kann zur Fehlersuche kopiert werden.
+- `JSON-Ansicht / GPS-Diagnose` zeigt einen read-only Snapshot mit Settings sowie Definition und Status aller fünf States. Zu jedem Teil werden MQTT-Topic und lokale Empfangszeit gespeichert.
+- `Download` speichert genau den aktuell angezeigten Snapshot als `openmower-gps-state-debug-YYYY-MM-DD_HH-mm-ss.json`. Aktualisieren und Herunterladen sind getrennte Aktionen; der Download löst keine neue MQTT-Anfrage aus.
 
 **Typische Bedienung**
 - Vor einer Fehlersuche zuerst `Status neu laden` drücken und prüfen, ob State1 eine aktuelle Fahrfreigabe-Aussage anzeigt.
@@ -410,14 +411,16 @@ Der Flächeneditor ist die getrennte Detailseite zur Polygonbearbeitung. Hier we
 - Punkte gezielt bearbeiten und das Ergebnis visuell prüfen.
 - Nur speichern, wenn die Fläche weiterhin plausibel und geschlossen ist; sonst `Rückgängig` oder `Verwerfen` verwenden.
 
-### GPS-State v2 und F9P-Neustart
+### GPS-State v3, Diagnoseexport und F9P-Neustart
 
-Die GPS-State-Seite unterscheidet nun klar zwischen Bedieneranzeige und Experten-/Debugdaten. **State1** zeigt nur die kompakte Fahrfreigabe mit Grund, RTK-Zustand, Genauigkeit und Pose-Alter. **State2** zeigt die technische GNSS-/Pose-Zusammenfassung mit sichtbaren und verwendeten Satelliten, C/N0-Werten, Systemverteilung, Orientierung, Pose-Aktualität und Timeout. **State3** zeigt nur aktiv verwendete Satelliten. **State4** zeigt alle sichtbaren Satelliten inklusive Used-Status und sollte nur bei Diagnose aktiv sein. **State0** zeigt, sofern vom Backend geliefert, die vollständige Fahrfähigkeits-Entscheidungskette als Expertenansicht.
+Die GPS-State-Seite unterscheidet klar zwischen Bedieneranzeige und Experten-/Debugdaten. **State1** zeigt nur die kompakte Fahrfreigabe mit Grund, RTK-Zustand, Genauigkeit und Pose-Alter; eine zusätzliche Aktualisiert-Anzeige wird dort bewusst nicht wiederholt. **State2** zeigt die technische GNSS-/Pose-Zusammenfassung einschließlich des gemeinsamen `age_ms`-/`stale`-Status. **State3** zeigt nur aktiv verwendete Satelliten. **State4** zeigt alle sichtbaren Satelliten inklusive Used-Status und sollte nur bei Diagnose aktiv sein. **State0** zeigt die vollständige Fahrfähigkeits-Entscheidungskette als Expertenansicht. Die App liest für jeden State ausschließlich die kanonischen Topics `gps_state/stateN/definition` und `gps_state/stateN/status`.
 
 In **State0** wird die bisherige, überladene Kennzahlen-Zusammenfassung durch einen kompakten Freigabe-Banner ersetzt. Die 12 Prüfpunkte erscheinen darunter als einzeilige Diagnosezeilen mit Stufennummer, Entscheidungsknoten, aktuellem Wert, Bedingung und Ergebnis. Die technische Quelle wird in der normalen Ansicht nicht mehr angezeigt; die Beschreibung bleibt als Tooltip verfügbar. Grün bedeutet erfüllt, gelb bedeutet nicht aktuell beziehungsweise nicht bewertet und rot bedeutet blockiert. Wenn das Backend `blocking_stage` oder `blocking_key` liefert, markiert die App den ersten blockierenden Prüfschritt zusätzlich mit **BLOCKIERT ZUERST**.
 
 Beim Aufklappen von State0 fordert die App automatisch einen neuen Snapshot an. Über die Taste **State0 aktualisieren** kann derselbe Vorgang jederzeit manuell ausgelöst werden. Während die Antwort aussteht, werden vorhandene Werte bewusst gelb als **Aktualisierung** beziehungsweise **Nicht aktuell** dargestellt. Ein grüner Gesamtstatus erscheint erst, wenn ein nach der Anforderung empfangener State0-Status vorliegt und die Einzelprüfungen nicht im Widerspruch zum Gesamtstatus stehen.
 
-Die App sendet für die Aktualisierung bevorzugt `gps_state/state0/set/renew/json` mit `request_id` und `evaluate_all_checks=true`. Zusätzlich wird aus Kompatibilitätsgründen der bestehende globale Renew-Befehl gesendet. Ältere ROS-Versionen können dadurch weiterhin aktualisieren. Damit wirklich alle 12 Werte trotz einer frühen Blockierung aktuell geliefert werden, muss das Backend `evaluate_all_checks` unterstützen; andernfalls bleiben nachfolgende, nicht ausgewertete Stufen korrekt gelb.
+Die App verwendet keine dezentralen State-Renew-Topics mehr. Die allgemeine Aktualisierung sendet `{}` an `gps_state/set/renew/json`. Beim Öffnen oder manuellen Aktualisieren von State0 wird gezielt `{"states":[0],"parts":["status"]}` an dasselbe zentrale Topic gesendet. Erst eine danach empfangene Nachricht auf `gps_state/state0/status` gilt für die Freigabeanzeige als aktueller Snapshot.
+
+Unterhalb der GPS-Anzeigen befindet sich eine einklappbare read-only JSON-Ansicht. Der Export enthält die GPS-State-Settings sowie Definition und Status von State0 bis State4, jeweils mit dem tatsächlich verwendeten Topic und der lokalen Empfangszeit. Validierungs- und F9P-Neustartantworten werden als Zusatzdaten beigefügt. Der Download nutzt den plattformabhängigen Textdatei-Service der App und verändert keine MQTT-Daten.
 
 Im Bereich **F9P-Neustart unter gps_state** können Hot Start, Warm Start und Cold Start ausgelöst werden. Als Reset-Mode ist `controlled_software` voreingestellt. Der angezeigte Status bestätigt das Senden beziehungsweise Schreiben des Restart-Befehls; er bedeutet nicht automatisch, dass sofort wieder RTK Fixed verfügbar ist.

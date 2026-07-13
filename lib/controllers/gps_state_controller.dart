@@ -29,14 +29,30 @@ class GpsStateController extends GetxController {
     'hardware_watchdog',
   ];
 
-  final state0 = <String, dynamic>{}.obs;
-  final state0Legacy = <String, dynamic>{}.obs;
   final state0Definition = <String, dynamic>{}.obs;
   final state0Status = <String, dynamic>{}.obs;
   final state1 = <String, dynamic>{}.obs;
+  final state1Definition = <String, dynamic>{}.obs;
+  final state1Status = <String, dynamic>{}.obs;
   final state2 = <String, dynamic>{}.obs;
+  final state2Definition = <String, dynamic>{}.obs;
+  final state2Status = <String, dynamic>{}.obs;
   final state3 = <String, dynamic>{}.obs;
+  final state3Definition = <String, dynamic>{}.obs;
+  final state3Status = <String, dynamic>{}.obs;
   final state4 = <String, dynamic>{}.obs;
+  final state4Definition = <String, dynamic>{}.obs;
+  final state4Status = <String, dynamic>{}.obs;
+
+  /// Raw canonical MQTT payloads and receive metadata. The display maps above
+  /// additionally flatten the state-specific `data` object so the UI remains
+  /// independent of transitional top-level compatibility fields.
+  final stateDefinitionPayloads = <int, Map<String, dynamic>>{}.obs;
+  final stateStatusPayloads = <int, Map<String, dynamic>>{}.obs;
+  final stateDefinitionTopics = <int, String>{}.obs;
+  final stateStatusTopics = <int, String>{}.obs;
+  final stateDefinitionReceivedAt = <int, DateTime>{}.obs;
+  final stateStatusReceivedAt = <int, DateTime>{}.obs;
   final settingsPayload = <String, dynamic>{}.obs;
   final validationPayload = <String, dynamic>{}.obs;
   final restartStatusPayload = <String, dynamic>{}.obs;
@@ -52,8 +68,13 @@ class GpsStateController extends GetxController {
   final editorRevision = 0.obs;
   final restartResetMode = 'controlled_software'.obs;
 
-  // State0 has its own refresh lifecycle. The general GPS-State renew can be
-  // satisfied by State1-State4 first, therefore it must not be used as proof
+  final settingsReceivedAt = Rxn<DateTime>();
+  final validationReceivedAt = Rxn<DateTime>();
+  final restartStatusReceivedAt = Rxn<DateTime>();
+  final restartValidationReceivedAt = Rxn<DateTime>();
+
+  // State0 has its own refresh lifecycle. The central renew command can be
+  // satisfied by another State first, therefore it must not be used as proof
   // that the 12 State0 decision checks are current.
   final state0WaitingForUpdate = false.obs;
   final state0UpdateMessage = ''.obs;
@@ -65,9 +86,9 @@ class GpsStateController extends GetxController {
   int _responseWaitGeneration = 0;
   int _state0WaitGeneration = 0;
 
-  bool get hasState => state0.isNotEmpty || state0Legacy.isNotEmpty || state0Definition.isNotEmpty || state0Status.isNotEmpty || state1.isNotEmpty || state2.isNotEmpty || state3.isNotEmpty || state4.isNotEmpty;
+  bool get hasState => stateDefinitionPayloads.isNotEmpty || stateStatusPayloads.isNotEmpty;
   bool get hasSettings => settingsPayload.isNotEmpty;
-  bool get state0Active => settingBool('publish_state0', fallback: state0.isNotEmpty || state0Legacy.isNotEmpty || state0Definition.isNotEmpty || state0Status.isNotEmpty);
+  bool get state0Active => settingBool('publish_state0', fallback: state0Definition.isNotEmpty || state0Status.isNotEmpty);
   bool get state4Active => settingBool('publish_state4', fallback: state4.isNotEmpty);
   bool get hasRestartStatus => restartStatusPayload.isNotEmpty || restartValidationPayload.isNotEmpty;
 
@@ -81,23 +102,62 @@ class GpsStateController extends GetxController {
     return !received.isBefore(requested) && state0UpdateMessage.value.isEmpty;
   }
 
-  String get rawJson {
-    final data = <String, dynamic>{
-      'state0': state0,
-      'state0_legacy': state0Legacy,
-      'state0_definition': state0Definition,
-      'state0_status': state0Status,
-      'state1': state1,
-      'state2': state2,
-      'state3': state3,
-      'state4': state4,
-      'settings': settingsPayload,
-      'validation': validationPayload,
-      'restart_status': restartStatusPayload,
-      'restart_validation': restartValidationPayload,
+  String get rawJson => exportJsonString();
+
+  /// Builds the read-only GPS diagnosis snapshot used by the JSON view and by
+  /// the download action. Refreshing MQTT data and downloading this snapshot
+  /// intentionally remain separate actions.
+  Map<String, dynamic> buildDebugExport() {
+    final states = <String, dynamic>{};
+    for (var stateNumber = 0; stateNumber <= 4; stateNumber++) {
+      states['state$stateNumber'] = <String, dynamic>{
+        'definition': _partSnapshot(
+          payload: stateDefinitionPayloads[stateNumber],
+          topic: stateDefinitionTopics[stateNumber] ?? 'gps_state/state$stateNumber/definition',
+          receivedAt: stateDefinitionReceivedAt[stateNumber],
+        ),
+        'status': _partSnapshot(
+          payload: stateStatusPayloads[stateNumber],
+          topic: stateStatusTopics[stateNumber] ?? 'gps_state/state$stateNumber/status',
+          receivedAt: stateStatusReceivedAt[stateNumber],
+        ),
+      };
+    }
+
+    return <String, dynamic>{
+      'schema': 'openmower.gps_state_debug.v1',
+      'generated_at': DateTime.now().toUtc().toIso8601String(),
+      'source': 'OpenMower-TAF-App',
+      'gps_state_schema': 'gps_state.v3',
+      'renew_topic': MqttConnection.gpsStateRenewJsonTopic,
+      'settings_renew_topic': MqttConnection.gpsStateSettingsRenewJsonTopic,
+      'settings': _partSnapshot(
+        payload: settingsPayload,
+        topic: MqttConnection.gpsStateSettingsJsonTopic,
+        receivedAt: settingsReceivedAt.value,
+      ),
+      'states': states,
+      'auxiliary': <String, dynamic>{
+        'settings_validation': _partSnapshot(
+          payload: validationPayload,
+          topic: MqttConnection.gpsStateValidationJsonTopic,
+          receivedAt: validationReceivedAt.value,
+        ),
+        'restart_status': _partSnapshot(
+          payload: restartStatusPayload,
+          topic: MqttConnection.gpsStateRestartStatusJsonTopic,
+          receivedAt: restartStatusReceivedAt.value,
+        ),
+        'restart_validation': _partSnapshot(
+          payload: restartValidationPayload,
+          topic: MqttConnection.gpsStateRestartValidationJsonTopic,
+          receivedAt: restartValidationReceivedAt.value,
+        ),
+      },
     };
-    return const JsonEncoder.withIndent('  ').convert(data);
   }
+
+  String exportJsonString() => const JsonEncoder.withIndent('  ').convert(buildDebugExport());
 
   List<Map<String, dynamic>> satellitesForState(int stateNumber) {
     final source = stateNumber == 4 ? state4 : state3;
@@ -122,12 +182,9 @@ class GpsStateController extends GetxController {
     Get.find<MqttConnection>().requestGpsRestartStatus();
   }
 
-  /// Requests a fresh State0 snapshot. The MQTT layer sends the dedicated
-  /// State0 renew request and the existing global renew request as a fallback
-  /// for backends that do not yet implement the dedicated topic.
+  /// Requests only the live State0 status through the central v3 renew topic.
   void requestState0Update({bool automatic = false}) {
     final requestedAt = DateTime.now();
-    final requestId = 'state0-${requestedAt.millisecondsSinceEpoch}';
     state0WaitingForUpdate.value = true;
     state0UpdateRequestedAt.value = requestedAt;
     state0UpdateMessage.value = automatic
@@ -135,30 +192,28 @@ class GpsStateController extends GetxController {
         : 'Aktuelle State0-Werte werden manuell angefordert ...';
     lastStatusOk.value = null;
     lastStatus.value = state0UpdateMessage.value;
-    lastTopic.value = MqttConnection.gpsState0RenewJsonTopic;
+    lastTopic.value = MqttConnection.gpsStateRenewJsonTopic;
     lastUpdated.value = requestedAt;
     _armState0ResponseTimeout();
-    Get.find<MqttConnection>().requestGpsState0Snapshot(requestId: requestId);
+    Get.find<MqttConnection>().requestGpsState0Snapshot();
   }
 
   void setStatePayload(int stateNumber, Map<String, dynamic> payload, {required String topic}) {
     final root = _root(payload);
-    switch (stateNumber) {
-      case 0:
-        _setState0Payload(root, topic: topic);
-        break;
-      case 1:
-        state1.assignAll(root);
-        break;
-      case 2:
-        state2.assignAll(root);
-        break;
-      case 3:
-        state3.assignAll(root);
-        break;
-      case 4:
-        state4.assignAll(root);
-        break;
+    final type = root['type']?.toString().trim().toLowerCase();
+    final isDefinition = type == 'definition' || topic.endsWith('/definition');
+    final isStatus = type == 'status' || topic.endsWith('/status');
+
+    if (isDefinition) {
+      _setStateDefinition(stateNumber, root, topic: topic);
+    } else if (isStatus) {
+      _setStateStatus(stateNumber, root, topic: topic);
+    } else {
+      setError(
+        'GPS-State $stateNumber enthält weder type=definition noch type=status.',
+        topic: topic,
+      );
+      return;
     }
     lastStatusOk.value = true;
     lastStatus.value = 'GPS-State $stateNumber empfangen.';
@@ -169,59 +224,82 @@ class GpsStateController extends GetxController {
   }
 
 
-  void _setState0Payload(Map<String, dynamic> root, {required String topic}) {
-    final type = root['type']?.toString().trim().toLowerCase();
-    final isDefinition = type == 'definition' || topic == MqttConnection.gpsState0DefinitionTopic;
-    final isStatus = type == 'status' || topic == MqttConnection.gpsState0StatusTopic;
-    var statusUpdated = false;
+  void _setStateDefinition(int stateNumber, Map<String, dynamic> root, {required String topic}) {
+    final receivedAt = DateTime.now();
+    final raw = _deepCopy(root);
+    stateDefinitionPayloads[stateNumber] = raw;
+    stateDefinitionTopics[stateNumber] = topic;
+    stateDefinitionReceivedAt[stateNumber] = receivedAt;
 
-    // State0 is split by the ROS side into a retained static definition and a
-    // frequently changing live status. Keep both payloads instead of allowing
-    // the last received MQTT message to overwrite the other half.
-    if (root['definition'] is Map || root['status'] is Map) {
-      // Accept a combined State0 object as well, for example from tests or
-      // older bridges that bundle definition and status in one retained value.
-      if (root['definition'] is Map) {
-        state0Definition.assignAll(_deepCopy(Map<String, dynamic>.from(root['definition'] as Map)));
-      }
-      if (root['status'] is Map) {
-        state0Status.assignAll(_deepCopy(Map<String, dynamic>.from(root['status'] as Map)));
-        statusUpdated = true;
-      }
-    } else if (isDefinition) {
-      state0Definition.assignAll(_deepCopy(root));
-    } else if (isStatus) {
-      state0Status.assignAll(_deepCopy(root));
-      statusUpdated = true;
-    } else {
-      // Backwards-compatible fallback for older packets that published a single
-      // combined State0 object directly on gps_state/state0.
-      state0Legacy.assignAll(_deepCopy(root));
-      // A legacy packet on gps_state/state0 is a complete live snapshot.
-      // Treat it as a valid update so older ROS installations can still use
-      // the automatic/manual refresh workflow.
-      statusUpdated = root.containsKey('checks') ||
-          root.containsKey('drive_ready') ||
-          root.containsKey('gps_drive_ready');
+    switch (stateNumber) {
+      case 0:
+        state0Definition.assignAll(raw);
+        break;
+      case 1:
+        state1Definition.assignAll(raw);
+        break;
+      case 2:
+        state2Definition.assignAll(raw);
+        break;
+      case 3:
+        state3Definition.assignAll(raw);
+        break;
+      case 4:
+        state4Definition.assignAll(raw);
+        break;
     }
+  }
 
-    final combined = <String, dynamic>{};
-    if (state0Legacy.isNotEmpty) combined['legacy'] = _deepCopy(state0Legacy);
-    if (state0Definition.isNotEmpty) combined['definition'] = _deepCopy(state0Definition);
-    if (state0Status.isNotEmpty) combined['status'] = _deepCopy(state0Status);
-    state0.assignAll(combined);
+  void _setStateStatus(int stateNumber, Map<String, dynamic> root, {required String topic}) {
+    final receivedAt = DateTime.now();
+    final raw = _deepCopy(root);
+    final view = _statusView(raw);
+    stateStatusPayloads[stateNumber] = raw;
+    stateStatusTopics[stateNumber] = topic;
+    stateStatusReceivedAt[stateNumber] = receivedAt;
 
-    if (statusUpdated) {
-      state0StatusReceivedAt.value = DateTime.now();
-      state0WaitingForUpdate.value = false;
-      state0UpdateMessage.value = '';
-      _clearState0ResponseTimeout();
+    switch (stateNumber) {
+      case 0:
+        state0Status.assignAll(view);
+        state0StatusReceivedAt.value = receivedAt;
+        state0WaitingForUpdate.value = false;
+        state0UpdateMessage.value = '';
+        _clearState0ResponseTimeout();
+        break;
+      case 1:
+        state1Status.assignAll(view);
+        state1.assignAll(view);
+        break;
+      case 2:
+        state2Status.assignAll(view);
+        state2.assignAll(view);
+        break;
+      case 3:
+        state3Status.assignAll(view);
+        state3.assignAll(view);
+        break;
+      case 4:
+        state4Status.assignAll(view);
+        state4.assignAll(view);
+        break;
     }
+  }
+
+  Map<String, dynamic> _statusView(Map<String, dynamic> raw) {
+    final view = _deepCopy(raw);
+    final data = raw['data'];
+    if (data is Map) {
+      for (final entry in data.entries) {
+        view[entry.key.toString()] = _deepCopyValue(entry.value);
+      }
+    }
+    return view;
   }
 
   void setSettingsPayload(Map<String, dynamic> payload, {required String topic}) {
     final root = _root(payload);
     settingsPayload.assignAll(_deepCopy(root));
+    settingsReceivedAt.value = DateTime.now();
     draftValues.clear();
     dirtyKeys.clear();
     editorRevision.value++;
@@ -236,6 +314,7 @@ class GpsStateController extends GetxController {
   void setValidation(Map<String, dynamic> payload, {required String topic}) {
     final root = _root(payload);
     validationPayload.assignAll(_deepCopy(root));
+    validationReceivedAt.value = DateTime.now();
     final valid = _bool(root['valid'] ?? root['ok'] ?? root['success']);
     lastStatusOk.value = valid;
     lastStatus.value = valid
@@ -255,6 +334,7 @@ class GpsStateController extends GetxController {
   void setRestartStatus(Map<String, dynamic> payload, {required String topic}) {
     final root = _root(payload);
     restartStatusPayload.assignAll(_deepCopy(root));
+    restartStatusReceivedAt.value = DateTime.now();
     final accepted = _bool(root['accepted'] ?? root['ok'] ?? root['success'], fallback: false);
     final status = root['status']?.toString();
     final normalizedStatus = status?.toLowerCase() ?? '';
@@ -273,6 +353,7 @@ class GpsStateController extends GetxController {
   void setRestartValidation(Map<String, dynamic> payload, {required String topic}) {
     final root = _root(payload);
     restartValidationPayload.assignAll(_deepCopy(root));
+    restartValidationReceivedAt.value = DateTime.now();
     final valid = _bool(root['valid'] ?? root['ok'] ?? root['success'] ?? root['accepted']);
     lastStatusOk.value = valid;
     lastStatus.value = valid
@@ -317,7 +398,7 @@ class GpsStateController extends GetxController {
     lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
     _clearResponseTimeout();
-    if (topic == MqttConnection.gpsState0RenewJsonTopic) {
+    if (state0WaitingForUpdate.value && topic == MqttConnection.gpsStateRenewJsonTopic) {
       state0WaitingForUpdate.value = false;
       state0UpdateMessage.value = message;
       _clearState0ResponseTimeout();
@@ -469,6 +550,22 @@ class GpsStateController extends GetxController {
 
   Map<String, dynamic> _deepCopy(Map<String, dynamic> source) {
     return jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
+  }
+
+  dynamic _deepCopyValue(dynamic value) => jsonDecode(jsonEncode(value));
+
+  Map<String, dynamic> _partSnapshot({
+    required Map<String, dynamic>? payload,
+    required String topic,
+    required DateTime? receivedAt,
+  }) {
+    final available = payload != null && payload.isNotEmpty;
+    return <String, dynamic>{
+      'topic': topic,
+      'received_at': receivedAt?.toUtc().toIso8601String(),
+      'available': available,
+      'payload': available ? _deepCopy(payload!) : <String, dynamic>{},
+    };
   }
 
   bool _bool(dynamic value, {bool fallback = false}) {

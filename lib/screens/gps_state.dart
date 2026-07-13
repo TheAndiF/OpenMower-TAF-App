@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/gps_state_controller.dart';
+import 'package:open_mower_app/services/platform_text_file.dart';
 import 'package:open_mower_app/views/robot_state_widget.dart';
 
 class GpsStateScreen extends StatefulWidget {
@@ -104,7 +105,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Auswertung von gps_state.v2: Bedienerstatus, technische Diagnose, Satellitenlisten und F9P-Neustart.',
+                        'Auswertung von gps_state.v3: getrennte Definitionen und Statusdaten, zentrale Aktualisierung und Diagnoseexport.',
                         style: theme.textTheme.bodyMedium?.copyWith(color: theme.hintColor),
                       ),
                       if (controller.lastStatus.value.isNotEmpty) ...[
@@ -159,8 +160,6 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildDriveReadinessCard(context, state),
-          const SizedBox(height: 10),
-          _freshnessHint(context, state['updated_at']),
         ],
       ),
     );
@@ -197,7 +196,13 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
               _metricTile(context, 'Orientierung', _boolText(state['orientation_valid']), accent: _boolNullable(state['orientation_valid']) == true, warning: _boolNullable(state['orientation_valid']) == false),
               _metricTile(context, 'Pose aktuell', _boolText(state['recent_absolute_pose']), accent: _boolNullable(state['recent_absolute_pose']) == true, warning: _boolNullable(state['recent_absolute_pose']) == false),
               _metricTile(context, 'GPS Timeout', _boolText(state['gps_timeout']), accent: _boolNullable(state['gps_timeout']) == false, warning: _boolNullable(state['gps_timeout']) == true),
-              _metricTile(context, 'Aktualisiert', _updatedAtText(state['updated_at'])),
+              _metricTile(
+                context,
+                'Quelldaten-Alter',
+                _millisecondsText(state['age_ms']),
+                warning: _boolNullable(state['stale']) == true,
+                accent: _boolNullable(state['stale']) == false,
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -311,11 +316,10 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
   Widget _buildState0Section(BuildContext context) {
     final definition = controller.state0Definition;
     final status = controller.state0Status;
-    final legacy = controller.state0Legacy;
-    final rows = _state0DecisionRows(definition, status, legacy);
-    final summarySource = status.isNotEmpty ? Map<String, dynamic>.from(status) : legacy;
+    final rows = _state0DecisionRows(definition, status);
+    final summarySource = status;
     final definitionVersion = _text(
-      status['definition_version'] ?? definition['definition_version'] ?? legacy['definition_version'],
+      status['definition_version'] ?? definition['definition_version'],
       fallback: '-',
     );
     final waiting = controller.state0WaitingForUpdate.value;
@@ -802,13 +806,27 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
 
   Widget _buildRawJsonSection(BuildContext context) {
     final theme = Theme.of(context);
+    final jsonText = controller.exportJsonString();
     return Card(
       margin: EdgeInsets.zero,
       child: ExpansionTile(
         initiallyExpanded: _rawJsonExpanded,
         onExpansionChanged: (expanded) => setState(() => _rawJsonExpanded = expanded),
         leading: const Icon(Icons.code),
-        title: const Text('Raw JSON / Debug'),
+        title: const Text('JSON-Ansicht / GPS-Diagnose'),
+        subtitle: const Text('Settings sowie Definition und Status aller States als read-only Snapshot'),
+        trailing: Wrap(
+          spacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            TextButton.icon(
+              onPressed: () => _downloadGpsDebugJson(context, jsonText),
+              icon: const Icon(Icons.download, size: 18),
+              label: const Text('Download'),
+            ),
+            Icon(_rawJsonExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+          ],
+        ),
         children: [
           Container(
             width: double.infinity,
@@ -819,16 +837,28 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
               children: [
                 Row(
                   children: [
-                    const Spacer(),
+                    Expanded(
+                      child: Text(
+                        'Der Download speichert den aktuell in der App vorhandenen Snapshot. Er löst keine neue MQTT-Aktualisierung aus.',
+                        style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     TextButton.icon(
-                      onPressed: () => Clipboard.setData(ClipboardData(text: controller.rawJson)),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: jsonText));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('GPS-Diagnose-JSON wurde kopiert.')),
+                        );
+                      },
                       icon: const Icon(Icons.copy, size: 18),
                       label: const Text('Kopieren'),
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
                 SelectableText(
-                  const JsonEncoder.withIndent('  ').convert(jsonDecode(controller.rawJson)),
+                  jsonText,
                   style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
                 ),
               ],
@@ -837,6 +867,33 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _downloadGpsDebugJson(BuildContext context, String jsonText) async {
+    final now = DateTime.now();
+    final fileName = 'openmower-gps-state-debug-'
+        '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}_'
+        '${now.hour.toString().padLeft(2, '0')}-'
+        '${now.minute.toString().padLeft(2, '0')}-'
+        '${now.second.toString().padLeft(2, '0')}.json';
+    try {
+      await saveTextFile(
+        fileName: fileName,
+        content: jsonText,
+        mimeType: 'application/json',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('GPS-Diagnose wurde als $fileName bereitgestellt.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('GPS-Diagnose konnte nicht gespeichert werden: $error')),
+      );
+    }
   }
 
   Widget _settingRow(BuildContext context, String key) {
@@ -1294,22 +1351,6 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     return const Text('–');
   }
 
-  Widget _freshnessHint(BuildContext context, dynamic updatedAt) {
-    final age = _updatedAge(updatedAt);
-    final isOld = age == null || age.inSeconds > 5;
-    final color = isOld ? Colors.orange.shade700 : Colors.green.shade700;
-    final message = isOld
-        ? 'GPS-State veraltet oder noch nicht zeitlich bewertbar.'
-        : 'Daten sind aktuell.';
-    return Row(
-      children: [
-        Icon(isOld ? Icons.warning_amber_outlined : Icons.info_outline, size: 18, color: color),
-        const SizedBox(width: 6),
-        Expanded(child: Text(message, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color))),
-      ],
-    );
-  }
-
   Widget _headerIcon(BuildContext context, IconData icon, {required bool active}) {
     final color = active ? Theme.of(context).primaryColor : Theme.of(context).hintColor;
     return Container(
@@ -1326,11 +1367,10 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
   List<_DecisionRow> _state0DecisionRows(
     Map<String, dynamic> definition,
     Map<String, dynamic> status,
-    Map<String, dynamic> legacy,
   ) {
     final definitionChecks = _state0ChecksMap(definition);
     final statusChecks = _state0ChecksMap(status);
-    final rootStatus = status.isNotEmpty ? status : legacy;
+    final rootStatus = status;
     final blockingStage = rootStatus['blocking_stage'];
     final blockingKey = _text(rootStatus['blocking_key']);
 
@@ -1364,9 +1404,8 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       }).toList(growable: false);
     }
 
-    final legacyPayload = legacy.isNotEmpty ? legacy : definition;
-    if (legacyPayload.isNotEmpty) {
-      return _decisionRowsFromPayload(legacyPayload);
+    if (definition.isNotEmpty) {
+      return _decisionRowsFromPayload(definition);
     }
     return const <_DecisionRow>[];
   }
@@ -1732,32 +1771,6 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     return '${two(local.hour)}:${two(local.minute)}:${two(local.second)}.${three(local.millisecond)}';
   }
 
-  String _updatedAtText(dynamic value) {
-    if (value == null) return '-';
-    final age = _updatedAge(value);
-    if (age != null) {
-      if (age.inSeconds < 60) return 'vor ${age.inSeconds} s';
-      if (age.inMinutes < 60) return 'vor ${age.inMinutes} min';
-    }
-    return value.toString();
-  }
-
-  Duration? _updatedAge(dynamic value) {
-    if (value == null) return null;
-    DateTime? parsed;
-    if (value is num) {
-      final raw = value.toDouble();
-      parsed = DateTime.fromMillisecondsSinceEpoch(raw > 100000000000 ? raw.toInt() : (raw * 1000).toInt());
-    } else {
-      parsed = DateTime.tryParse(value.toString());
-    }
-    if (parsed == null) return null;
-    final now = DateTime.now();
-    if (parsed.isUtc) parsed = parsed.toLocal();
-    final age = now.difference(parsed);
-    if (age.isNegative) return Duration.zero;
-    return age;
-  }
 }
 
 enum _DecisionConditionState { passed, warning, failed, unknown }

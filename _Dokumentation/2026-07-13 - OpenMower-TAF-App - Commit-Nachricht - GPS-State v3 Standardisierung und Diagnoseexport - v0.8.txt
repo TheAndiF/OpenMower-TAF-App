@@ -1,0 +1,23 @@
+BL_Standardize GPS State v3 integration and add debug export
+
+Date: 2026-07-13
+
+Summary:
+- Switched GPS State 0 through State 4 to the canonical definition and status topics under gps_state/stateN/definition and gps_state/stateN/status.
+- Replaced decentralized State0 renew handling with the central gps_state/set/renew/json command and explicit state/part selection.
+- Stored definition and status payloads separately, preserved receive topics and timestamps, and normalized the gps_state.v3 data block for the existing UI.
+- Added a read-only GPS diagnosis JSON view with clipboard support and platform-specific download using the filename pattern openmower-gps-state-debug-YYYY-MM-DD_HH-mm-ss.json.
+- Kept refresh and download as separate actions and removed the duplicate State1 updated indicator.
+- Updated the operating guide and MQTT interface documentation for the v3 topic model, central renew command, and debug export.
+- Added project documentation in PDF and editable DOCX format plus an applicable text patch.
+
+Changed files:
+- lib/controllers/gps_state_controller.dart
+- lib/io/mqtt_connection.dart
+- lib/screens/gps_state.dart
+- docs/bedienungsanleitung.md
+- docs/mqtt-schnittstelle.md
+- _Dokumentation/2026-07-13 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State v3 Standardisierung und Diagnoseexport - v0.8.docx
+- _Dokumentation/2026-07-13 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State v3 Standardisierung und Diagnoseexport - v0.8.pdf
+- _Dokumentation/2026-07-13 - OpenMower-TAF-App - Patch - GPS-State v3 Standardisierung und Diagnoseexport - v0.8.patch
+- _Dokumentation/2026-07-13 - OpenMower-TAF-App - Commit-Nachricht - GPS-State v3 Standardisierung und Diagnoseexport - v0.8.txt
