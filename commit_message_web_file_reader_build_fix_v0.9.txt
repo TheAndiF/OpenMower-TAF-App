@@ -1,0 +1,13 @@
+BL_Fix web FileReader error handling
+Date: 2026-07-11
+Summary:
+- Fixed the amd64 and arm64 web build failure caused by using the unavailable FileReader.onError stream in package:web.
+- Moved read-error detection into the supported loadend handler and evaluate FileReader.error before processing the result.
+- Preserved successful text-file import behavior and existing user-facing error messages.
+- Documented the build-log diagnosis and implementation.
+Changed files:
+- lib/services/platform_text_file_web.dart
+- BUILD_LOG_FIX_NOTES.md
+- _Dokumentation/2026-07-11 - OpenMower-TAF-App - Aenderungsdokumentation - Web-Dateiimport FileReader Buildfehler - v0.9.docx
+- _Dokumentation/2026-07-11 - OpenMower-TAF-App - Aenderungsdokumentation - Web-Dateiimport FileReader Buildfehler - v0.9.pdf
+- _Dokumentation/web_file_reader_build_fix_v0.9.patch

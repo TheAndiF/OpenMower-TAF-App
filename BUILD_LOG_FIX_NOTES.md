@@ -57,3 +57,25 @@ Umgesetzt:
 - Klammerbilanz und eindeutige Methodendeklarationen statisch geprüft.
 
 Die Hinweise zu WebAssembly/`dart:html`, Windows-Anforderungen sowie GitHub-Actions-Deprecations waren Warnungen und nicht die Ursache des fehlgeschlagenen Web-Builds.
+
+## Web-Dateiimport - FileReader-Buildfehler - 11.07.2026
+
+Die Logs `logs_78925048811.zip` enthielten fuer amd64 und arm64 denselben abbrechenden Dart2JS-Fehler:
+
+```text
+lib/services/platform_text_file_web.dart:64:12:
+Error: The getter 'onError' isn't defined for the type 'FileReader'.
+    reader.onError.listen((_) {
+           ^^^^^^^
+```
+
+Ursache war die Umstellung des Web-Dateizugriffs von `dart:html` auf `package:web`. Fuer `FileReader` stellt `package:web` den Stream `onLoadEnd` bereit, aber keinen Stream-Getter `onError`. Ein Lesefehler kann nach dem `loadend`-Ereignis ueber `FileReader.error` erkannt werden.
+
+Umgesetzt:
+
+- Nicht vorhandenen Aufruf `reader.onError.listen(...)` entfernt.
+- Fehlerauswertung in den vorhandenen `reader.onLoadEnd`-Handler verlagert.
+- Bei `reader.error != null` wird der bestehende deutsche Lesefehler als Future-Fehler weitergegeben.
+- Erfolgreiche Textdateiimporte und die bisherige Validierung des Rueckgabetyps bleiben unveraendert.
+
+Die WebAssembly-Meldung zu `get_storage` ist weiterhin nur ein Hinweis aus dem optionalen Wasm-Dry-Run und war nicht die Ursache des fehlgeschlagenen Dart2JS-Web-Builds.

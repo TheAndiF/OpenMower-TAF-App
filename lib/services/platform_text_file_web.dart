@@ -61,19 +61,21 @@ Future<PlatformTextFile?> pickTextFile({
     }
 
     final reader = web.FileReader();
-    reader.onError.listen((_) {
-      if (!completer.isCompleted) {
-        completer.completeError(Exception('Datei konnte nicht gelesen werden.'));
-      }
-    });
     reader.onLoadEnd.listen((_) {
+      if (completer.isCompleted) return;
+
+      // package:web does not expose FileReader.onError as a Dart event stream.
+      // A failed read is reported through FileReader.error when loadend fires.
+      if (reader.error != null) {
+        completer.completeError(Exception('Datei konnte nicht gelesen werden.'));
+        return;
+      }
+
       final result = reader.result?.dartify();
-      if (!completer.isCompleted) {
-        if (result is String) {
-          completer.complete(PlatformTextFile(name: file.name, content: result));
-        } else {
-          completer.completeError(Exception('Datei konnte nicht als Text gelesen werden.'));
-        }
+      if (result is String) {
+        completer.complete(PlatformTextFile(name: file.name, content: result));
+      } else {
+        completer.completeError(Exception('Datei konnte nicht als Text gelesen werden.'));
       }
     });
     reader.readAsText(file);
