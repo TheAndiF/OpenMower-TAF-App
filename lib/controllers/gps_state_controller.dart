@@ -56,6 +56,7 @@ class GpsStateController extends GetxController {
   final settingsPayload = <String, dynamic>{}.obs;
   final validationPayload = <String, dynamic>{}.obs;
   final restartStatusPayload = <String, dynamic>{}.obs;
+  final restartLastPayload = <String, dynamic>{}.obs;
   final restartValidationPayload = <String, dynamic>{}.obs;
   final draftValues = <String, dynamic>{}.obs;
   final dirtyKeys = <String>{}.obs;
@@ -71,6 +72,7 @@ class GpsStateController extends GetxController {
   final settingsReceivedAt = Rxn<DateTime>();
   final validationReceivedAt = Rxn<DateTime>();
   final restartStatusReceivedAt = Rxn<DateTime>();
+  final restartLastReceivedAt = Rxn<DateTime>();
   final restartValidationReceivedAt = Rxn<DateTime>();
 
   // State0 has its own refresh lifecycle. The central renew command can be
@@ -90,7 +92,15 @@ class GpsStateController extends GetxController {
   bool get hasSettings => settingsPayload.isNotEmpty;
   bool get state0Active => settingBool('publish_state0', fallback: state0Definition.isNotEmpty || state0Status.isNotEmpty);
   bool get state4Active => settingBool('publish_state4', fallback: state4.isNotEmpty);
-  bool get hasRestartStatus => restartStatusPayload.isNotEmpty || restartValidationPayload.isNotEmpty;
+  bool get hasRestartStatus =>
+      restartStatusPayload.isNotEmpty || restartLastPayload.isNotEmpty || restartValidationPayload.isNotEmpty;
+
+  bool get restartInProgress {
+    final status = restartStatusPayload['status']?.toString().trim().toLowerCase() ?? '';
+    return status == 'resetting' || status == 'waiting_for_receiver' || status == 'validating';
+  }
+
+  bool get restartControlsDisabled => waitingForResponse.value || restartInProgress;
 
   /// True only when a State0 status was received after the most recent
   /// explicit/automatic State0 refresh request. This prevents an old retained
@@ -167,6 +177,11 @@ class GpsStateController extends GetxController {
           payload: restartStatusPayload,
           topic: MqttConnection.gpsStateRestartStatusJsonTopic,
           receivedAt: restartStatusReceivedAt.value,
+        ),
+        'restart_last': _partSnapshot(
+          payload: restartLastPayload,
+          topic: MqttConnection.gpsStateRestartLastJsonTopic,
+          receivedAt: restartLastReceivedAt.value,
         ),
         'restart_validation': _partSnapshot(
           payload: restartValidationPayload,
@@ -357,13 +372,50 @@ class GpsStateController extends GetxController {
     restartStatusReceivedAt.value = DateTime.now();
     final accepted = _bool(root['accepted'] ?? root['ok'] ?? root['success'], fallback: false);
     final status = root['status']?.toString();
-    final normalizedStatus = status?.toLowerCase() ?? '';
-    final sent = normalizedStatus == 'sent' || normalizedStatus == 'requested' || normalizedStatus == 'ok' || accepted;
-    final rejected = normalizedStatus == 'rejected' || normalizedStatus == 'send_failed' || normalizedStatus == 'failed' || normalizedStatus == 'error';
-    lastStatusOk.value = rejected ? false : sent;
+    final normalizedStatus = status?.trim().toLowerCase() ?? '';
+    final successful = normalizedStatus == 'success' || normalizedStatus == 'ok';
+    final acceptedCommand = normalizedStatus == 'sent' ||
+        normalizedStatus == 'requested' ||
+        normalizedStatus == 'accepted' ||
+        accepted;
+    final inProgress = normalizedStatus == 'resetting' ||
+        normalizedStatus == 'waiting_for_receiver' ||
+        normalizedStatus == 'validating';
+    final rejected = normalizedStatus == 'rejected' ||
+        normalizedStatus == 'send_failed' ||
+        normalizedStatus == 'failed' ||
+        normalizedStatus == 'error';
+    lastStatusOk.value = rejected
+        ? false
+        : successful
+            ? true
+            : inProgress
+                ? null
+                : acceptedCommand
+                    ? true
+                    : null;
     lastStatus.value = status == null || status.isEmpty
         ? 'F9P-Neustartstatus empfangen.'
         : 'F9P-Neustartstatus: $status';
+    lastTopic.value = topic;
+    lastUpdated.value = DateTime.now();
+    waitingForResponse.value = false;
+    _clearResponseTimeout();
+  }
+
+  void setRestartLast(Map<String, dynamic> payload, {required String topic}) {
+    final root = _root(payload);
+    restartLastPayload.assignAll(_deepCopy(root));
+    restartLastReceivedAt.value = DateTime.now();
+    final status = root['status']?.toString().trim().toLowerCase() ?? '';
+    final successful = status == 'success' || _bool(root['receiver_restart_confirmed'], fallback: false);
+    final failed = status == 'failed' || status == 'error';
+    lastStatusOk.value = failed ? false : successful ? true : lastStatusOk.value;
+    lastStatus.value = successful
+        ? 'Letzter F9P-Neustart wurde erfolgreich bestätigt.'
+        : failed
+            ? 'Letzter F9P-Neustart ist fehlgeschlagen.'
+            : 'Letzter abgeschlossener F9P-Neustart empfangen.';
     lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
     waitingForResponse.value = false;
@@ -593,7 +645,14 @@ class GpsStateController extends GetxController {
     if (value is num) return value != 0;
     final normalized = value?.toString().trim().toLowerCase() ?? '';
     if (normalized.isEmpty || normalized == 'null') return fallback;
-    return normalized == 'true' || normalized == '1' || normalized == 'yes' || normalized == 'on';
+    return normalized == 'true' ||
+        normalized == '1' ||
+        normalized == 'yes' ||
+        normalized == 'on' ||
+        normalized == 'ok' ||
+        normalized == 'success' ||
+        normalized == 'accepted' ||
+        normalized == 'ready';
   }
 
   double _double(dynamic value, {required double fallback}) {

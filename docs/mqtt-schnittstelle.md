@@ -351,7 +351,7 @@ Die GPS-Seite besitzt eine einklappbare JSON-Ansicht mit Kopier- und Download-Fu
 - `settings` mit Topic, lokaler Empfangszeit und Payload,
 - `state0` bis `state4`, jeweils getrennt in `definition` und `status`,
 - pro Teil `topic`, `received_at`, `available` und `payload`,
-- Zusatzdaten für Settings-Validierung und F9P-Neustartstatus.
+- Zusatzdaten für Settings-Validierung, Live-F9P-Neustartstatus, letzten abgeschlossenen Neustart und Befehlsvalidierung.
 
 Das Export-Schema lautet `openmower.gps_state_debug.v1`. Der Dateiname folgt dem Muster `openmower-gps-state-debug-YYYY-MM-DD_HH-mm-ss.json`. Der Download speichert den aktuellen lokalen Snapshot und löst keine MQTT-Anforderung aus.
 
@@ -362,9 +362,14 @@ Der F9P-Neustart bleibt im Namensraum `gps_state/restart`:
 | Topic | Richtung | Verwendung |
 |---|---|---|
 | `gps_state/restart/set/json` | App -> MQTT | Sendet `{"mode":"hot_start|warm_start|cold_start","reset_mode":"controlled_software|gnss_only|hardware_watchdog"}`. |
-| `gps_state/restart/status/json` | MQTT -> App | Letzter Neustartstatus. |
+| `gps_state/restart/status/json` | MQTT -> App | Retained Live-Zustand des Recovery-Ablaufs: `resetting`, `waiting_for_receiver`, `validating`, `success` oder `failed`. |
+| `gps_state/restart/last/json` | MQTT -> App | Retained letzter abgeschlossener Neustart mit `restart_sequence`, `requested_at`, `completed_at`, `nav_pvt_received`, `nav_sat_received`, `receiver_restart_confirmed` und `reason`. |
 | `gps_state/restart/validation/json` | MQTT -> App | Annahme oder Validierungsfehler des Befehls. |
 | `gps_state/restart/set/renew/json` | App -> MQTT | Neustartstatus erneut anfordern. |
+
+Ein Neustart gilt in der App erst bei `status=success` als bestätigt. Dazu müssen nach dem Reset neue NAV-PVT- und NAV-SAT-Daten vorliegen und `receiver_restart_confirmed=true` sein. Während `resetting`, `waiting_for_receiver` oder `validating` sind weitere Neustartbefehle gesperrt. Fehlergründe wie `nav_pvt_not_received_after_reset` und `nav_sat_not_received_after_reset` werden in verständlichen Text übersetzt; der technische Originalwert bleibt sichtbar.
+
+State2 bis State4 werten `status=stale`, `stale=true` oder `available=false` als veralteten Datenstand. Die App zeigt dann einen Warnhinweis, graut die Messwerte aus und verwendet alte Qualitätswerte nicht als positive Freigabe.
 
 
 ## Karte, Flächen und Editor

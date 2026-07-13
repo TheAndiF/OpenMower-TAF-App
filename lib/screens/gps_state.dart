@@ -182,60 +182,83 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
   Widget _buildState2Section(BuildContext context) {
     final state = controller.state2;
     final systems = state['systems'];
+    final stale = _statePayloadIsStale(state);
     return _sectionCard(
       context,
       icon: Icons.signal_cellular_alt,
       title: 'Technische GNSS-/Pose-Zusammenfassung (State2)',
-      subtitle: state.isEmpty ? 'Noch keine technischen Qualitätsdaten empfangen' : 'Aggregierte GNSS-Werte, Systemverteilung und technische Diagnosen',
+      subtitle: state.isEmpty
+          ? 'Noch keine technischen Qualitätsdaten empfangen'
+          : stale
+              ? 'Daten veraltet - neue GNSS-/Pose-Daten werden erwartet'
+              : 'Aggregierte GNSS-Werte, Systemverteilung und technische Diagnosen',
       initiallyExpanded: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _metricTile(context, 'Verfügbar', _boolText(state['available']), accent: _boolNullable(state['available']) == true, warning: _boolNullable(state['available']) == false),
-              _metricTile(context, 'Quality Class', _text(state['quality_class'], fallback: '-'), accent: _qualityGood(state['quality_class'])),
-              _metricTile(context, 'Sichtbar', _fmt(state['visible_count'] ?? state['visible'])),
-              _metricTile(context, 'Verwendet', _fmt(state['used_count'] ?? state['used']), accent: _int(state['used_count'] ?? state['used']) > 0),
-              _metricTile(context, 'Ø C/N0', '${_fmt(state['avg_cn0'])} dB-Hz', accent: _double(state['avg_cn0']) >= 30),
-              _metricTile(context, 'Min C/N0', '${_fmt(state['min_cn0'])} dB-Hz'),
-              _metricTile(context, 'Max C/N0', '${_fmt(state['max_cn0'])} dB-Hz'),
-              _metricTile(context, 'Schwach', _fmt(state['weak_count']), warning: _int(state['weak_count']) > 0),
-              _metricTile(context, 'Gut', _fmt(state['good_count']), accent: _int(state['good_count']) > 0),
-              _metricTile(context, 'RTK', _text(state['rtk_state'], fallback: '-'), accent: _text(state['rtk_state']).toLowerCase() == 'fixed'),
-              _metricTile(context, 'LL GPS Genauigkeit', _metersText(state['ll_gps_accuracy_m'] ?? state['ll_gps_position_accuracy_m'])),
-              _metricTile(context, 'XB Pose Genauigkeit', _metersText(state['xb_pose_accuracy_m'])),
-              _metricTile(context, 'Orientierung', _boolText(state['orientation_valid']), accent: _boolNullable(state['orientation_valid']) == true, warning: _boolNullable(state['orientation_valid']) == false),
-              _metricTile(context, 'Pose aktuell', _boolText(state['recent_absolute_pose']), accent: _boolNullable(state['recent_absolute_pose']) == true, warning: _boolNullable(state['recent_absolute_pose']) == false),
-              _metricTile(context, 'GPS Timeout', _boolText(state['gps_timeout']), accent: _boolNullable(state['gps_timeout']) == false, warning: _boolNullable(state['gps_timeout']) == true),
-              _metricTile(
-                context,
-                'Quelldaten-Alter',
-                _millisecondsText(state['age_ms']),
-                warning: _boolNullable(state['stale']) == true,
-                accent: _boolNullable(state['stale']) == false,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text('Systemverteilung', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          if (systems is Map && systems.isNotEmpty)
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: systems.entries.map<Widget>((entry) => Chip(label: Text(_systemChipText(entry.key.toString(), entry.value)))).toList(growable: false),
-            )
-          else
-            Text('Keine Systemverteilung empfangen.', style: Theme.of(context).textTheme.bodySmall),
-          _buildDiagnosticSummary(context, state),
-          _buildDriveDiagnosticsSection(context, state),
-          const SizedBox(height: 10),
-          Text(
-            'Schwellen: schwach < ${controller.settingDouble('weak_cn0_threshold', fallback: 20).toStringAsFixed(1)} dB-Hz, gut ≥ ${controller.settingDouble('good_cn0_threshold', fallback: 30).toStringAsFixed(1)} dB-Hz',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+          if (stale) ...[
+            _staleDataNotice(context, state, stateName: 'State2'),
+            const SizedBox(height: 12),
+          ],
+          Opacity(
+            opacity: stale ? 0.55 : 1,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _metricTile(
+                      context,
+                      'Verfügbar',
+                      _boolText(state['available']),
+                      accent: !stale && _boolNullable(state['available']) == true,
+                      warning: _boolNullable(state['available']) == false,
+                    ),
+                    _metricTile(context, 'Quality Class', _text(state['quality_class'], fallback: '-'), accent: !stale && _qualityGood(state['quality_class'])),
+                    _metricTile(context, 'Sichtbar', _fmt(state['visible_count'] ?? state['visible'])),
+                    _metricTile(context, 'Verwendet', _fmt(state['used_count'] ?? state['used']), accent: !stale && _int(state['used_count'] ?? state['used']) > 0),
+                    _metricTile(context, 'Ø C/N0', '${_fmt(state['avg_cn0'])} dB-Hz', accent: !stale && _double(state['avg_cn0']) >= 30),
+                    _metricTile(context, 'Min C/N0', '${_fmt(state['min_cn0'])} dB-Hz'),
+                    _metricTile(context, 'Max C/N0', '${_fmt(state['max_cn0'])} dB-Hz'),
+                    _metricTile(context, 'Schwach', _fmt(state['weak_count']), warning: !stale && _int(state['weak_count']) > 0),
+                    _metricTile(context, 'Gut', _fmt(state['good_count']), accent: !stale && _int(state['good_count']) > 0),
+                    _metricTile(context, 'RTK', _text(state['rtk_state'], fallback: '-'), accent: !stale && _text(state['rtk_state']).toLowerCase() == 'fixed'),
+                    _metricTile(context, 'LL GPS Genauigkeit', _metersText(state['ll_gps_accuracy_m'] ?? state['ll_gps_position_accuracy_m'])),
+                    _metricTile(context, 'XB Pose Genauigkeit', _metersText(state['xb_pose_accuracy_m'])),
+                    _metricTile(context, 'Orientierung', _boolText(state['orientation_valid']), accent: !stale && _boolNullable(state['orientation_valid']) == true, warning: !stale && _boolNullable(state['orientation_valid']) == false),
+                    _metricTile(context, 'Pose aktuell', _boolText(state['recent_absolute_pose']), accent: !stale && _boolNullable(state['recent_absolute_pose']) == true, warning: !stale && _boolNullable(state['recent_absolute_pose']) == false),
+                    _metricTile(context, 'GPS Timeout', _boolText(state['gps_timeout']), accent: !stale && _boolNullable(state['gps_timeout']) == false, warning: !stale && _boolNullable(state['gps_timeout']) == true),
+                    _metricTile(
+                      context,
+                      'Quelldaten-Alter',
+                      _millisecondsText(state['age_ms']),
+                      warning: stale || _boolNullable(state['stale']) == true,
+                      accent: !stale && _boolNullable(state['stale']) == false,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text('Systemverteilung', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                if (systems is Map && systems.isNotEmpty)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: systems.entries.map<Widget>((entry) => Chip(label: Text(_systemChipText(entry.key.toString(), entry.value)))).toList(growable: false),
+                  )
+                else
+                  Text('Keine Systemverteilung empfangen.', style: Theme.of(context).textTheme.bodySmall),
+                _buildDiagnosticSummary(context, state),
+                _buildDriveDiagnosticsSection(context, state),
+                const SizedBox(height: 10),
+                Text(
+                  'Schwellen: schwach < ${controller.settingDouble('weak_cn0_threshold', fallback: 20).toStringAsFixed(1)} dB-Hz, gut ≥ ${controller.settingDouble('good_cn0_threshold', fallback: 30).toStringAsFixed(1)} dB-Hz',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -246,13 +269,30 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     final state = controller.state3;
     final satellites = controller.satellitesForState(3);
     final usedCount = state['used_count'] ?? satellites.length;
+    final stale = _statePayloadIsStale(state);
     return _sectionCard(
       context,
       icon: Icons.hub_outlined,
       title: 'Aktiv verwendete Satelliten (State3)',
-      subtitle: satellites.isEmpty ? 'Noch keine verwendeten Satelliten empfangen' : 'Verwendet laut Payload: ${_fmt(usedCount)}',
+      subtitle: satellites.isEmpty
+          ? 'Noch keine verwendeten Satelliten empfangen'
+          : stale
+              ? 'Satellitendaten veraltet - neue NAV-SAT-Daten werden erwartet'
+              : 'Verwendet laut Payload: ${_fmt(usedCount)}',
       initiallyExpanded: true,
-      child: _satelliteTable(context, satellites, showUsed: false),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (stale) ...[
+            _staleDataNotice(context, state, stateName: 'State3'),
+            const SizedBox(height: 12),
+          ],
+          Opacity(
+            opacity: stale ? 0.55 : 1,
+            child: _satelliteTable(context, satellites, showUsed: false),
+          ),
+        ],
+      ),
     );
   }
 
@@ -260,12 +300,17 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     final state = controller.state4;
     final satellites = controller.satellitesForState(4);
     final active = controller.state4Active;
+    final stale = _statePayloadIsStale(state);
     return _sectionCard(
       context,
       icon: Icons.satellite_outlined,
       title: 'Expertenliste aller sichtbaren Satelliten (State4)',
-      subtitle: active ? 'Aktiv - vollständige Satellitenliste' : 'Deaktiviert - nur bei Diagnose aktivieren',
-      active: active,
+      subtitle: stale
+          ? 'Daten veraltet - neue NAV-SAT-Daten werden erwartet'
+          : active
+              ? 'Aktiv - vollständige Satellitenliste'
+              : 'Deaktiviert - nur bei Diagnose aktivieren',
+      active: active && !stale,
       initiallyExpanded: active,
       trailing: active
           ? TextButton.icon(
@@ -303,25 +348,37 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
               ],
             ),
           ),
-          if (state.isNotEmpty) ...[
+          if (stale) ...[
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            _staleDataNotice(context, state, stateName: 'State4'),
+          ],
+          Opacity(
+            opacity: stale ? 0.55 : 1,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _metricTile(context, 'Sichtbar', _fmt(state['visible_count'] ?? satellites.length)),
-                _metricTile(context, 'Verwendet', _fmt(state['used_count']), accent: _int(state['used_count']) > 0),
-                _metricTile(context, 'Ø C/N0', '${_fmt(state['avg_cn0'])} dB-Hz'),
-                _metricTile(context, 'Min C/N0', '${_fmt(state['min_cn0'])} dB-Hz'),
-                _metricTile(context, 'Max C/N0', '${_fmt(state['max_cn0'])} dB-Hz'),
-                _metricTile(context, 'Sensor-Zeit', _text(state['sensor_stamp'], fallback: '-')),
+                if (state.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _metricTile(context, 'Sichtbar', _fmt(state['visible_count'] ?? satellites.length)),
+                      _metricTile(context, 'Verwendet', _fmt(state['used_count']), accent: !stale && _int(state['used_count']) > 0),
+                      _metricTile(context, 'Ø C/N0', '${_fmt(state['avg_cn0'])} dB-Hz'),
+                      _metricTile(context, 'Min C/N0', '${_fmt(state['min_cn0'])} dB-Hz'),
+                      _metricTile(context, 'Max C/N0', '${_fmt(state['max_cn0'])} dB-Hz'),
+                      _metricTile(context, 'Sensor-Zeit', _text(state['sensor_stamp'], fallback: '-')),
+                    ],
+                  ),
+                ],
+                if (satellites.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _satelliteTable(context, satellites, showUsed: true),
+                ],
               ],
             ),
-          ],
-          if (satellites.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            _satelliteTable(context, satellites, showUsed: true),
-          ],
+          ),
         ],
       ),
     );
@@ -552,100 +609,110 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
 
   Widget _buildRestartSection(BuildContext context) {
     final status = controller.restartStatusPayload;
+    final last = controller.restartLastPayload;
     final validation = controller.restartValidationPayload;
+    final controlsDisabled = controller.restartControlsDisabled;
     final waiting = controller.waitingForResponse.value;
     return _sectionCard(
       context,
       icon: Icons.restart_alt,
-      title: 'F9P-Neustart unter gps_state',
-      subtitle: status.isEmpty ? 'MQTT-Befehl an gps_state/restart/set/json' : 'Letzter Status: ${_text(status['status'], fallback: '-')}',
-      initiallyExpanded: status.isNotEmpty || validation.isNotEmpty,
+      title: 'F9P-Neustart und Recovery',
+      subtitle: status.isEmpty
+          ? 'Neustart auslösen und Wiederherstellung von NAV-PVT/NAV-SAT prüfen'
+          : 'Aktueller Zustand: ${_restartStatusLabel(_text(status['status']))}',
+      active: _text(status['status']).toLowerCase() == 'success',
+      initiallyExpanded: status.isNotEmpty || last.isNotEmpty || validation.isNotEmpty,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Der Neustart wird als JSON-Befehl gesendet. Standard ist reset_mode=controlled_software; ein späterer GNSS-Fix wird nicht durch ein ACK bestätigt.',
+            'Ein Neustart gilt erst als erfolgreich, wenn nach UBX-CFG-RST sowohl neue NAV-PVT- als auch neue NAV-SAT-Daten empfangen und die Empfängerausgaben bestätigt wurden.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
           ),
           const SizedBox(height: 12),
+          Text('Neustart auslösen', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 10,
             runSpacing: 10,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               SizedBox(
-                width: 250,
+                width: 270,
                 child: DropdownButtonFormField<String>(
                   key: ValueKey('restart-reset-${controller.restartResetMode.value}'),
                   initialValue: controller.restartResetMode.value,
                   decoration: const InputDecoration(
-                    labelText: 'Reset-Mode',
+                    labelText: 'Reset-Modus',
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
                   items: GpsStateController.restartResetModes
                       .map((mode) => DropdownMenuItem<String>(value: mode, child: Text(_restartResetModeLabel(mode))))
                       .toList(growable: false),
-                  onChanged: waiting ? null : (value) {
+                  onChanged: controlsDisabled ? null : (value) {
                     if (value != null) controller.restartResetMode.value = value;
                   },
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: waiting ? null : () => controller.restartF9p('hot_start', resetMode: controller.restartResetMode.value),
+                onPressed: controlsDisabled ? null : () => controller.restartF9p('hot_start', resetMode: controller.restartResetMode.value),
                 icon: const Icon(Icons.flash_on),
                 label: const Text('Hot Start'),
               ),
               ElevatedButton.icon(
-                onPressed: waiting ? null : () => controller.restartF9p('warm_start', resetMode: controller.restartResetMode.value),
+                onPressed: controlsDisabled ? null : () => controller.restartF9p('warm_start', resetMode: controller.restartResetMode.value),
                 icon: const Icon(Icons.thermostat),
                 label: const Text('Warm Start'),
               ),
               OutlinedButton.icon(
-                onPressed: waiting ? null : () => controller.restartF9p('cold_start', resetMode: controller.restartResetMode.value),
+                onPressed: controlsDisabled ? null : () => controller.restartF9p('cold_start', resetMode: controller.restartResetMode.value),
                 icon: const Icon(Icons.ac_unit),
                 label: const Text('Cold Start'),
               ),
               OutlinedButton.icon(
                 onPressed: waiting ? null : controller.requestRestartStatus,
-                icon: const Icon(Icons.refresh),
+                icon: waiting
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh),
                 label: const Text('Restart-Status neu laden'),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          if (status.isNotEmpty) ...[
-            Text('Letzter Neustartstatus', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+          if (controller.restartInProgress) ...[
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _compactStatusChip(context, 'Status', _text(status['status'], fallback: '-'), accent: _restartStatusOk(status), warning: _restartStatusRejected(status)),
-                _compactStatusChip(context, 'Akzeptiert', _boolText(status['accepted']), accent: _boolNullable(status['accepted']) == true, warning: _boolNullable(status['accepted']) == false),
-                _compactStatusChip(context, 'Mode', _text(status['mode'], fallback: '-')),
-                _compactStatusChip(context, 'Reset', _text(status['reset_mode'], fallback: '-')),
-                _compactStatusChip(context, 'navBbrMask', _fmt(status['nav_bbr_mask'])),
-                _compactStatusChip(context, 'resetMode', _fmt(status['reset_mode_value'])),
-                _compactStatusChip(context, 'Quelle', _text(status['source'], fallback: '-')),
-              ],
+            Text(
+              'Während der Recovery sind weitere Neustarts gesperrt.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.orange.shade800),
             ),
-            if (_text(status['reason']).isNotEmpty) ...[
-              const SizedBox(height: 8),
-              _messageBox(context, 'Grund', _text(status['reason'])),
-            ],
+          ],
+          const SizedBox(height: 16),
+          _buildRestartStatusPanel(
+            context,
+            title: 'Aktueller Recovery-Ablauf',
+            payload: status,
+            live: true,
+          ),
+          if (last.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _buildRestartStatusPanel(
+              context,
+              title: 'Letzter abgeschlossener Neustart',
+              payload: last,
+              live: false,
+            ),
           ],
           if (validation.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text('Letzte Validierung', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 14),
+            Text('Letzte Befehlsvalidierung', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
                 _compactStatusChip(context, 'Gültig', _boolText(validation['valid'] ?? validation['accepted']), accent: _boolNullable(validation['valid'] ?? validation['accepted']) == true, warning: _boolNullable(validation['valid'] ?? validation['accepted']) == false),
-                _compactStatusChip(context, 'Mode', _text(validation['mode'], fallback: '-')),
-                _compactStatusChip(context, 'Reset', _text(validation['reset_mode'], fallback: '-')),
+                _compactStatusChip(context, 'Startart', _restartModeLabel(_text(validation['mode'], fallback: '-'))),
+                _compactStatusChip(context, 'Reset-Modus', _text(validation['reset_mode'], fallback: '-')),
               ],
             ),
             if (_text(validation['reason'] ?? validation['error'] ?? validation['message']).isNotEmpty) ...[
@@ -653,6 +720,156 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
               _messageBox(context, 'Validierungsantwort', _text(validation['reason'] ?? validation['error'] ?? validation['message'])),
             ],
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRestartStatusPanel(
+    BuildContext context, {
+    required String title,
+    required Map<String, dynamic> payload,
+    required bool live,
+  }) {
+    final theme = Theme.of(context);
+    final status = _text(payload['status']).toLowerCase();
+    final statusColor = _restartStatusColor(status, theme);
+    final statusLabel = payload.isEmpty ? 'Kein Neustart aktiv' : _restartStatusLabel(status);
+    final inProgress = status == 'resetting' || status == 'waiting_for_receiver' || status == 'validating';
+    final failed = status == 'failed' || status == 'error' || status == 'rejected' || status == 'send_failed';
+    final requestState = payload.isEmpty
+        ? null
+        : failed && (status == 'rejected' || status == 'send_failed')
+            ? false
+            : true;
+    final resetState = payload.isEmpty || status == 'sent' || status == 'requested' || status == 'accepted'
+        ? null
+        : failed && status == 'send_failed'
+            ? false
+            : true;
+    bool? navPvtState = _boolNullable(payload['nav_pvt_received']);
+    bool? navSatState = _boolNullable(payload['nav_sat_received']);
+    bool? confirmedState = _boolNullable(payload['receiver_restart_confirmed']);
+    final reason = _text(payload['reason']);
+    if (failed && navPvtState == null && reason == 'nav_pvt_not_received_after_reset') navPvtState = false;
+    if (failed && navSatState == null && reason == 'nav_sat_not_received_after_reset') navSatState = false;
+    if (status == 'success') {
+      navPvtState ??= true;
+      navSatState ??= true;
+      confirmedState ??= true;
+    } else if (failed) {
+      confirmedState ??= false;
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: statusColor.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: statusColor.withValues(alpha: 0.30)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(_restartStatusIcon(status), color: statusColor),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(statusLabel, style: theme.textTheme.bodyMedium?.copyWith(color: statusColor, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+              if (payload['restart_sequence'] != null)
+                _compactStatusChip(context, 'Restart', '#${_fmt(payload['restart_sequence'])}', accent: status == 'success', warning: failed),
+            ],
+          ),
+          if (inProgress) ...[
+            const SizedBox(height: 10),
+            LinearProgressIndicator(color: statusColor),
+          ],
+          const SizedBox(height: 12),
+          _restartCheckRow(context, 'Restart-Anforderung empfangen', requestState),
+          _restartCheckRow(context, 'F9P-Reset ausgeführt', resetState),
+          _restartCheckRow(context, 'Neue NAV-PVT-Daten empfangen', navPvtState),
+          _restartCheckRow(context, 'Neue NAV-SAT-Daten empfangen', navSatState),
+          _restartCheckRow(context, 'Receiver-Neustart bestätigt', confirmedState),
+          if (payload.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _compactStatusChip(context, 'Startart', _restartModeLabel(_text(payload['mode'], fallback: '-'))),
+                _compactStatusChip(context, 'Reset-Modus', _text(payload['reset_mode'], fallback: '-')),
+                _compactStatusChip(context, 'Angefordert', _restartTimestampText(payload['requested_at'])),
+                _compactStatusChip(context, 'Abgeschlossen', _restartTimestampText(payload['completed_at'])),
+                _compactStatusChip(context, live && inProgress ? 'Laufzeit' : 'Dauer', _restartDurationText(payload, includeRunning: live && inProgress)),
+              ],
+            ),
+          ],
+          if (reason.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _messageBox(
+              context,
+              'Ergebnis / Fehlergrund',
+              '${_restartReasonLabel(reason)}\nTechnischer Wert: $reason',
+            ),
+          ],
+          if (payload.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              title: Text('Technische Details', style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700)),
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _compactStatusChip(context, 'Statuscode', _text(payload['status'], fallback: '-')),
+                      _compactStatusChip(context, 'navBbrMask', _fmt(payload['nav_bbr_mask'])),
+                      _compactStatusChip(context, 'resetMode-Wert', _fmt(payload['reset_mode_value'])),
+                      _compactStatusChip(context, 'Quelle', _text(payload['source'], fallback: '-')),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _restartCheckRow(BuildContext context, String label, bool? state) {
+    final theme = Theme.of(context);
+    final color = state == true
+        ? Colors.green.shade700
+        : state == false
+            ? Colors.red.shade700
+            : theme.hintColor;
+    final icon = state == true
+        ? Icons.check_circle
+        : state == false
+            ? Icons.cancel
+            : Icons.radio_button_unchecked;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Icon(icon, size: 19, color: color),
+          const SizedBox(width: 8),
+          Expanded(child: Text(label, style: theme.textTheme.bodySmall?.copyWith(color: color, fontWeight: state == null ? FontWeight.normal : FontWeight.w600))),
         ],
       ),
     );
@@ -1737,15 +1954,178 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     return mode;
   }
 
-  bool _restartStatusOk(Map<String, dynamic> status) {
-    final text = _text(status['status']).toLowerCase();
-    return text == 'sent' || text == 'requested' || text == 'ok' || text == 'accepted';
+  String _restartModeLabel(String mode) {
+    switch (mode.trim().toLowerCase()) {
+      case 'hot_start':
+        return 'Hot Start';
+      case 'warm_start':
+        return 'Warm Start';
+      case 'cold_start':
+        return 'Cold Start';
+    }
+    return mode;
   }
 
-  bool _restartStatusRejected(Map<String, dynamic> status) {
-    final text = _text(status['status']).toLowerCase();
-    return text == 'rejected' || text == 'send_failed' || text == 'failed' || text == 'error';
+  String _restartStatusLabel(String status) {
+    switch (status.trim().toLowerCase()) {
+      case 'sent':
+      case 'requested':
+      case 'accepted':
+        return 'Neustart wurde angefordert';
+      case 'resetting':
+        return 'Reset wird ausgeführt';
+      case 'waiting_for_receiver':
+        return 'Warten auf den GPS-Empfänger';
+      case 'validating':
+        return 'Empfängerausgaben werden geprüft';
+      case 'success':
+      case 'ok':
+        return 'F9P-Neustart erfolgreich bestätigt';
+      case 'failed':
+      case 'error':
+      case 'send_failed':
+        return 'F9P-Neustart fehlgeschlagen';
+      case 'rejected':
+        return 'F9P-Neustartbefehl abgelehnt';
+      case '':
+        return 'Kein Neustart aktiv';
+    }
+    return status;
   }
+
+  Color _restartStatusColor(String status, ThemeData theme) {
+    switch (status.trim().toLowerCase()) {
+      case 'success':
+      case 'ok':
+        return Colors.green.shade700;
+      case 'failed':
+      case 'error':
+      case 'send_failed':
+      case 'rejected':
+        return Colors.red.shade700;
+      case 'resetting':
+      case 'waiting_for_receiver':
+        return Colors.orange.shade800;
+      case 'validating':
+        return Colors.blue.shade700;
+      case 'sent':
+      case 'requested':
+      case 'accepted':
+        return Colors.blueGrey.shade700;
+    }
+    return theme.hintColor;
+  }
+
+  IconData _restartStatusIcon(String status) {
+    switch (status.trim().toLowerCase()) {
+      case 'success':
+      case 'ok':
+        return Icons.check_circle_outline;
+      case 'failed':
+      case 'error':
+      case 'send_failed':
+      case 'rejected':
+        return Icons.error_outline;
+      case 'resetting':
+        return Icons.restart_alt;
+      case 'waiting_for_receiver':
+        return Icons.hourglass_top;
+      case 'validating':
+        return Icons.fact_check_outlined;
+    }
+    return Icons.info_outline;
+  }
+
+  String _restartReasonLabel(String reason) {
+    switch (reason.trim().toLowerCase()) {
+      case 'receiver_outputs_restored':
+        return 'Empfängerausgaben wurden erfolgreich wiederhergestellt.';
+      case 'nav_pvt_not_received_after_reset':
+        return 'Nach dem Reset wurden keine neuen Positionsdaten (NAV-PVT) empfangen.';
+      case 'nav_sat_not_received_after_reset':
+        return 'Nach dem Reset wurden keine neuen Satellitendaten (NAV-SAT) empfangen.';
+      case 'restart_command_rejected':
+        return 'Der Neustartbefehl wurde vom Backend abgelehnt.';
+      case 'restart_command_send_failed':
+        return 'Der Neustartbefehl konnte nicht an den Empfänger gesendet werden.';
+    }
+    return reason;
+  }
+
+  bool _statePayloadIsStale(Map<String, dynamic> state) {
+    if (state.isEmpty) return false;
+    final status = _text(state['status']).trim().toLowerCase();
+    final explicitlyUnavailable = state.containsKey('available') && _boolNullable(state['available']) == false;
+    return _boolNullable(state['stale']) == true || status == 'stale' || explicitlyUnavailable;
+  }
+
+  Widget _staleDataNotice(BuildContext context, Map<String, dynamic> state, {required String stateName}) {
+    final age = _millisecondsText(state['age_ms']);
+    final severity = state['severity'];
+    final details = <String>[
+      'Die angezeigten Werte stammen aus einem älteren Stand und werden nicht als aktuelle Freigabe oder Qualitätsaussage gewertet.',
+      if (age != '-') 'Quelldaten-Alter: $age.',
+      if (severity != null) 'Severity: ${_fmt(severity)}.',
+    ];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.32)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_outlined, color: Colors.orange.shade800),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('$stateName: Daten nach GPS-Neustart noch nicht aktualisiert', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700, color: Colors.orange.shade900)),
+                const SizedBox(height: 3),
+                Text(details.join(' '), style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  DateTime? _restartDateTime(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value.toLocal();
+    final numeric = value is num ? value.toDouble() : double.tryParse(value.toString().trim());
+    if (numeric != null) {
+      final milliseconds = numeric.abs() >= 100000000000
+          ? numeric.round()
+          : (numeric * 1000).round();
+      return DateTime.fromMillisecondsSinceEpoch(milliseconds, isUtc: true).toLocal();
+    }
+    return DateTime.tryParse(value.toString())?.toLocal();
+  }
+
+  String _restartTimestampText(dynamic value) {
+    final date = _restartDateTime(value);
+    if (date == null) return '-';
+    return '${_twoDigits(date.day)}.${_twoDigits(date.month)}.${date.year}, ${_twoDigits(date.hour)}:${_twoDigits(date.minute)}:${_twoDigits(date.second)}';
+  }
+
+  String _restartDurationText(Map<String, dynamic> payload, {bool includeRunning = false}) {
+    final requested = _restartDateTime(payload['requested_at']);
+    final completed = _restartDateTime(payload['completed_at']);
+    if (requested == null) return '-';
+    final end = completed ?? (includeRunning ? DateTime.now() : null);
+    if (end == null || end.isBefore(requested)) return '-';
+    final milliseconds = end.difference(requested).inMilliseconds;
+    if (milliseconds < 1000) return '$milliseconds ms';
+    return '${(milliseconds / 1000).toStringAsFixed(1)} s';
+  }
+
+  String _twoDigits(int value) => value.toString().padLeft(2, '0');
 
   String _metersText(dynamic value) {
     if (value == null || value.toString().trim().isEmpty || value.toString().trim().toLowerCase() == 'null') return '-';

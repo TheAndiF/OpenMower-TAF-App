@@ -1,0 +1,22 @@
+BL_Add F9P restart recovery status UI
+Date: 2026-07-13
+
+Summary:
+- Added retained last-restart MQTT handling for gps_state/restart/last/json.
+- Added a live F9P recovery progress view for resetting, waiting_for_receiver, validating, success, and failed.
+- Added NAV-PVT and NAV-SAT confirmation, receiver restart confirmation, sequence, timestamps, duration, and translated failure reasons.
+- Disabled restart controls while receiver recovery is in progress.
+- Marked stale GPS State2-State4 values as outdated and visually de-emphasized them.
+- Included the last restart payload in the GPS diagnostic JSON export.
+- Updated the user guide, MQTT documentation, and change documentation.
+
+Changed files:
+- lib/controllers/gps_state_controller.dart
+- lib/io/mqtt_connection.dart
+- lib/screens/gps_state.dart
+- docs/bedienungsanleitung.md
+- docs/mqtt-schnittstelle.md
+- _Dokumentation/2026-07-13 - OpenMower-TAF-App - Aenderungsdokumentation - F9P Restart Recovery Anzeige - v0.11.docx
+- _Dokumentation/2026-07-13 - OpenMower-TAF-App - Aenderungsdokumentation - F9P Restart Recovery Anzeige - v0.11.pdf
+- _Dokumentation/2026-07-13 - OpenMower-TAF-App - Patch - F9P Restart Recovery Anzeige - v0.11.patch
+- commit_message_f9p_restart_recovery_ui_v0.11.txt

@@ -167,6 +167,7 @@ class MqttConnection  {
   static const String gpsStateSetPersistentJsonTopic = "gps_state/settings/set/persistent/json";
   static const String gpsStateRestartSetJsonTopic = "gps_state/restart/set/json";
   static const String gpsStateRestartStatusJsonTopic = "gps_state/restart/status/json";
+  static const String gpsStateRestartLastJsonTopic = "gps_state/restart/last/json";
   static const String gpsStateRestartValidationJsonTopic = "gps_state/restart/validation/json";
   static const String gpsStateRestartRenewJsonTopic = "gps_state/restart/set/renew/json";
 
@@ -713,6 +714,25 @@ class MqttConnection  {
       gpsStateController.setRestartStatus(map, topic: gpsStateRestartStatusJsonTopic);
     } catch (e) {
       gpsStateController.setError("F9P-Neustartstatus konnte nicht gelesen werden: $e", topic: gpsStateRestartStatusJsonTopic);
+    }
+  }
+
+  void parseGpsRestartLast(MqttPublishMessage payload) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) {
+        gpsStateController.setError(
+          "Leere oder ungültige Nachricht zum letzten F9P-Neustart empfangen.",
+          topic: gpsStateRestartLastJsonTopic,
+        );
+        return;
+      }
+      gpsStateController.setRestartLast(map, topic: gpsStateRestartLastJsonTopic);
+    } catch (e) {
+      gpsStateController.setError(
+        "Letzter F9P-Neustartstatus konnte nicht gelesen werden: $e",
+        topic: gpsStateRestartLastJsonTopic,
+      );
     }
   }
 
@@ -1983,6 +2003,10 @@ class MqttConnection  {
               parseGpsRestartStatus(payload);
             }
             break;
+            case gpsStateRestartLastJsonTopic: {
+              parseGpsRestartLast(payload);
+            }
+            break;
             case gpsStateRestartValidationJsonTopic: {
               parseGpsRestartValidation(payload);
             }
@@ -2105,6 +2129,7 @@ class MqttConnection  {
     client.subscribe(gpsStateSettingsJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(gpsStateValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(gpsStateRestartStatusJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(gpsStateRestartLastJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(gpsStateRestartValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(mapOverlayJsonTopic, MqttQos.atMostOnce);
     client.subscribe(mapMowingProgressJsonTopic, MqttQos.atMostOnce);
