@@ -1,0 +1,13 @@
+BL_Restore GPS state builder methods
+Date: 2026-07-14
+
+Summary:
+- Restored GPS logging, settings, raw JSON, diagnostic summary, and drive diagnostics builder methods removed during the previous GPS State UI refactor.
+- Preserved the revised drive-readiness header, first-blocker presentation, process line, icon-only results, and display of available decision values.
+- Fixed the amd64 and arm64 Flutter web compilation errors reported in logs_79407525449.zip.
+
+Changed files:
+- lib/screens/gps_state.dart
+- _Dokumentation/2026-07-14 - OpenMower-TAF-App - Änderungsdokumentation - GPS-State Buildfehler Korrektur - v0.4.docx
+- _Dokumentation/2026-07-14 - OpenMower-TAF-App - Änderungsdokumentation - GPS-State Buildfehler Korrektur - v0.4.pdf
+- _Dokumentation/2026-07-14 - OpenMower-TAF-App - Commit-Notiz - GPS-State Buildfehler Korrektur - v0.4.txt
