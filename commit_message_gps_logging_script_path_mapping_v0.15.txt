@@ -1,0 +1,16 @@
+BL_Fix GPS logging script path field mapping
+Date: 2026-07-14
+
+Summary:
+- Added a dedicated migration action that updates only logging_script_path.
+- Kept logging_output_path, logging_ram_path, and logging_container_name unchanged during migration.
+- Added stable field-specific widget keys to prevent text field state from moving between logging settings.
+- Added an explicit canonical-path hint to the script path field.
+- Added PDF and DOCX change documentation.
+
+Changed files:
+- lib/controllers/gps_state_controller.dart
+- lib/screens/gps_state.dart
+- _Dokumentation/2026-07-14 - OpenMower-TAF-App - Änderungsdokumentation - GPS-Logging Skriptpfad-Feldzuordnung - v0.15.docx
+- _Dokumentation/2026-07-14 - OpenMower-TAF-App - Änderungsdokumentation - GPS-Logging Skriptpfad-Feldzuordnung - v0.15.pdf
+- commit_message_gps_logging_script_path_mapping_v0.15.txt

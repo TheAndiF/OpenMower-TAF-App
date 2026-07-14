@@ -1314,10 +1314,36 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
         ],
         if (controller.hasLegacyLoggingScriptPath) ...[
           const SizedBox(height: 12),
-          _messageBox(
-            context,
-            'Migration des Skriptpfads erforderlich',
-            'Aktiv oder gespeichert ist noch ${GpsStateController.legacyLoggingScriptPath}. Setze den Wert bewusst auf ${GpsStateController.canonicalLoggingScriptPath}, wende ihn zunächst für die Session an und speichere ihn anschließend dauerhaft.',
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border.all(color: theme.colorScheme.error.withValues(alpha: 0.45)),
+              borderRadius: BorderRadius.circular(6),
+              color: theme.colorScheme.error.withValues(alpha: 0.04),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Migration des Skriptpfads erforderlich',
+                  style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Aktiv oder gespeichert ist noch ${GpsStateController.legacyLoggingScriptPath}. Die automatische Vorbereitung ändert ausschließlich logging_script_path; Ziel- und RAM-Pfad bleiben unverändert.',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: settingsBusy || !controller.hasSetting('logging_script_path')
+                      ? null
+                      : controller.prepareLoggingScriptPathMigration,
+                  icon: const Icon(Icons.drive_file_move_outline),
+                  label: const Text('Neuen Skriptpfad vorbereiten'),
+                ),
+              ],
+            ),
           ),
         ],
         if (settingsController.expertModeEnabled.value) ...[
@@ -1504,9 +1530,11 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
   }) {
     final theme = Theme.of(context);
     final value = _text(controller.settingValue(keyName));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
+    return KeyedSubtree(
+      key: ValueKey('logging_field_$keyName'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
         Text(
           controller.labelFor(keyName),
           style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
@@ -1532,9 +1560,17 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
             newValue.trim().isEmpty ? '' : newValue.trim(),
           ),
         ),
+        if (keyName == 'logging_script_path' && controller.hasLegacyLoggingScriptPath) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Neuer Backend-Standard: ${GpsStateController.canonicalLoggingScriptPath}',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+          ),
+        ],
         const SizedBox(height: 6),
         _loggingSettingValues(context, keyName, (raw) => raw.isEmpty ? '-' : raw),
-      ],
+        ],
+      ),
     );
   }
 

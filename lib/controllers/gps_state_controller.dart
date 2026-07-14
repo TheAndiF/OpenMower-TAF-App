@@ -600,6 +600,28 @@ class GpsStateController extends GetxController {
     );
   }
 
+  /// Prepares the one-time migration without touching any other logging field.
+  /// This deliberately writes only `logging_script_path`, so the output and
+  /// RAM directories cannot accidentally receive the script path.
+  void prepareLoggingScriptPathMigration() {
+    if (!hasSetting('logging_script_path')) {
+      lastStatusOk.value = false;
+      lastStatus.value =
+          'Der Backendwert logging_script_path ist noch nicht verfügbar.';
+      lastTopic.value = 'local/error';
+      lastUpdated.value = DateTime.now();
+      return;
+    }
+
+    setDraftValue('logging_script_path', canonicalLoggingScriptPath);
+    editorRevision.value++;
+    lastStatusOk.value = null;
+    lastStatus.value =
+        'Der neue Logging-Skriptpfad wurde ausschließlich im Feld „Logging-Skriptpfad“ vorbereitet. Bitte zuerst „Jetzt anwenden“ und danach „Dauerhaft speichern“ verwenden.';
+    lastTopic.value = 'local/migration';
+    lastUpdated.value = DateTime.now();
+  }
+
   void applySession() {
     _publishDraft(persistent: false);
   }
