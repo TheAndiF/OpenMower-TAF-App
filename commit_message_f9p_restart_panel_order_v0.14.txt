@@ -1,0 +1,10 @@
+BL_Reorder and compact F9P restart panels
+Date: 2026-07-14
+Summary:
+- Moved the last completed F9P restart summary above the current recovery flow.
+- Added a compact summary layout for the last completed restart.
+- Kept detailed status and failure information available in an expandable details section.
+- Preserved the existing full live presentation for the current recovery flow.
+Changed files:
+- lib/screens/gps_state.dart
+- commit_message_f9p_restart_panel_order_v0.14.txt
