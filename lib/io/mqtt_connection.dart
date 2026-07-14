@@ -150,16 +150,18 @@ class MqttConnection  {
   static const String sensorSettingsSetPersistentJsonTopic = "sensors/settings/set/persistent/json";
   static const String sensorSettingsValidationJsonTopic = "sensors/settings/validation/json";
 
-  static const String gpsState0DefinitionTopic = "gps_state/state0/definition";
-  static const String gpsState0StatusTopic = "gps_state/state0/status";
   static const String gpsState1DefinitionTopic = "gps_state/state1/definition";
   static const String gpsState1StatusTopic = "gps_state/state1/status";
   static const String gpsState2DefinitionTopic = "gps_state/state2/definition";
   static const String gpsState2StatusTopic = "gps_state/state2/status";
+  static const String gpsState2SatellitesTopic = "gps_state/state2/satellites";
+  static const String gpsState2RequestTopic = "gps_state/state2/request";
   static const String gpsState3DefinitionTopic = "gps_state/state3/definition";
   static const String gpsState3StatusTopic = "gps_state/state3/status";
+  static const String gpsState3RequestTopic = "gps_state/state3/request";
   static const String gpsState4DefinitionTopic = "gps_state/state4/definition";
   static const String gpsState4StatusTopic = "gps_state/state4/status";
+  static const String gpsState4RequestTopic = "gps_state/state4/request";
   static const String gpsStateSettingsJsonTopic = "gps_state/settings/json";
   static const String gpsStateValidationJsonTopic = "gps_state/settings/validation/json";
   static const String gpsStateRenewJsonTopic = "gps_state/set/renew/json";
@@ -689,6 +691,19 @@ class MqttConnection  {
     }
   }
 
+  void parseGpsStateSatellites(MqttPublishMessage payload, {required String topic}) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) {
+        gpsStateController.setError("Leere oder ungültige State2-Satellitenliste empfangen.", topic: topic);
+        return;
+      }
+      gpsStateController.setState2Satellites(map, topic: topic);
+    } catch (e) {
+      gpsStateController.setError("State2-Satellitenliste konnte nicht gelesen werden: $e", topic: topic);
+    }
+  }
+
   void parseGpsStateSettings(MqttPublishMessage payload) {
     try {
       final map = _decodeMap(payload);
@@ -1000,20 +1015,19 @@ class MqttConnection  {
     }
   }
 
-  /// Requests a State0 live snapshot through the shared GPS-State v3 command.
-  void requestGpsState0Snapshot() {
-    final payload = <String, dynamic>{
-      'states': <int>[0],
-      'parts': <String>['status'],
+  void publishGpsStateRequest(int state, Map<String, dynamic> payload) {
+    final topic = switch (state) {
+      1 => 'gps_state/state1/request',
+      2 => gpsState2RequestTopic,
+      3 => gpsState3RequestTopic,
+      4 => gpsState4RequestTopic,
+      _ => throw ArgumentError.value(state, 'state', 'Nur state1 bis state4 sind kanonisch'),
     };
     try {
-      _publishJson(gpsStateRenewJsonTopic, payload);
-    } catch(e) {
-      debugPrint("error requesting gps state0 snapshot via mqtt");
-      gpsStateController.setError(
-        "State0-Aktualisierung konnte nicht gesendet werden.",
-        topic: gpsStateRenewJsonTopic,
-      );
+      _publishJson(topic, payload, qos: MqttQos.atLeastOnce);
+    } catch (e) {
+      debugPrint('error publishing GPS state request via mqtt');
+      gpsStateController.setError('GPS-State-Anforderung konnte nicht gesendet werden.', topic: topic);
     }
   }
 
@@ -1969,14 +1983,6 @@ class MqttConnection  {
             case gpsStateLoggingStatusJsonTopic: { parseGpsStateLoggingStatus(payload); } break;
             case gpsStateLoggingLastJsonTopic: { parseGpsStateLoggingLast(payload); } break;
             case gpsStateLoggingValidationJsonTopic: { parseGpsStateLoggingValidation(payload); } break;
-            case gpsState0DefinitionTopic: {
-              parseGpsState(0, payload, topic: gpsState0DefinitionTopic);
-            }
-            break;
-            case gpsState0StatusTopic: {
-              parseGpsState(0, payload, topic: gpsState0StatusTopic);
-            }
-            break;
             case gpsState1DefinitionTopic: {
               parseGpsState(1, payload, topic: gpsState1DefinitionTopic);
             }
@@ -1991,6 +1997,10 @@ class MqttConnection  {
             break;
             case gpsState2StatusTopic: {
               parseGpsState(2, payload, topic: gpsState2StatusTopic);
+            }
+            break;
+            case gpsState2SatellitesTopic: {
+              parseGpsStateSatellites(payload, topic: gpsState2SatellitesTopic);
             }
             break;
             case gpsState3DefinitionTopic: {
@@ -2136,12 +2146,11 @@ class MqttConnection  {
     // Mäh-Lastregelung wird ausschließlich über settings/mower_logic/... verarbeitet.
     client.subscribe(lowLevelPowerJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(lowLevelPowerValidationJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(gpsState0DefinitionTopic, MqttQos.atLeastOnce);
-    client.subscribe(gpsState0StatusTopic, MqttQos.atLeastOnce);
     client.subscribe(gpsState1DefinitionTopic, MqttQos.atLeastOnce);
     client.subscribe(gpsState1StatusTopic, MqttQos.atLeastOnce);
     client.subscribe(gpsState2DefinitionTopic, MqttQos.atLeastOnce);
     client.subscribe(gpsState2StatusTopic, MqttQos.atLeastOnce);
+    client.subscribe(gpsState2SatellitesTopic, MqttQos.atMostOnce);
     client.subscribe(gpsState3DefinitionTopic, MqttQos.atLeastOnce);
     client.subscribe(gpsState3StatusTopic, MqttQos.atMostOnce);
     client.subscribe(gpsState4DefinitionTopic, MqttQos.atLeastOnce);

@@ -1,0 +1,8 @@
+feat(gps-state): align app with canonical state1-state4 MQTT contract
+
+- remove legacy state0 MQTT topics and subscriptions
+- use state1 for drive readiness and the full decision chain
+- activate state2-state4 through renewable UI leases
+- process the separate state2 satellite payload
+- add hardware_after_shutdown and request IDs to restart commands
+- align logging commands and dynamic settings with the ROS contract

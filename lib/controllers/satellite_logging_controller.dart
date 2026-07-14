@@ -57,6 +57,8 @@ class SatelliteLoggingController extends GetxController {
   }
 
   void sendControl(Map<String, dynamic> payload) {
+    payload = Map<String, dynamic>.from(payload);
+    payload.putIfAbsent('request_id', () => 'app-${DateTime.now().millisecondsSinceEpoch}-log');
     commandPending.value = true;
     waitingForResponse.value = true;
     lastStatusOk.value = null;

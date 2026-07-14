@@ -8,7 +8,6 @@ class GpsStateController extends GetxController {
   static const List<String> settingKeys = <String>[
     'enabled',
     'publish_rate_hz',
-    'publish_state0',
     'publish_state1',
     'publish_state2',
     'publish_state3',
@@ -59,6 +58,7 @@ class GpsStateController extends GetxController {
     'controlled_software',
     'gnss_only',
     'hardware_watchdog',
+    'hardware_after_shutdown',
   ];
 
   final state0Definition = <String, dynamic>{}.obs;
@@ -101,6 +101,12 @@ class GpsStateController extends GetxController {
   final waitingForResponse = false.obs;
   final editorRevision = 0.obs;
   final restartResetMode = 'controlled_software'.obs;
+  final activeDetailStates = <int>{}.obs;
+  final state2Satellites = <String, dynamic>{}.obs;
+  final Map<int, Timer> _leaseTimers = <int, Timer>{};
+  static const int detailLeaseMs = 15000;
+  static const Map<int, int> detailIntervalsMs = <int, int>{2: 500, 3: 1000, 4: 1000};
+  final String requestClientId = 'app-${DateTime.now().millisecondsSinceEpoch}';
 
   final settingsReceivedAt = Rxn<DateTime>();
   final validationReceivedAt = Rxn<DateTime>();
@@ -135,8 +141,7 @@ class GpsStateController extends GetxController {
   bool get hasLoggingDrafts => loggingSettingKeys.any(dirtyKeys.contains);
   int get loggingDirtyCount =>
       loggingSettingKeys.where(dirtyKeys.contains).length;
-  bool get state0Active => settingBool('publish_state0', fallback: state0Definition.isNotEmpty || state0Status.isNotEmpty);
-  bool get state4Active => settingBool('publish_state4', fallback: state4.isNotEmpty);
+  bool get state4Active => activeDetailStates.contains(4);
   bool get hasRestartStatus =>
       restartStatusPayload.isNotEmpty || restartLastPayload.isNotEmpty || restartValidationPayload.isNotEmpty;
 
@@ -164,7 +169,7 @@ class GpsStateController extends GetxController {
   /// intentionally remain separate actions.
   Map<String, dynamic> buildDebugExport() {
     final states = <String, dynamic>{};
-    for (var stateNumber = 0; stateNumber <= 4; stateNumber++) {
+    for (var stateNumber = 1; stateNumber <= 4; stateNumber++) {
       states['state$stateNumber'] = <String, dynamic>{
         'definition': _partSnapshot(
           payload: stateDefinitionPayloads[stateNumber],
@@ -193,7 +198,7 @@ class GpsStateController extends GetxController {
         'last_status_ok': lastStatusOk.value,
         'last_updated': lastUpdated.value?.toUtc().toIso8601String(),
         'waiting_for_response': waitingForResponse.value,
-        'state0_refresh': <String, dynamic>{
+        'state1_refresh': <String, dynamic>{
           'waiting': state0WaitingForUpdate.value,
           'requested_at': state0UpdateRequestedAt.value?.toUtc().toIso8601String(),
           'status_received_at': state0StatusReceivedAt.value?.toUtc().toIso8601String(),
@@ -247,7 +252,7 @@ class GpsStateController extends GetxController {
   String exportJsonString() => const JsonEncoder.withIndent('  ').convert(buildDebugExport());
 
   List<Map<String, dynamic>> satellitesForState(int stateNumber) {
-    final source = stateNumber == 4 ? state4 : state3;
+    final source = stateNumber == 2 ? state2Satellites : (stateNumber == 4 ? state4 : state3);
     final rawSatellites = source['satellites'];
     if (rawSatellites is Iterable) {
       return rawSatellites
@@ -262,7 +267,7 @@ class GpsStateController extends GetxController {
     waitingForResponse.value = true;
     lastStatusOk.value = null;
     lastStatus.value = 'GPS-State wird neu angefordert ...';
-    lastTopic.value = MqttConnection.gpsStateRenewJsonTopic;
+    lastTopic.value = 'gps_state/state1/request';
     lastUpdated.value = DateTime.now();
     _armResponseTimeout('Keine GPS-State-Antwort empfangen. Bitte Topic gps_state/# prüfen.');
     Get.find<MqttConnection>().requestGpsState();
@@ -297,7 +302,10 @@ class GpsStateController extends GetxController {
     lastTopic.value = MqttConnection.gpsStateRenewJsonTopic;
     lastUpdated.value = requestedAt;
     _armState0ResponseTimeout();
-    Get.find<MqttConnection>().requestGpsState0Snapshot();
+    Get.find<MqttConnection>().publishGpsStateRequest(1, <String, dynamic>{
+      'command': 'publish_now',
+      'request_id': '$requestClientId-state1',
+    });
   }
 
   void setStatePayload(int stateNumber, Map<String, dynamic> payload, {required String topic}) {
@@ -339,6 +347,7 @@ class GpsStateController extends GetxController {
         break;
       case 1:
         state1Definition.assignAll(raw);
+        state0Definition.assignAll(raw);
         break;
       case 2:
         state2Definition.assignAll(raw);
@@ -371,6 +380,11 @@ class GpsStateController extends GetxController {
       case 1:
         state1Status.assignAll(view);
         state1.assignAll(view);
+        state0Status.assignAll(view);
+        state0StatusReceivedAt.value = receivedAt;
+        state0WaitingForUpdate.value = false;
+        state0UpdateMessage.value = '';
+        _clearState0ResponseTimeout();
         break;
       case 2:
         state2Status.assignAll(view);
@@ -546,6 +560,7 @@ class GpsStateController extends GetxController {
     final payload = <String, dynamic>{
       'mode': normalizedMode,
       'reset_mode': normalizedResetMode,
+      'request_id': '$requestClientId-restart',
     };
     waitingForResponse.value = true;
     lastStatusOk.value = null;
@@ -646,23 +661,52 @@ class GpsStateController extends GetxController {
     );
   }
 
-  void setState4Enabled(bool enabled) {
-    setDraftValue('publish_state4', enabled);
+  void setState4Enabled(bool enabled) => setDetailStateActive(4, enabled);
+
+  void setDetailStateActive(int state, bool active, {String satelliteMode = 'used'}) {
+    if (state < 2 || state > 4) return;
+    final requestId = '$requestClientId-state$state';
     final payload = <String, dynamic>{
-      'publish_state4': <String, dynamic>{'value': enabled},
+      'command': 'set_active',
+      'state': 'state$state',
+      'active': active,
+      'request_id': requestId,
     };
-    waitingForResponse.value = true;
-    lastStatusOk.value = null;
-    lastStatus.value = enabled
-        ? 'State4 wird temporär aktiviert ...'
-        : 'State4 wird temporär deaktiviert ...';
-    lastTopic.value = MqttConnection.gpsStateSetSessionJsonTopic;
+    if (active) {
+      payload['interval_ms'] = detailIntervalsMs[state] ?? 1000;
+      payload['lease_ms'] = detailLeaseMs;
+      if (state == 2) payload['satellite_mode'] = satelliteMode;
+      activeDetailStates.add(state);
+      _armLeaseRenewal(state, satelliteMode: satelliteMode);
+    } else {
+      activeDetailStates.remove(state);
+      _leaseTimers.remove(state)?.cancel();
+    }
+    Get.find<MqttConnection>().publishGpsStateRequest(state, payload);
+  }
+
+  void publishDetailStateNow(int state) {
+    Get.find<MqttConnection>().publishGpsStateRequest(state, <String, dynamic>{
+      'command': 'publish_now',
+      'state': 'state$state',
+      'request_id': '$requestClientId-state$state',
+    });
+  }
+
+  void _armLeaseRenewal(int state, {required String satelliteMode}) {
+    _leaseTimers.remove(state)?.cancel();
+    _leaseTimers[state] = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (activeDetailStates.contains(state)) {
+        setDetailStateActive(state, true, satelliteMode: satelliteMode);
+      }
+    });
+  }
+
+  void setState2Satellites(Map<String, dynamic> payload, {required String topic}) {
+    final root = _root(payload);
+    state2Satellites.assignAll(_deepCopy(root));
+    lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
-    _armResponseTimeout('Keine Validierung für State4-Änderung empfangen.');
-    _pendingSettingKeys
-      ..clear()
-      ..add('publish_state4');
-    Get.find<MqttConnection>().publishGpsStateSessionSettings(payload);
   }
 
   void _publishDraft({
@@ -950,6 +994,8 @@ class GpsStateController extends GetxController {
 
   @override
   void onClose() {
+    for (final state in activeDetailStates.toList()) { setDetailStateActive(state, false); }
+    for (final timer in _leaseTimers.values) { timer.cancel(); }
     _responseTimeout?.cancel();
     _state0ResponseTimeout?.cancel();
     super.onClose();

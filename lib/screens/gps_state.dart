@@ -31,7 +31,9 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_renewSent) {
         _renewSent = true;
-        controller.requestStatus();
+        controller.requestSettings();
+        controller.requestState0Update(automatic: true);
+        controller.requestRestartStatus();
         loggingController.requestStatus();
       }
     });
@@ -108,7 +110,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Auswertung von gps_state.v3: getrennte Definitionen und Statusdaten, zentrale Aktualisierung und Diagnoseexport.',
+                        'Auswertung von gps_state.v3: getrennte Definitionen und Statusdaten, kanonische State1-State4-Topics, Lease-Aktivierung und Diagnoseexport.',
                         style: theme.textTheme.bodyMedium?.copyWith(color: theme.hintColor),
                       ),
                       if (controller.lastStatus.value.isNotEmpty) ...[
@@ -232,7 +234,12 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           : stale
               ? 'Daten veraltet - neue GNSS-/Pose-Daten werden erwartet'
               : 'Empfang, RTK, Pose, Diagnose und bedarfsgesteuerte Satellitenliste',
-      initiallyExpanded: true,
+      initiallyExpanded: false,
+      onExpansionChanged: (open) {
+        controller.setDetailStateActive(2, open, satelliteMode: 'used');
+        controller.setDetailStateActive(3, open);
+        if (!open && controller.state4Active) controller.setDetailStateActive(4, false);
+      },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -568,7 +575,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           _messageBox(
             context,
             'Hinweis',
-            'Live-Status wurde empfangen, aber die statische Definition fehlt noch. Topic gps_state/state0/definition prüfen.',
+            'Live-Status wurde empfangen, aber die statische Definition fehlt noch. Topic gps_state/state1/definition prüfen.',
           ),
         ],
         if (definition.isNotEmpty && status.isEmpty) ...[
@@ -576,7 +583,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           _messageBox(
             context,
             'Hinweis',
-            'Definition wurde empfangen, aber der Live-Status fehlt noch. Mit „State0 aktualisieren“ einen neuen Stand anfordern.',
+            'Definition wurde empfangen, aber der Live-Status fehlt noch. Mit „Fahrfähigkeit aktualisieren“ einen neuen Stand anfordern.',
           ),
         ],
         const SizedBox(height: 10),
@@ -612,7 +619,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
             ? 'Aktueller Snapshot empfangen: ${_clockText(received)}'
             : controller.state0UpdateMessage.value.isNotEmpty
                 ? controller.state0UpdateMessage.value
-                : 'Beim Öffnen wird automatisch ein aktueller State0-Snapshot angefordert.';
+                : 'Beim Öffnen wird automatisch ein aktueller State1-Snapshot angefordert.';
     final color = waiting
         ? Colors.orange.shade700
         : snapshotCurrent
@@ -641,7 +648,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           icon: waiting
               ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2))
               : const Icon(Icons.refresh, size: 18),
-          label: const Text('State0 aktualisieren'),
+          label: const Text('Fahrfähigkeit aktualisieren'),
         ),
       ],
     );
@@ -651,10 +658,10 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     final theme = Theme.of(context);
     final color = Colors.orange.shade700;
     final message = waiting
-        ? 'Die angezeigten Prüfpunkte werden bis zum Eingang einer neuen State0-Statusmeldung nicht als aktuell gewertet.'
+        ? 'Die angezeigten Prüfpunkte werden bis zum Eingang einer neuen State1-Statusmeldung nicht als aktuell gewertet.'
         : controller.state0UpdateMessage.value.isNotEmpty
             ? controller.state0UpdateMessage.value
-            : 'Für diese Ansicht liegt noch kein seit dem Öffnen angeforderter State0-Snapshot vor.';
+            : 'Für diese Ansicht liegt noch kein seit dem Öffnen angeforderter State1-Snapshot vor.';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
@@ -1926,7 +1933,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                           builder: (context, contentConstraints) {
                             final compactContent = contentConstraints.maxWidth < 620;
                             final description = Text(
-                              'Der Download enthält alle aktuell in der App vorhandenen GPS-State-Daten: Settings, Definitionen und Status von State0 bis State4, MQTT-Topics, Empfangszeiten, Validierungen, Neustartstatus und noch nicht gespeicherte Einstellungsentwürfe. Er löst keine neue MQTT-Aktualisierung aus.',
+                              'Der Download enthält alle aktuell in der App vorhandenen GPS-State-Daten: Settings, Definitionen und Status von State1 bis State4, MQTT-Topics, Empfangszeiten, Validierungen, Neustartstatus und noch nicht gespeicherte Einstellungsentwürfe. Er löst keine neue MQTT-Aktualisierung aus.',
                               style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
                             );
                             final copyButton = TextButton.icon(

@@ -1,0 +1,421 @@
+diff --git a/lib/controllers/gps_state_controller.dart b/lib/controllers/gps_state_controller.dart
+index dd56401..285c45d 100644
+--- a/lib/controllers/gps_state_controller.dart
++++ b/lib/controllers/gps_state_controller.dart
+@@ -8,7 +8,6 @@ class GpsStateController extends GetxController {
+   static const List<String> settingKeys = <String>[
+     'enabled',
+     'publish_rate_hz',
+-    'publish_state0',
+     'publish_state1',
+     'publish_state2',
+     'publish_state3',
+@@ -59,6 +58,7 @@ class GpsStateController extends GetxController {
+     'controlled_software',
+     'gnss_only',
+     'hardware_watchdog',
++    'hardware_after_shutdown',
+   ];
+ 
+   final state0Definition = <String, dynamic>{}.obs;
+@@ -101,6 +101,12 @@ class GpsStateController extends GetxController {
+   final waitingForResponse = false.obs;
+   final editorRevision = 0.obs;
+   final restartResetMode = 'controlled_software'.obs;
++  final activeDetailStates = <int>{}.obs;
++  final state2Satellites = <String, dynamic>{}.obs;
++  final Map<int, Timer> _leaseTimers = <int, Timer>{};
++  static const int detailLeaseMs = 15000;
++  static const Map<int, int> detailIntervalsMs = <int, int>{2: 500, 3: 1000, 4: 1000};
++  final String requestClientId = 'app-${DateTime.now().millisecondsSinceEpoch}';
+ 
+   final settingsReceivedAt = Rxn<DateTime>();
+   final validationReceivedAt = Rxn<DateTime>();
+@@ -135,8 +141,7 @@ class GpsStateController extends GetxController {
+   bool get hasLoggingDrafts => loggingSettingKeys.any(dirtyKeys.contains);
+   int get loggingDirtyCount =>
+       loggingSettingKeys.where(dirtyKeys.contains).length;
+-  bool get state0Active => settingBool('publish_state0', fallback: state0Definition.isNotEmpty || state0Status.isNotEmpty);
+-  bool get state4Active => settingBool('publish_state4', fallback: state4.isNotEmpty);
++  bool get state4Active => activeDetailStates.contains(4);
+   bool get hasRestartStatus =>
+       restartStatusPayload.isNotEmpty || restartLastPayload.isNotEmpty || restartValidationPayload.isNotEmpty;
+ 
+@@ -164,7 +169,7 @@ class GpsStateController extends GetxController {
+   /// intentionally remain separate actions.
+   Map<String, dynamic> buildDebugExport() {
+     final states = <String, dynamic>{};
+-    for (var stateNumber = 0; stateNumber <= 4; stateNumber++) {
++    for (var stateNumber = 1; stateNumber <= 4; stateNumber++) {
+       states['state$stateNumber'] = <String, dynamic>{
+         'definition': _partSnapshot(
+           payload: stateDefinitionPayloads[stateNumber],
+@@ -193,7 +198,7 @@ class GpsStateController extends GetxController {
+         'last_status_ok': lastStatusOk.value,
+         'last_updated': lastUpdated.value?.toUtc().toIso8601String(),
+         'waiting_for_response': waitingForResponse.value,
+-        'state0_refresh': <String, dynamic>{
++        'state1_refresh': <String, dynamic>{
+           'waiting': state0WaitingForUpdate.value,
+           'requested_at': state0UpdateRequestedAt.value?.toUtc().toIso8601String(),
+           'status_received_at': state0StatusReceivedAt.value?.toUtc().toIso8601String(),
+@@ -247,7 +252,7 @@ class GpsStateController extends GetxController {
+   String exportJsonString() => const JsonEncoder.withIndent('  ').convert(buildDebugExport());
+ 
+   List<Map<String, dynamic>> satellitesForState(int stateNumber) {
+-    final source = stateNumber == 4 ? state4 : state3;
++    final source = stateNumber == 2 ? state2Satellites : (stateNumber == 4 ? state4 : state3);
+     final rawSatellites = source['satellites'];
+     if (rawSatellites is Iterable) {
+       return rawSatellites
+@@ -262,7 +267,7 @@ class GpsStateController extends GetxController {
+     waitingForResponse.value = true;
+     lastStatusOk.value = null;
+     lastStatus.value = 'GPS-State wird neu angefordert ...';
+-    lastTopic.value = MqttConnection.gpsStateRenewJsonTopic;
++    lastTopic.value = 'gps_state/state1/request';
+     lastUpdated.value = DateTime.now();
+     _armResponseTimeout('Keine GPS-State-Antwort empfangen. Bitte Topic gps_state/# prüfen.');
+     Get.find<MqttConnection>().requestGpsState();
+@@ -297,7 +302,10 @@ class GpsStateController extends GetxController {
+     lastTopic.value = MqttConnection.gpsStateRenewJsonTopic;
+     lastUpdated.value = requestedAt;
+     _armState0ResponseTimeout();
+-    Get.find<MqttConnection>().requestGpsState0Snapshot();
++    Get.find<MqttConnection>().publishGpsStateRequest(1, <String, dynamic>{
++      'command': 'publish_now',
++      'request_id': '$requestClientId-state1',
++    });
+   }
+ 
+   void setStatePayload(int stateNumber, Map<String, dynamic> payload, {required String topic}) {
+@@ -339,6 +347,7 @@ class GpsStateController extends GetxController {
+         break;
+       case 1:
+         state1Definition.assignAll(raw);
++        state0Definition.assignAll(raw);
+         break;
+       case 2:
+         state2Definition.assignAll(raw);
+@@ -371,6 +380,11 @@ class GpsStateController extends GetxController {
+       case 1:
+         state1Status.assignAll(view);
+         state1.assignAll(view);
++        state0Status.assignAll(view);
++        state0StatusReceivedAt.value = receivedAt;
++        state0WaitingForUpdate.value = false;
++        state0UpdateMessage.value = '';
++        _clearState0ResponseTimeout();
+         break;
+       case 2:
+         state2Status.assignAll(view);
+@@ -546,6 +560,7 @@ class GpsStateController extends GetxController {
+     final payload = <String, dynamic>{
+       'mode': normalizedMode,
+       'reset_mode': normalizedResetMode,
++      'request_id': '$requestClientId-restart',
+     };
+     waitingForResponse.value = true;
+     lastStatusOk.value = null;
+@@ -646,23 +661,52 @@ class GpsStateController extends GetxController {
+     );
+   }
+ 
+-  void setState4Enabled(bool enabled) {
+-    setDraftValue('publish_state4', enabled);
++  void setState4Enabled(bool enabled) => setDetailStateActive(4, enabled);
++
++  void setDetailStateActive(int state, bool active, {String satelliteMode = 'used'}) {
++    if (state < 2 || state > 4) return;
++    final requestId = '$requestClientId-state$state';
+     final payload = <String, dynamic>{
+-      'publish_state4': <String, dynamic>{'value': enabled},
++      'command': 'set_active',
++      'state': 'state$state',
++      'active': active,
++      'request_id': requestId,
+     };
+-    waitingForResponse.value = true;
+-    lastStatusOk.value = null;
+-    lastStatus.value = enabled
+-        ? 'State4 wird temporär aktiviert ...'
+-        : 'State4 wird temporär deaktiviert ...';
+-    lastTopic.value = MqttConnection.gpsStateSetSessionJsonTopic;
++    if (active) {
++      payload['interval_ms'] = detailIntervalsMs[state] ?? 1000;
++      payload['lease_ms'] = detailLeaseMs;
++      if (state == 2) payload['satellite_mode'] = satelliteMode;
++      activeDetailStates.add(state);
++      _armLeaseRenewal(state, satelliteMode: satelliteMode);
++    } else {
++      activeDetailStates.remove(state);
++      _leaseTimers.remove(state)?.cancel();
++    }
++    Get.find<MqttConnection>().publishGpsStateRequest(state, payload);
++  }
++
++  void publishDetailStateNow(int state) {
++    Get.find<MqttConnection>().publishGpsStateRequest(state, <String, dynamic>{
++      'command': 'publish_now',
++      'state': 'state$state',
++      'request_id': '$requestClientId-state$state',
++    });
++  }
++
++  void _armLeaseRenewal(int state, {required String satelliteMode}) {
++    _leaseTimers.remove(state)?.cancel();
++    _leaseTimers[state] = Timer.periodic(const Duration(seconds: 10), (_) {
++      if (activeDetailStates.contains(state)) {
++        setDetailStateActive(state, true, satelliteMode: satelliteMode);
++      }
++    });
++  }
++
++  void setState2Satellites(Map<String, dynamic> payload, {required String topic}) {
++    final root = _root(payload);
++    state2Satellites.assignAll(_deepCopy(root));
++    lastTopic.value = topic;
+     lastUpdated.value = DateTime.now();
+-    _armResponseTimeout('Keine Validierung für State4-Änderung empfangen.');
+-    _pendingSettingKeys
+-      ..clear()
+-      ..add('publish_state4');
+-    Get.find<MqttConnection>().publishGpsStateSessionSettings(payload);
+   }
+ 
+   void _publishDraft({
+@@ -950,6 +994,8 @@ class GpsStateController extends GetxController {
+ 
+   @override
+   void onClose() {
++    for (final state in activeDetailStates.toList()) { setDetailStateActive(state, false); }
++    for (final timer in _leaseTimers.values) { timer.cancel(); }
+     _responseTimeout?.cancel();
+     _state0ResponseTimeout?.cancel();
+     super.onClose();
+diff --git a/lib/controllers/satellite_logging_controller.dart b/lib/controllers/satellite_logging_controller.dart
+index e16504a..26d027c 100644
+--- a/lib/controllers/satellite_logging_controller.dart
++++ b/lib/controllers/satellite_logging_controller.dart
+@@ -57,6 +57,8 @@ class SatelliteLoggingController extends GetxController {
+   }
+ 
+   void sendControl(Map<String, dynamic> payload) {
++    payload = Map<String, dynamic>.from(payload);
++    payload.putIfAbsent('request_id', () => 'app-${DateTime.now().millisecondsSinceEpoch}-log');
+     commandPending.value = true;
+     waitingForResponse.value = true;
+     lastStatusOk.value = null;
+diff --git a/lib/io/mqtt_connection.dart b/lib/io/mqtt_connection.dart
+index 6883455..f2c2c47 100644
+--- a/lib/io/mqtt_connection.dart
++++ b/lib/io/mqtt_connection.dart
+@@ -150,16 +150,18 @@ class MqttConnection  {
+   static const String sensorSettingsSetPersistentJsonTopic = "sensors/settings/set/persistent/json";
+   static const String sensorSettingsValidationJsonTopic = "sensors/settings/validation/json";
+ 
+-  static const String gpsState0DefinitionTopic = "gps_state/state0/definition";
+-  static const String gpsState0StatusTopic = "gps_state/state0/status";
+   static const String gpsState1DefinitionTopic = "gps_state/state1/definition";
+   static const String gpsState1StatusTopic = "gps_state/state1/status";
+   static const String gpsState2DefinitionTopic = "gps_state/state2/definition";
+   static const String gpsState2StatusTopic = "gps_state/state2/status";
++  static const String gpsState2SatellitesTopic = "gps_state/state2/satellites";
++  static const String gpsState2RequestTopic = "gps_state/state2/request";
+   static const String gpsState3DefinitionTopic = "gps_state/state3/definition";
+   static const String gpsState3StatusTopic = "gps_state/state3/status";
++  static const String gpsState3RequestTopic = "gps_state/state3/request";
+   static const String gpsState4DefinitionTopic = "gps_state/state4/definition";
+   static const String gpsState4StatusTopic = "gps_state/state4/status";
++  static const String gpsState4RequestTopic = "gps_state/state4/request";
+   static const String gpsStateSettingsJsonTopic = "gps_state/settings/json";
+   static const String gpsStateValidationJsonTopic = "gps_state/settings/validation/json";
+   static const String gpsStateRenewJsonTopic = "gps_state/set/renew/json";
+@@ -689,6 +691,19 @@ class MqttConnection  {
+     }
+   }
+ 
++  void parseGpsStateSatellites(MqttPublishMessage payload, {required String topic}) {
++    try {
++      final map = _decodeMap(payload);
++      if (map == null) {
++        gpsStateController.setError("Leere oder ungültige State2-Satellitenliste empfangen.", topic: topic);
++        return;
++      }
++      gpsStateController.setState2Satellites(map, topic: topic);
++    } catch (e) {
++      gpsStateController.setError("State2-Satellitenliste konnte nicht gelesen werden: $e", topic: topic);
++    }
++  }
++
+   void parseGpsStateSettings(MqttPublishMessage payload) {
+     try {
+       final map = _decodeMap(payload);
+@@ -1000,20 +1015,19 @@ class MqttConnection  {
+     }
+   }
+ 
+-  /// Requests a State0 live snapshot through the shared GPS-State v3 command.
+-  void requestGpsState0Snapshot() {
+-    final payload = <String, dynamic>{
+-      'states': <int>[0],
+-      'parts': <String>['status'],
++  void publishGpsStateRequest(int state, Map<String, dynamic> payload) {
++    final topic = switch (state) {
++      1 => 'gps_state/state1/request',
++      2 => gpsState2RequestTopic,
++      3 => gpsState3RequestTopic,
++      4 => gpsState4RequestTopic,
++      _ => throw ArgumentError.value(state, 'state', 'Nur state1 bis state4 sind kanonisch'),
+     };
+     try {
+-      _publishJson(gpsStateRenewJsonTopic, payload);
+-    } catch(e) {
+-      debugPrint("error requesting gps state0 snapshot via mqtt");
+-      gpsStateController.setError(
+-        "State0-Aktualisierung konnte nicht gesendet werden.",
+-        topic: gpsStateRenewJsonTopic,
+-      );
++      _publishJson(topic, payload, qos: MqttQos.atLeastOnce);
++    } catch (e) {
++      debugPrint('error publishing GPS state request via mqtt');
++      gpsStateController.setError('GPS-State-Anforderung konnte nicht gesendet werden.', topic: topic);
+     }
+   }
+ 
+@@ -1969,14 +1983,6 @@ class MqttConnection  {
+             case gpsStateLoggingStatusJsonTopic: { parseGpsStateLoggingStatus(payload); } break;
+             case gpsStateLoggingLastJsonTopic: { parseGpsStateLoggingLast(payload); } break;
+             case gpsStateLoggingValidationJsonTopic: { parseGpsStateLoggingValidation(payload); } break;
+-            case gpsState0DefinitionTopic: {
+-              parseGpsState(0, payload, topic: gpsState0DefinitionTopic);
+-            }
+-            break;
+-            case gpsState0StatusTopic: {
+-              parseGpsState(0, payload, topic: gpsState0StatusTopic);
+-            }
+-            break;
+             case gpsState1DefinitionTopic: {
+               parseGpsState(1, payload, topic: gpsState1DefinitionTopic);
+             }
+@@ -1993,6 +1999,10 @@ class MqttConnection  {
+               parseGpsState(2, payload, topic: gpsState2StatusTopic);
+             }
+             break;
++            case gpsState2SatellitesTopic: {
++              parseGpsStateSatellites(payload, topic: gpsState2SatellitesTopic);
++            }
++            break;
+             case gpsState3DefinitionTopic: {
+               parseGpsState(3, payload, topic: gpsState3DefinitionTopic);
+             }
+@@ -2136,12 +2146,11 @@ class MqttConnection  {
+     // Mäh-Lastregelung wird ausschließlich über settings/mower_logic/... verarbeitet.
+     client.subscribe(lowLevelPowerJsonTopic, MqttQos.atLeastOnce);
+     client.subscribe(lowLevelPowerValidationJsonTopic, MqttQos.atLeastOnce);
+-    client.subscribe(gpsState0DefinitionTopic, MqttQos.atLeastOnce);
+-    client.subscribe(gpsState0StatusTopic, MqttQos.atLeastOnce);
+     client.subscribe(gpsState1DefinitionTopic, MqttQos.atLeastOnce);
+     client.subscribe(gpsState1StatusTopic, MqttQos.atLeastOnce);
+     client.subscribe(gpsState2DefinitionTopic, MqttQos.atLeastOnce);
+     client.subscribe(gpsState2StatusTopic, MqttQos.atLeastOnce);
++    client.subscribe(gpsState2SatellitesTopic, MqttQos.atMostOnce);
+     client.subscribe(gpsState3DefinitionTopic, MqttQos.atLeastOnce);
+     client.subscribe(gpsState3StatusTopic, MqttQos.atMostOnce);
+     client.subscribe(gpsState4DefinitionTopic, MqttQos.atLeastOnce);
+diff --git a/lib/screens/gps_state.dart b/lib/screens/gps_state.dart
+index 0331f5f..40738aa 100644
+--- a/lib/screens/gps_state.dart
++++ b/lib/screens/gps_state.dart
+@@ -31,7 +31,9 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+     WidgetsBinding.instance.addPostFrameCallback((_) {
+       if (!_renewSent) {
+         _renewSent = true;
+-        controller.requestStatus();
++        controller.requestSettings();
++        controller.requestState0Update(automatic: true);
++        controller.requestRestartStatus();
+         loggingController.requestStatus();
+       }
+     });
+@@ -108,7 +110,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+                       ),
+                       const SizedBox(height: 2),
+                       Text(
+-                        'Auswertung von gps_state.v3: getrennte Definitionen und Statusdaten, zentrale Aktualisierung und Diagnoseexport.',
++                        'Auswertung von gps_state.v3: getrennte Definitionen und Statusdaten, kanonische State1-State4-Topics, Lease-Aktivierung und Diagnoseexport.',
+                         style: theme.textTheme.bodyMedium?.copyWith(color: theme.hintColor),
+                       ),
+                       if (controller.lastStatus.value.isNotEmpty) ...[
+@@ -232,7 +234,12 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+           : stale
+               ? 'Daten veraltet - neue GNSS-/Pose-Daten werden erwartet'
+               : 'Empfang, RTK, Pose, Diagnose und bedarfsgesteuerte Satellitenliste',
+-      initiallyExpanded: true,
++      initiallyExpanded: false,
++      onExpansionChanged: (open) {
++        controller.setDetailStateActive(2, open, satelliteMode: 'used');
++        controller.setDetailStateActive(3, open);
++        if (!open && controller.state4Active) controller.setDetailStateActive(4, false);
++      },
+       child: Column(
+         crossAxisAlignment: CrossAxisAlignment.stretch,
+         children: [
+@@ -568,7 +575,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+           _messageBox(
+             context,
+             'Hinweis',
+-            'Live-Status wurde empfangen, aber die statische Definition fehlt noch. Topic gps_state/state0/definition prüfen.',
++            'Live-Status wurde empfangen, aber die statische Definition fehlt noch. Topic gps_state/state1/definition prüfen.',
+           ),
+         ],
+         if (definition.isNotEmpty && status.isEmpty) ...[
+@@ -576,7 +583,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+           _messageBox(
+             context,
+             'Hinweis',
+-            'Definition wurde empfangen, aber der Live-Status fehlt noch. Mit „State0 aktualisieren“ einen neuen Stand anfordern.',
++            'Definition wurde empfangen, aber der Live-Status fehlt noch. Mit „Fahrfähigkeit aktualisieren“ einen neuen Stand anfordern.',
+           ),
+         ],
+         const SizedBox(height: 10),
+@@ -612,7 +619,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+             ? 'Aktueller Snapshot empfangen: ${_clockText(received)}'
+             : controller.state0UpdateMessage.value.isNotEmpty
+                 ? controller.state0UpdateMessage.value
+-                : 'Beim Öffnen wird automatisch ein aktueller State0-Snapshot angefordert.';
++                : 'Beim Öffnen wird automatisch ein aktueller State1-Snapshot angefordert.';
+     final color = waiting
+         ? Colors.orange.shade700
+         : snapshotCurrent
+@@ -641,7 +648,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+           icon: waiting
+               ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2))
+               : const Icon(Icons.refresh, size: 18),
+-          label: const Text('State0 aktualisieren'),
++          label: const Text('Fahrfähigkeit aktualisieren'),
+         ),
+       ],
+     );
+@@ -651,10 +658,10 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+     final theme = Theme.of(context);
+     final color = Colors.orange.shade700;
+     final message = waiting
+-        ? 'Die angezeigten Prüfpunkte werden bis zum Eingang einer neuen State0-Statusmeldung nicht als aktuell gewertet.'
++        ? 'Die angezeigten Prüfpunkte werden bis zum Eingang einer neuen State1-Statusmeldung nicht als aktuell gewertet.'
+         : controller.state0UpdateMessage.value.isNotEmpty
+             ? controller.state0UpdateMessage.value
+-            : 'Für diese Ansicht liegt noch kein seit dem Öffnen angeforderter State0-Snapshot vor.';
++            : 'Für diese Ansicht liegt noch kein seit dem Öffnen angeforderter State1-Snapshot vor.';
+     return Container(
+       width: double.infinity,
+       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+@@ -1926,7 +1933,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+                           builder: (context, contentConstraints) {
+                             final compactContent = contentConstraints.maxWidth < 620;
+                             final description = Text(
+-                              'Der Download enthält alle aktuell in der App vorhandenen GPS-State-Daten: Settings, Definitionen und Status von State0 bis State4, MQTT-Topics, Empfangszeiten, Validierungen, Neustartstatus und noch nicht gespeicherte Einstellungsentwürfe. Er löst keine neue MQTT-Aktualisierung aus.',
++                              'Der Download enthält alle aktuell in der App vorhandenen GPS-State-Daten: Settings, Definitionen und Status von State1 bis State4, MQTT-Topics, Empfangszeiten, Validierungen, Neustartstatus und noch nicht gespeicherte Einstellungsentwürfe. Er löst keine neue MQTT-Aktualisierung aus.',
+                               style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+                             );
+                             final copyButton = TextButton.icon(

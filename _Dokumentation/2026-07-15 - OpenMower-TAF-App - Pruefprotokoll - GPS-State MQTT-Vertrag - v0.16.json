@@ -1,0 +1,7 @@
+{
+  "legacy_state0_topic_constants_absent": true,
+  "state2_satellites_present": true,
+  "lease_activation_present": true,
+  "hardware_after_shutdown_present": true,
+  "logging_request_id_present": true
+}
