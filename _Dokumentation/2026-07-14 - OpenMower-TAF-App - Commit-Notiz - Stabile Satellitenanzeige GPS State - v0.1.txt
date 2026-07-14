@@ -1,0 +1,18 @@
+BL_Stabilize GPS satellite tables
+Date: 2026-07-14
+
+Summary:
+- Added fixed-height viewports for the State3 and State4 satellite tables.
+- Added internal vertical scrolling while retaining horizontal scrolling.
+- Reserved the State3 empty-state height and the active State4 empty-state height to prevent layout jumps.
+- Added stable sorting by GNSS system and satellite SV ID.
+- Added PDF and DOCX change documentation.
+
+Changed files:
+- lib/screens/gps_state.dart
+- _Dokumentation/2026-07-14 - OpenMower-TAF-App - Änderungsdokumentation - Stabile Satellitenanzeige GPS State - v0.1.docx
+- _Dokumentation/2026-07-14 - OpenMower-TAF-App - Änderungsdokumentation - Stabile Satellitenanzeige GPS State - v0.1.pdf
+
+Validation:
+- Source changes and affected call sites were reviewed.
+- Flutter analyze/build could not be executed because Flutter and Dart are not installed in the processing environment.

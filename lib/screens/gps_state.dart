@@ -296,7 +296,12 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           ],
           Opacity(
             opacity: stale ? 0.55 : 1,
-            child: _satelliteTable(context, satellites, showUsed: false),
+            child: _satelliteTable(
+              context,
+              satellites,
+              showUsed: false,
+              viewportHeight: 320,
+            ),
           ),
         ],
       ),
@@ -379,9 +384,14 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                     ],
                   ),
                 ],
-                if (satellites.isNotEmpty) ...[
+                if (active) ...[
                   const SizedBox(height: 12),
-                  _satelliteTable(context, satellites, showUsed: true),
+                  _satelliteTable(
+                    context,
+                    satellites,
+                    showUsed: true,
+                    viewportHeight: 440,
+                  ),
                 ],
               ],
             ),
@@ -2025,43 +2035,131 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     );
   }
 
-  Widget _satelliteTable(BuildContext context, List<Map<String, dynamic>> satellites, {required bool showUsed}) {
-    if (satellites.isEmpty) {
-      return Text('Keine Satellitenliste empfangen.', style: Theme.of(context).textTheme.bodyMedium);
-    }
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        headingRowHeight: 40,
-        dataRowMinHeight: 34,
-        dataRowMaxHeight: 42,
-        columns: [
-          const DataColumn(label: Text('System')),
-          const DataColumn(label: Text('GNSS-ID'), numeric: true),
-          const DataColumn(label: Text('SV'), numeric: true),
-          const DataColumn(label: Text('C/N0 (dB-Hz)'), numeric: true),
-          const DataColumn(label: Text('Elevation (°)'), numeric: true),
-          const DataColumn(label: Text('Azimuth (°)'), numeric: true),
-          const DataColumn(label: Text('PRRes'), numeric: true),
-          const DataColumn(label: Text('Qual'), numeric: true),
-          if (showUsed) const DataColumn(label: Text('Used')),
-        ],
-        rows: satellites.map((satellite) {
-          return DataRow(
-            cells: [
-              DataCell(Text(_satText(satellite, const ['gnss', 'system', 'constellation']))),
-              DataCell(Text(_fmt(_satDouble(satellite, const ['gnss_id', 'gnssId'])))),
-              DataCell(Text(_satText(satellite, const ['sv', 'svid', 'id', 'satellite_id', 'prn']))),
-              DataCell(Text(_fmt(_satDouble(satellite, const ['cn0', 'cno', 'c_n0'])))),
-              DataCell(Text(_fmt(_satDouble(satellite, const ['elev', 'elevation'])))),
-              DataCell(Text(_fmt(_satDouble(satellite, const ['azim', 'azimuth', 'az'])))),
-              DataCell(Text(_fmt(_satDouble(satellite, const ['prres', 'pr_res'])))),
-              DataCell(Text(_fmt(_satDouble(satellite, const ['qual', 'quality'])))),
-              if (showUsed) DataCell(_usedIcon(_satBool(satellite, const ['used', 'in_fix', 'fix_used']))),
-            ],
-          );
-        }).toList(growable: false),
-      ),
+  Widget _satelliteTable(
+    BuildContext context,
+    List<Map<String, dynamic>> satellites, {
+    required bool showUsed,
+    required double viewportHeight,
+  }) {
+    final sortedSatellites = List<Map<String, dynamic>>.from(satellites)
+      ..sort((left, right) {
+        final leftSystem = _satText(
+          left,
+          const ['gnss', 'system', 'constellation'],
+        );
+        final rightSystem = _satText(
+          right,
+          const ['gnss', 'system', 'constellation'],
+        );
+        final systemComparison = leftSystem.compareTo(rightSystem);
+        if (systemComparison != 0) {
+          return systemComparison;
+        }
+
+        final leftSv = _satDouble(
+              left,
+              const ['sv', 'svid', 'id', 'satellite_id', 'prn'],
+            ) ??
+            0;
+        final rightSv = _satDouble(
+              right,
+              const ['sv', 'svid', 'id', 'satellite_id', 'prn'],
+            ) ??
+            0;
+        return leftSv.compareTo(rightSv);
+      });
+
+    return SizedBox(
+      height: viewportHeight,
+      child: satellites.isEmpty
+          ? Center(
+              child: Text(
+                'Keine Satellitenliste empfangen.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            )
+          : Scrollbar(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.vertical,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    headingRowHeight: 40,
+                    dataRowMinHeight: 34,
+                    dataRowMaxHeight: 42,
+                    columns: [
+                      const DataColumn(label: Text('System')),
+                      const DataColumn(label: Text('GNSS-ID'), numeric: true),
+                      const DataColumn(label: Text('SV'), numeric: true),
+                      const DataColumn(
+                        label: Text('C/N0 (dB-Hz)'),
+                        numeric: true,
+                      ),
+                      const DataColumn(
+                        label: Text('Elevation (°)'),
+                        numeric: true,
+                      ),
+                      const DataColumn(
+                        label: Text('Azimuth (°)'),
+                        numeric: true,
+                      ),
+                      const DataColumn(label: Text('PRRes'), numeric: true),
+                      const DataColumn(label: Text('Qual'), numeric: true),
+                      if (showUsed) const DataColumn(label: Text('Used')),
+                    ],
+                    rows: sortedSatellites.map((satellite) {
+                      return DataRow(
+                        cells: [
+                          DataCell(Text(_satText(
+                            satellite,
+                            const ['gnss', 'system', 'constellation'],
+                          ))),
+                          DataCell(Text(_fmt(_satDouble(
+                            satellite,
+                            const ['gnss_id', 'gnssId'],
+                          )))),
+                          DataCell(Text(_satText(
+                            satellite,
+                            const [
+                              'sv',
+                              'svid',
+                              'id',
+                              'satellite_id',
+                              'prn',
+                            ],
+                          ))),
+                          DataCell(Text(_fmt(_satDouble(
+                            satellite,
+                            const ['cn0', 'cno', 'c_n0'],
+                          )))),
+                          DataCell(Text(_fmt(_satDouble(
+                            satellite,
+                            const ['elev', 'elevation'],
+                          )))),
+                          DataCell(Text(_fmt(_satDouble(
+                            satellite,
+                            const ['azim', 'azimuth', 'az'],
+                          )))),
+                          DataCell(Text(_fmt(_satDouble(
+                            satellite,
+                            const ['prres', 'pr_res'],
+                          )))),
+                          DataCell(Text(_fmt(_satDouble(
+                            satellite,
+                            const ['qual', 'quality'],
+                          )))),
+                          if (showUsed)
+                            DataCell(_usedIcon(_satBool(
+                              satellite,
+                              const ['used', 'in_fix', 'fix_used'],
+                            ))),
+                        ],
+                      );
+                    }).toList(growable: false),
+                  ),
+                ),
+              ),
+            ),
     );
   }
 
