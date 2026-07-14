@@ -694,21 +694,16 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
             ),
           ],
           const SizedBox(height: 16),
+          if (last.isNotEmpty) ...[
+            _buildCompactLastRestartPanel(context, last),
+            const SizedBox(height: 14),
+          ],
           _buildRestartStatusPanel(
             context,
             title: 'Aktueller Recovery-Ablauf',
             payload: status,
             live: true,
           ),
-          if (last.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            _buildRestartStatusPanel(
-              context,
-              title: 'Letzter abgeschlossener Neustart',
-              payload: last,
-              live: false,
-            ),
-          ],
           if (validation.isNotEmpty) ...[
             const SizedBox(height: 14),
             Text('Letzte Befehlsvalidierung', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
@@ -727,6 +722,100 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
               _messageBox(context, 'Validierungsantwort', _text(validation['reason'] ?? validation['error'] ?? validation['message'])),
             ],
           ],
+        ],
+      ),
+    );
+  }
+
+
+  Widget _buildCompactLastRestartPanel(
+    BuildContext context,
+    Map<String, dynamic> payload,
+  ) {
+    final theme = Theme.of(context);
+    final status = _text(payload['status']).toLowerCase();
+    final failed = status == 'failed' || status == 'error' || status == 'rejected' || status == 'send_failed';
+    final statusColor = _restartStatusColor(status, theme);
+    final statusLabel = _restartStatusLabel(status);
+    final reason = _text(payload['reason']);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: statusColor.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: statusColor.withValues(alpha: 0.30)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(_restartStatusIcon(status), color: statusColor, size: 22),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Letzter abgeschlossener Neustart', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 1),
+                    Text(statusLabel, style: theme.textTheme.bodySmall?.copyWith(color: statusColor, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+              if (payload['restart_sequence'] != null)
+                _compactStatusChip(context, 'Restart', '#${_fmt(payload['restart_sequence'])}', accent: status == 'success', warning: failed),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _compactStatusChip(context, 'Startart', _restartModeLabel(_text(payload['mode'], fallback: '-'))),
+              _compactStatusChip(context, 'Reset-Modus', _text(payload['reset_mode'], fallback: '-')),
+              _compactStatusChip(context, 'Angefordert', _restartTimestampText(payload['requested_at'])),
+              _compactStatusChip(context, 'Dauer', _restartDurationText(payload)),
+            ],
+          ),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.zero,
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            title: Text('Details anzeigen', style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700)),
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _compactStatusChip(context, 'Abgeschlossen', _restartTimestampText(payload['completed_at'])),
+                        _compactStatusChip(context, 'Statuscode', _text(payload['status'], fallback: '-')),
+                        _compactStatusChip(context, 'navBbrMask', _fmt(payload['nav_bbr_mask'])),
+                        _compactStatusChip(context, 'resetMode-Wert', _fmt(payload['reset_mode_value'])),
+                        _compactStatusChip(context, 'Quelle', _text(payload['source'], fallback: '-')),
+                      ],
+                    ),
+                    if (reason.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _messageBox(
+                        context,
+                        'Ergebnis / Fehlergrund',
+                        '${_restartReasonLabel(reason)}\nTechnischer Wert: $reason',
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
