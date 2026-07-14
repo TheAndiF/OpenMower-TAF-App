@@ -1,0 +1,17 @@
+BL_Align GPS logging UI with v2 backend contract
+Date: 2026-07-14
+Summary:
+- Added all public GPS logging settings, including expert path and container fields.
+- Added migration guidance for the legacy satellite logging script path.
+- Kept logging controls disabled until a valid openmower.gps_state.logging.v2 status is received.
+- Updated validation handling to wait for applied/pending=false before confirming changes.
+- Read runtime and last-session details from the canonical v2 structures.
+- Added the effective backend script path to expert diagnostics.
+Changed files:
+- lib/controllers/gps_state_controller.dart
+- lib/controllers/satellite_logging_controller.dart
+- lib/screens/gps_state.dart
+- _Dokumentation/2026-07-14 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-Logging zentraler Skriptpfad und v2-Vertrag - v0.14.docx
+- _Dokumentation/2026-07-14 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-Logging zentraler Skriptpfad und v2-Vertrag - v0.14.pdf
+- _Dokumentation/2026-07-14 - OpenMower-TAF-App - Patch - GPS-Logging zentraler Skriptpfad und v2-Vertrag - v0.14.patch
+- commit_message_gps_logging_central_script_path_v0.14.txt

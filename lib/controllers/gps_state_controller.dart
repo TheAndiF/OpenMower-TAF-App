@@ -25,7 +25,16 @@ class GpsStateController extends GetxController {
     'logging_default_trigger',
     'logging_default_mode',
     'logging_default_area_id',
+    'logging_output_path',
+    'logging_ram_path',
+    'logging_script_path',
+    'logging_container_name',
   ];
+
+  static const String legacyLoggingScriptPath =
+      '/home/openmower/scripts/record_satellites.sh';
+  static const String canonicalLoggingScriptPath =
+      '/opt/open_mower_ros/scripts/record_satellites.sh';
 
   static const List<String> loggingTriggerFallbackOptions = <String>[
     'ad_hoc',
@@ -116,6 +125,13 @@ class GpsStateController extends GetxController {
   bool get hasSettings => settingsPayload.isNotEmpty;
   bool get hasLoggingSettings =>
       loggingSettingKeys.every(hasSetting);
+  bool get hasCoreLoggingSettings =>
+      loggingSettingKeys.take(3).every(hasSetting);
+  bool get hasLegacyLoggingScriptPath {
+    final active = confirmedSettingValue('logging_script_path')?.toString();
+    final persistent = persistentSettingValue('logging_script_path')?.toString();
+    return active == legacyLoggingScriptPath || persistent == legacyLoggingScriptPath;
+  }
   bool get hasLoggingDrafts => loggingSettingKeys.any(dirtyKeys.contains);
   int get loggingDirtyCount =>
       loggingSettingKeys.where(dirtyKeys.contains).length;
@@ -405,16 +421,27 @@ class GpsStateController extends GetxController {
     final root = _root(payload);
     validationPayload.assignAll(_deepCopy(root));
     validationReceivedAt.value = DateTime.now();
-    final valid = _bool(root['valid'] ?? root['ok'] ?? root['success']);
-    lastStatusOk.value = valid;
-    lastStatus.value = valid
-        ? 'GPS-State-Änderung wurde angenommen.'
-        : 'GPS-State-Änderung wurde abgelehnt.';
+    final status = root['status']?.toString().trim().toLowerCase() ?? '';
+    final pending = _bool(root['pending'], fallback: false);
+    final valid = _bool(
+      root['valid'] ?? root['ok'] ?? root['success'],
+      fallback: status == 'forwarded' || status == 'applied' || status == 'success' || status == 'ok',
+    );
+    final reason = (root['reason'] ?? root['message'] ?? root['error'])?.toString().trim() ?? '';
+    final applied = valid && !pending && (status.isEmpty || status == 'applied' || status == 'success' || status == 'ok');
+    lastStatusOk.value = valid ? (pending ? null : true) : false;
+    lastStatus.value = !valid
+        ? 'GPS-State-Änderung wurde abgelehnt${reason.isEmpty ? '.' : ': $reason'}'
+        : pending
+            ? 'GPS-State-Änderung wurde weitergeleitet und wartet auf Bestätigung.'
+            : applied
+                ? 'GPS-State-Änderung wurde bestätigt und angewendet.'
+                : 'GPS-State-Validierung: ${status.isEmpty ? 'angenommen' : status}.';
     lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
     waitingForResponse.value = false;
     _clearResponseTimeout();
-    if (valid) {
+    if (applied) {
       if (_pendingSettingKeys.isEmpty) {
         draftValues.clear();
         dirtyKeys.clear();
@@ -427,7 +454,7 @@ class GpsStateController extends GetxController {
       _pendingSettingKeys.clear();
       editorRevision.value++;
       requestSettings();
-    } else {
+    } else if (!valid) {
       _pendingSettingKeys.clear();
     }
   }
@@ -732,7 +759,7 @@ class GpsStateController extends GetxController {
     // New backends resolve a start request from the active GPS-State settings.
     // Older backends do not expose these settings, so retain the previous
     // explicit command as a compatibility fallback.
-    if (!hasLoggingSettings) {
+    if (!hasCoreLoggingSettings) {
       payload['trigger'] = 'ad_hoc';
       payload['mode'] = 'until_docking';
     }
@@ -770,6 +797,14 @@ class GpsStateController extends GetxController {
         return 'Aufzeichnungszeitraum';
       case 'logging_default_area_id':
         return 'Zielfläche';
+      case 'logging_output_path':
+        return 'Ausgabeverzeichnis';
+      case 'logging_ram_path':
+        return 'Temporäres Verzeichnis';
+      case 'logging_script_path':
+        return 'Logging-Skriptpfad';
+      case 'logging_container_name':
+        return 'Containername';
     }
     return key;
   }
@@ -796,6 +831,14 @@ class GpsStateController extends GetxController {
         return 'Legt fest, welcher Arbeitsabschnitt aufgezeichnet wird.';
       case 'logging_default_area_id':
         return 'Wird nur für die Startbedingung „Bestimmte Fläche“ verwendet.';
+      case 'logging_output_path':
+        return 'Zielverzeichnis für abgeschlossene GPS-/RTK-Aufzeichnungen.';
+      case 'logging_ram_path':
+        return 'Temporäres Arbeitsverzeichnis während einer Aufzeichnung.';
+      case 'logging_script_path':
+        return 'Vom Backend verwendeter ausführbarer Skriptpfad. Der aktuelle Standard liegt unter /opt/open_mower_ros/scripts.';
+      case 'logging_container_name':
+        return 'Optionaler Containername; leer bedeutet automatische Ausführung.';
     }
     return '';
   }

@@ -1,0 +1,319 @@
+diff --git a/lib/controllers/gps_state_controller.dart b/lib/controllers/gps_state_controller.dart
+index 3df5a16..0a17b09 100644
+--- a/lib/controllers/gps_state_controller.dart
++++ b/lib/controllers/gps_state_controller.dart
+@@ -25,8 +25,17 @@ class GpsStateController extends GetxController {
+     'logging_default_trigger',
+     'logging_default_mode',
+     'logging_default_area_id',
++    'logging_output_path',
++    'logging_ram_path',
++    'logging_script_path',
++    'logging_container_name',
+   ];
+ 
++  static const String legacyLoggingScriptPath =
++      '/home/openmower/scripts/record_satellites.sh';
++  static const String canonicalLoggingScriptPath =
++      '/opt/open_mower_ros/scripts/record_satellites.sh';
++
+   static const List<String> loggingTriggerFallbackOptions = <String>[
+     'ad_hoc',
+     'next_cycle',
+@@ -116,6 +125,13 @@ class GpsStateController extends GetxController {
+   bool get hasSettings => settingsPayload.isNotEmpty;
+   bool get hasLoggingSettings =>
+       loggingSettingKeys.every(hasSetting);
++  bool get hasCoreLoggingSettings =>
++      loggingSettingKeys.take(3).every(hasSetting);
++  bool get hasLegacyLoggingScriptPath {
++    final active = confirmedSettingValue('logging_script_path')?.toString();
++    final persistent = persistentSettingValue('logging_script_path')?.toString();
++    return active == legacyLoggingScriptPath || persistent == legacyLoggingScriptPath;
++  }
+   bool get hasLoggingDrafts => loggingSettingKeys.any(dirtyKeys.contains);
+   int get loggingDirtyCount =>
+       loggingSettingKeys.where(dirtyKeys.contains).length;
+@@ -405,16 +421,27 @@ class GpsStateController extends GetxController {
+     final root = _root(payload);
+     validationPayload.assignAll(_deepCopy(root));
+     validationReceivedAt.value = DateTime.now();
+-    final valid = _bool(root['valid'] ?? root['ok'] ?? root['success']);
+-    lastStatusOk.value = valid;
+-    lastStatus.value = valid
+-        ? 'GPS-State-Änderung wurde angenommen.'
+-        : 'GPS-State-Änderung wurde abgelehnt.';
++    final status = root['status']?.toString().trim().toLowerCase() ?? '';
++    final pending = _bool(root['pending'], fallback: false);
++    final valid = _bool(
++      root['valid'] ?? root['ok'] ?? root['success'],
++      fallback: status == 'forwarded' || status == 'applied' || status == 'success' || status == 'ok',
++    );
++    final reason = (root['reason'] ?? root['message'] ?? root['error'])?.toString().trim() ?? '';
++    final applied = valid && !pending && (status.isEmpty || status == 'applied' || status == 'success' || status == 'ok');
++    lastStatusOk.value = valid ? (pending ? null : true) : false;
++    lastStatus.value = !valid
++        ? 'GPS-State-Änderung wurde abgelehnt${reason.isEmpty ? '.' : ': $reason'}'
++        : pending
++            ? 'GPS-State-Änderung wurde weitergeleitet und wartet auf Bestätigung.'
++            : applied
++                ? 'GPS-State-Änderung wurde bestätigt und angewendet.'
++                : 'GPS-State-Validierung: ${status.isEmpty ? 'angenommen' : status}.';
+     lastTopic.value = topic;
+     lastUpdated.value = DateTime.now();
+     waitingForResponse.value = false;
+     _clearResponseTimeout();
+-    if (valid) {
++    if (applied) {
+       if (_pendingSettingKeys.isEmpty) {
+         draftValues.clear();
+         dirtyKeys.clear();
+@@ -427,7 +454,7 @@ class GpsStateController extends GetxController {
+       _pendingSettingKeys.clear();
+       editorRevision.value++;
+       requestSettings();
+-    } else {
++    } else if (!valid) {
+       _pendingSettingKeys.clear();
+     }
+   }
+@@ -732,7 +759,7 @@ class GpsStateController extends GetxController {
+     // New backends resolve a start request from the active GPS-State settings.
+     // Older backends do not expose these settings, so retain the previous
+     // explicit command as a compatibility fallback.
+-    if (!hasLoggingSettings) {
++    if (!hasCoreLoggingSettings) {
+       payload['trigger'] = 'ad_hoc';
+       payload['mode'] = 'until_docking';
+     }
+@@ -770,6 +797,14 @@ class GpsStateController extends GetxController {
+         return 'Aufzeichnungszeitraum';
+       case 'logging_default_area_id':
+         return 'Zielfläche';
++      case 'logging_output_path':
++        return 'Ausgabeverzeichnis';
++      case 'logging_ram_path':
++        return 'Temporäres Verzeichnis';
++      case 'logging_script_path':
++        return 'Logging-Skriptpfad';
++      case 'logging_container_name':
++        return 'Containername';
+     }
+     return key;
+   }
+@@ -796,6 +831,14 @@ class GpsStateController extends GetxController {
+         return 'Legt fest, welcher Arbeitsabschnitt aufgezeichnet wird.';
+       case 'logging_default_area_id':
+         return 'Wird nur für die Startbedingung „Bestimmte Fläche“ verwendet.';
++      case 'logging_output_path':
++        return 'Zielverzeichnis für abgeschlossene GPS-/RTK-Aufzeichnungen.';
++      case 'logging_ram_path':
++        return 'Temporäres Arbeitsverzeichnis während einer Aufzeichnung.';
++      case 'logging_script_path':
++        return 'Vom Backend verwendeter ausführbarer Skriptpfad. Der aktuelle Standard liegt unter /opt/open_mower_ros/scripts.';
++      case 'logging_container_name':
++        return 'Optionaler Containername; leer bedeutet automatische Ausführung.';
+     }
+     return '';
+   }
+diff --git a/lib/controllers/satellite_logging_controller.dart b/lib/controllers/satellite_logging_controller.dart
+index 10cbbc6..e16504a 100644
+--- a/lib/controllers/satellite_logging_controller.dart
++++ b/lib/controllers/satellite_logging_controller.dart
+@@ -24,6 +24,8 @@ class SatelliteLoggingController extends GetxController {
+   int _waitGeneration = 0;
+ 
+   bool get hasData => statusPayload.isNotEmpty;
++  bool get hasValidV2Status =>
++      _text(statusPayload['schema']) == 'openmower.gps_state.logging.v2';
+   Map<String, dynamic> get runtime => _map(statusPayload['runtime']);
+   Map<String, dynamic> get request => _map(statusPayload['request']);
+   Map<String, dynamic> get storage => _map(statusPayload['storage']);
+@@ -35,6 +37,8 @@ class SatelliteLoggingController extends GetxController {
+   String get state => _text(runtime['state'] ?? statusPayload['status']);
+   String get summary => _text(statusPayload['summary']);
+   String get errorText => _text(statusPayload['error']);
++  String get severity => _text(statusPayload['severity']);
++  String get scriptPath => _text(implementation['script_path']);
+   String get mode => _text(request['mode']);
+   String get trigger => _text(request['trigger']);
+   String get currentAreaId => _text(request['target_area_id']);
+diff --git a/lib/screens/gps_state.dart b/lib/screens/gps_state.dart
+index b0a18c7..e0d8161 100644
+--- a/lib/screens/gps_state.dart
++++ b/lib/screens/gps_state.dart
+@@ -1103,6 +1103,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+     final runtime = lc.runtime;
+     final last = lc.lastPayload;
+     final busy = lc.waitingForResponse.value || lc.commandPending.value;
++    final controlsEnabled = lc.hasValidV2Status && !busy;
+     final actionLabel = lc.running ? 'Stop' : (lc.armed || lc.requestActive ? 'Abbrechen' : 'Start');
+     final actionIcon = lc.running ? Icons.stop : (lc.armed || lc.requestActive ? Icons.cancel_outlined : Icons.fiber_manual_record);
+     return _sectionCard(
+@@ -1124,7 +1125,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+         const SizedBox(height: 12),
+         Wrap(spacing: 8, runSpacing: 8, children: [
+           ElevatedButton.icon(
+-            onPressed: busy ? null : () {
++            onPressed: controlsEnabled ? () {
+               if (lc.running) {
+                 lc.sendControl(<String, dynamic>{'command': 'stop'});
+               } else if (lc.armed || lc.requestActive) {
+@@ -1132,12 +1133,20 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+               } else {
+                 lc.sendControl(controller.buildLoggingStartPayload());
+               }
+-            },
++            } : null,
+             icon: busy ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(actionIcon),
+             label: Text(actionLabel),
+           ),
+           OutlinedButton.icon(onPressed: busy ? null : lc.requestStatus, icon: const Icon(Icons.refresh), label: const Text('Renew')),
+         ]),
++        if (!lc.hasValidV2Status) ...[
++          const SizedBox(height: 10),
++          _messageBox(
++            context,
++            'Laufzeitsteuerung nicht verfügbar',
++            'Start, Stop und Abbrechen werden erst aktiviert, wenn ein gültiger Status mit dem Schema openmower.gps_state.logging.v2 empfangen wurde.',
++          ),
++        ],
+         if (lc.lastStatus.value.isNotEmpty) ...[
+           const SizedBox(height: 10),
+           Text(lc.lastStatus.value, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: lc.lastStatusOk.value == false ? Theme.of(context).colorScheme.error : Theme.of(context).hintColor)),
+@@ -1156,19 +1165,29 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+         if (last.isEmpty)
+           Text('Noch keine abgeschlossene oder abgebrochene Session empfangen.', style: Theme.of(context).textTheme.bodySmall)
+         else
+-          Wrap(spacing: 8, runSpacing: 8, children: [
+-            _metricTile(context, 'Ergebnis', _text(last['result'], fallback: '-'), warning: _text(last['result']) == 'error'),
+-            _metricTile(context, 'Beendigungsgrund', _text(last['stop_reason'], fallback: '-')),
+-            _metricTile(context, 'Dauer', '${_fmt(last['duration_s'])} s'),
+-            _metricTile(context, 'Dateien', last['files'] is List ? (last['files'] as List).length.toString() : '0'),
+-          ]),
++          Builder(builder: (context) {
++            final lastRuntime = last['runtime'] is Map
++                ? Map<String, dynamic>.from(last['runtime'] as Map)
++                : <String, dynamic>{};
++            final lastStorage = last['storage'] is Map
++                ? Map<String, dynamic>.from(last['storage'] as Map)
++                : <String, dynamic>{};
++            final files = lastStorage['files'] ?? last['files'];
++            final result = _text(last['result'] ?? lastRuntime['state'], fallback: '-');
++            return Wrap(spacing: 8, runSpacing: 8, children: [
++              _metricTile(context, 'Ergebnis', result, warning: result == 'error'),
++              _metricTile(context, 'Beendigungsgrund', _text(lastRuntime['stop_reason'] ?? last['stop_reason'], fallback: '-')),
++              _metricTile(context, 'Dauer', '${_fmt(lastRuntime['duration_s'] ?? last['duration_s'])} s'),
++              _metricTile(context, 'Dateien', files is List ? files.length.toString() : '0'),
++            ]);
++          }),
+         if (settingsController.expertModeEnabled.value) ...[
+           const SizedBox(height: 14),
+           ExpansionTile(
+             tilePadding: EdgeInsets.zero,
+             title: const Text('Expertendetails und Rohdaten'),
+             children: [
+-              SelectableText('Status:\n${lc.rawStatusJson}\n\nLetzte Session:\n${lc.rawLastJson}', style: Theme.of(context).textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
++              SelectableText('Tatsächlicher Skriptpfad: ${lc.scriptPath.isEmpty ? '-' : lc.scriptPath}\nSeverity: ${lc.severity.isEmpty ? '-' : lc.severity}\n\nStatus:\n${lc.rawStatusJson}\n\nLetzte Session:\n${lc.rawLastJson}', style: Theme.of(context).textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
+             ],
+           ),
+         ],
+@@ -1178,7 +1197,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+ 
+   Widget _buildLoggingSettingsEditor(BuildContext context) {
+     final theme = Theme.of(context);
+-    final supported = controller.hasLoggingSettings;
++    final supported = controller.hasCoreLoggingSettings;
+     final settingsBusy = controller.waitingForResponse.value;
+     final triggerKey = GpsStateController.loggingSettingKeys[0];
+     final modeKey = GpsStateController.loggingSettingKeys[1];
+@@ -1225,7 +1244,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+       subtitle: Text(
+         supported
+             ? 'Wie bei Software und Hardware: lokal ändern, für die Session anwenden oder dauerhaft speichern.'
+-            : 'Das Backend liefert die drei benötigten Logging-Felder noch nicht vollständig über gps_state/settings/json.',
++            : 'Das Backend liefert die erforderlichen Logging-Felder noch nicht vollständig über gps_state/settings/json.',
+       ),
+       children: [
+         Container(
+@@ -1293,6 +1312,32 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+             enabled: supported && !settingsBusy,
+           ),
+         ],
++        if (controller.hasLegacyLoggingScriptPath) ...[
++          const SizedBox(height: 12),
++          _messageBox(
++            context,
++            'Migration des Skriptpfads erforderlich',
++            'Aktiv oder gespeichert ist noch ${GpsStateController.legacyLoggingScriptPath}. Setze den Wert bewusst auf ${GpsStateController.canonicalLoggingScriptPath}, wende ihn zunächst für die Session an und speichere ihn anschließend dauerhaft.',
++          ),
++        ],
++        if (settingsController.expertModeEnabled.value) ...[
++          const SizedBox(height: 12),
++          ExpansionTile(
++            tilePadding: EdgeInsets.zero,
++            title: const Text('Experteneinstellungen'),
++            subtitle: const Text('Pfade und optionale Containerzuordnung werden vollständig aus den Backend-Metadaten geladen.'),
++            children: [
++              for (final keyName in GpsStateController.loggingSettingKeys.skip(3)) ...[
++                _loggingTextField(
++                  context,
++                  keyName: keyName,
++                  enabled: controller.hasSetting(keyName) && !settingsBusy,
++                ),
++                const SizedBox(height: 12),
++              ],
++            ],
++          ),
++        ],
+         if ((loggingController.running || loggingController.armed || loggingController.requestActive) &&
+             controller.hasLoggingDrafts) ...[
+           const SizedBox(height: 10),
+@@ -1452,6 +1497,47 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
+     );
+   }
+ 
++  Widget _loggingTextField(
++    BuildContext context, {
++    required String keyName,
++    required bool enabled,
++  }) {
++    final theme = Theme.of(context);
++    final value = _text(controller.settingValue(keyName));
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.stretch,
++      children: [
++        Text(
++          controller.labelFor(keyName),
++          style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
++        ),
++        if (controller.descriptionFor(keyName).isNotEmpty) ...[
++          const SizedBox(height: 2),
++          Text(
++            controller.descriptionFor(keyName),
++            style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
++          ),
++        ],
++        const SizedBox(height: 6),
++        TextFormField(
++          key: ValueKey('${keyName}_${controller.editorRevision.value}'),
++          initialValue: value,
++          enabled: enabled,
++          decoration: const InputDecoration(
++            isDense: true,
++            border: OutlineInputBorder(),
++          ),
++          onChanged: (newValue) => controller.setDraftValue(
++            keyName,
++            newValue.trim().isEmpty ? '' : newValue.trim(),
++          ),
++        ),
++        const SizedBox(height: 6),
++        _loggingSettingValues(context, keyName, (raw) => raw.isEmpty ? '-' : raw),
++      ],
++    );
++  }
++
+   Widget _loggingSettingValues(
+     BuildContext context,
+     String keyName,

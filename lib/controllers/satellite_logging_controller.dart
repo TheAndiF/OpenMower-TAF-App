@@ -24,6 +24,8 @@ class SatelliteLoggingController extends GetxController {
   int _waitGeneration = 0;
 
   bool get hasData => statusPayload.isNotEmpty;
+  bool get hasValidV2Status =>
+      _text(statusPayload['schema']) == 'openmower.gps_state.logging.v2';
   Map<String, dynamic> get runtime => _map(statusPayload['runtime']);
   Map<String, dynamic> get request => _map(statusPayload['request']);
   Map<String, dynamic> get storage => _map(statusPayload['storage']);
@@ -35,6 +37,8 @@ class SatelliteLoggingController extends GetxController {
   String get state => _text(runtime['state'] ?? statusPayload['status']);
   String get summary => _text(statusPayload['summary']);
   String get errorText => _text(statusPayload['error']);
+  String get severity => _text(statusPayload['severity']);
+  String get scriptPath => _text(implementation['script_path']);
   String get mode => _text(request['mode']);
   String get trigger => _text(request['trigger']);
   String get currentAreaId => _text(request['target_area_id']);
