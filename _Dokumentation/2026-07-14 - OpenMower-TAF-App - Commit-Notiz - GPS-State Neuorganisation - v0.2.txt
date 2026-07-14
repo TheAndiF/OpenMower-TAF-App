@@ -1,0 +1,13 @@
+BL_Reorganize GPS state interface
+Date: 2026-07-14
+
+Summary:
+- Combined the operator status and the State0 decision chain in one Fahrfaehigkeit section.
+- Grouped State2 values into reception, RTK/accuracy, and pose/freshness areas.
+- Embedded the used-satellite table in State2 and added an on-demand switch for all visible satellites.
+- Kept State4 traffic disabled unless the user explicitly enables the full visible-satellite list.
+- Simplified F9P restart controls to one restart-type selection and one primary execution action.
+- Hid reset-mode options under advanced settings and reduced the idle recovery panel.
+
+Changed files:
+- lib/screens/gps_state.dart

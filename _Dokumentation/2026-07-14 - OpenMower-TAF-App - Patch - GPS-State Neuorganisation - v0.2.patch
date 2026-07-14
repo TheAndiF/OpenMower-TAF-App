@@ -1,0 +1,474 @@
+--- /mnt/data/orig_gps/OpenMower-TAF-App/lib/screens/gps_state.dart	2026-07-14 13:13:13.575112496 +0000
++++ /mnt/data/work_gps/OpenMower-TAF-App/lib/screens/gps_state.dart	2026-07-14 13:12:52.015917962 +0000
+@@ -23,6 +23,7 @@
+   bool _renewSent = false;
+   bool _rawJsonExpanded = false;
+   bool _snapshotDownloadInProgress = false;
++  String _selectedRestartMode = 'hot_start';
+ 
+   @override
+   void initState() {
+@@ -47,16 +48,10 @@
+                 children: [
+                   _buildOverviewHeader(context),
+                   const SizedBox(height: 12),
+-                  _buildState0Section(context),
+-                  const SizedBox(height: 10),
+                   _buildState1Section(context),
+                   const SizedBox(height: 10),
+                   _buildState2Section(context),
+                   const SizedBox(height: 10),
+-                  _buildState3Section(context),
+-                  const SizedBox(height: 10),
+-                  _buildState4Section(context),
+-                  const SizedBox(height: 10),
+                   _buildRestartSection(context),
+                   const SizedBox(height: 10),
+                   _buildGpsLoggingSection(context),
+@@ -66,7 +61,7 @@
+                   _buildRawJsonSection(context),
+                   const SizedBox(height: 10),
+                   Text(
+-                    'Hinweis: State1 ist die kompakte Bedieneranzeige. State0 und State4 sind Experten-/Debugdaten und sollten nur bei Bedarf aktiv sein.',
++                    'Hinweis: Fahrfähigkeit fasst Bedienstatus und Entscheidungskette zusammen. Die vollständige Liste sichtbarer Satelliten wird nur bei Bedarf zugeschaltet.',
+                     style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+                   ),
+                 ],
+@@ -173,14 +168,47 @@
+     return _sectionCard(
+       context,
+       icon: Icons.gps_fixed_outlined,
+-      title: 'Bedienerstatus (State1)',
+-      subtitle: state.isEmpty ? 'Noch keine kompakten Bedienerdaten empfangen' : 'Fahrfreigabe, Grund, RTK, Genauigkeit und Pose-Alter',
++      title: 'Fahrfähigkeit (State1)',
++      subtitle: state.isEmpty ? 'Noch keine Fahrfähigkeitsdaten empfangen' : 'Bedienstatus, Hauptgrund und aufklappbare Entscheidungskette',
+       active: _bool(state['gps_drive_ready']),
+       initiallyExpanded: true,
+       child: Column(
+         crossAxisAlignment: CrossAxisAlignment.stretch,
+         children: [
+           _buildDriveReadinessCard(context, state),
++          const SizedBox(height: 12),
++          _buildState0Section(context),
++        ],
++      ),
++    );
++  }
++
++
++  Widget _state2Group(
++    BuildContext context, {
++    required String title,
++    required IconData icon,
++    required List<Widget> children,
++  }) {
++    return Container(
++      constraints: const BoxConstraints(minHeight: 124),
++      padding: const EdgeInsets.all(12),
++      decoration: BoxDecoration(
++        border: Border.all(color: Theme.of(context).dividerColor),
++        borderRadius: BorderRadius.circular(6),
++      ),
++      child: Column(
++        crossAxisAlignment: CrossAxisAlignment.stretch,
++        children: [
++          Row(
++            children: [
++              Icon(icon, size: 19, color: Theme.of(context).colorScheme.primary),
++              const SizedBox(width: 7),
++              Text(title, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
++            ],
++          ),
++          const SizedBox(height: 10),
++          Wrap(spacing: 8, runSpacing: 8, children: children),
+         ],
+       ),
+     );
+@@ -193,12 +221,12 @@
+     return _sectionCard(
+       context,
+       icon: Icons.signal_cellular_alt,
+-      title: 'Technische GNSS-/Pose-Zusammenfassung (State2)',
++      title: 'GNSS, Pose und Satelliten (State2)',
+       subtitle: state.isEmpty
+           ? 'Noch keine technischen Qualitätsdaten empfangen'
+           : stale
+               ? 'Daten veraltet - neue GNSS-/Pose-Daten werden erwartet'
+-              : 'Aggregierte GNSS-Werte, Systemverteilung und technische Diagnosen',
++              : 'Empfang, RTK, Pose, Diagnose und bedarfsgesteuerte Satellitenliste',
+       initiallyExpanded: true,
+       child: Column(
+         crossAxisAlignment: CrossAxisAlignment.stretch,
+@@ -212,39 +240,66 @@
+             child: Column(
+               crossAxisAlignment: CrossAxisAlignment.stretch,
+               children: [
+-                Wrap(
+-                  spacing: 8,
+-                  runSpacing: 8,
+-                  children: [
+-                    _metricTile(
+-                      context,
+-                      'Verfügbar',
+-                      _boolText(state['available']),
+-                      accent: !stale && _boolNullable(state['available']) == true,
+-                      warning: _boolNullable(state['available']) == false,
+-                    ),
+-                    _metricTile(context, 'Quality Class', _text(state['quality_class'], fallback: '-'), accent: !stale && _qualityGood(state['quality_class'])),
+-                    _metricTile(context, 'Sichtbar', _fmt(state['visible_count'] ?? state['visible'])),
+-                    _metricTile(context, 'Verwendet', _fmt(state['used_count'] ?? state['used']), accent: !stale && _int(state['used_count'] ?? state['used']) > 0),
+-                    _metricTile(context, 'Ø C/N0', '${_fmt(state['avg_cn0'])} dB-Hz', accent: !stale && _double(state['avg_cn0']) >= 30),
+-                    _metricTile(context, 'Min C/N0', '${_fmt(state['min_cn0'])} dB-Hz'),
+-                    _metricTile(context, 'Max C/N0', '${_fmt(state['max_cn0'])} dB-Hz'),
+-                    _metricTile(context, 'Schwach', _fmt(state['weak_count']), warning: !stale && _int(state['weak_count']) > 0),
+-                    _metricTile(context, 'Gut', _fmt(state['good_count']), accent: !stale && _int(state['good_count']) > 0),
+-                    _metricTile(context, 'RTK', _text(state['rtk_state'], fallback: '-'), accent: !stale && _text(state['rtk_state']).toLowerCase() == 'fixed'),
+-                    _metricTile(context, 'LL GPS Genauigkeit', _metersText(state['ll_gps_accuracy_m'] ?? state['ll_gps_position_accuracy_m'])),
+-                    _metricTile(context, 'XB Pose Genauigkeit', _metersText(state['xb_pose_accuracy_m'])),
+-                    _metricTile(context, 'Orientierung', _boolText(state['orientation_valid']), accent: !stale && _boolNullable(state['orientation_valid']) == true, warning: !stale && _boolNullable(state['orientation_valid']) == false),
+-                    _metricTile(context, 'Pose aktuell', _boolText(state['recent_absolute_pose']), accent: !stale && _boolNullable(state['recent_absolute_pose']) == true, warning: !stale && _boolNullable(state['recent_absolute_pose']) == false),
+-                    _metricTile(context, 'GPS Timeout', _boolText(state['gps_timeout']), accent: !stale && _boolNullable(state['gps_timeout']) == false, warning: !stale && _boolNullable(state['gps_timeout']) == true),
+-                    _metricTile(
+-                      context,
+-                      'Quelldaten-Alter',
+-                      _millisecondsText(state['age_ms']),
+-                      warning: stale || _boolNullable(state['stale']) == true,
+-                      accent: !stale && _boolNullable(state['stale']) == false,
+-                    ),
+-                  ],
++                LayoutBuilder(
++                  builder: (context, constraints) {
++                    final cardWidth = constraints.maxWidth >= 1080
++                        ? (constraints.maxWidth - 24) / 3
++                        : constraints.maxWidth >= 700
++                            ? (constraints.maxWidth - 12) / 2
++                            : constraints.maxWidth;
++                    return Wrap(
++                      spacing: 12,
++                      runSpacing: 12,
++                      children: [
++                        SizedBox(
++                          width: cardWidth,
++                          child: _state2Group(
++                            context,
++                            title: 'Empfang',
++                            icon: Icons.satellite_alt_outlined,
++                            children: [
++                              _compactStatusChip(context, 'Verfügbar', _boolText(state['available']), accent: !stale && _boolNullable(state['available']) == true, warning: _boolNullable(state['available']) == false),
++                              _compactStatusChip(context, 'Sichtbar', _fmt(state['visible_count'] ?? state['visible'])),
++                              _compactStatusChip(context, 'Verwendet', _fmt(state['used_count'] ?? state['used']), accent: !stale && _int(state['used_count'] ?? state['used']) > 0),
++                              _compactStatusChip(context, 'Ø C/N0', '${_fmt(state['avg_cn0'])} dB-Hz', accent: !stale && _double(state['avg_cn0']) >= 30),
++                              _compactStatusChip(context, 'Min C/N0', '${_fmt(state['min_cn0'])} dB-Hz'),
++                              _compactStatusChip(context, 'Max C/N0', '${_fmt(state['max_cn0'])} dB-Hz'),
++                              _compactStatusChip(context, 'Gut', _fmt(state['good_count']), accent: !stale && _int(state['good_count']) > 0),
++                              _compactStatusChip(context, 'Schwach', _fmt(state['weak_count']), warning: !stale && _int(state['weak_count']) > 0),
++                            ],
++                          ),
++                        ),
++                        SizedBox(
++                          width: cardWidth,
++                          child: _state2Group(
++                            context,
++                            title: 'RTK und Genauigkeit',
++                            icon: Icons.gps_fixed,
++                            children: [
++                              _compactStatusChip(context, 'RTK', _text(state['rtk_state'], fallback: '-'), accent: !stale && _text(state['rtk_state']).toLowerCase() == 'fixed'),
++                              _compactStatusChip(context, 'Quality', _text(state['quality_class'], fallback: '-'), accent: !stale && _qualityGood(state['quality_class'])),
++                              _compactStatusChip(context, 'LL Genauigkeit', _metersText(state['ll_gps_accuracy_m'] ?? state['ll_gps_position_accuracy_m'])),
++                              _compactStatusChip(context, 'XB Genauigkeit', _metersText(state['xb_pose_accuracy_m']), warning: !stale && _double(state['xb_pose_accuracy_m']) > 1),
++                            ],
++                          ),
++                        ),
++                        SizedBox(
++                          width: cardWidth,
++                          child: _state2Group(
++                            context,
++                            title: 'Pose und Aktualität',
++                            icon: Icons.navigation_outlined,
++                            children: [
++                              _compactStatusChip(context, 'Pose aktuell', _boolText(state['recent_absolute_pose']), accent: !stale && _boolNullable(state['recent_absolute_pose']) == true, warning: !stale && _boolNullable(state['recent_absolute_pose']) == false),
++                              _compactStatusChip(context, 'Orientierung', _boolText(state['orientation_valid']), accent: !stale && _boolNullable(state['orientation_valid']) == true, warning: !stale && _boolNullable(state['orientation_valid']) == false),
++                              _compactStatusChip(context, 'Quelldaten-Alter', _millisecondsText(state['age_ms']), warning: stale || _boolNullable(state['stale']) == true),
++                              _compactStatusChip(context, 'GPS Timeout', _boolText(state['gps_timeout']), accent: !stale && _boolNullable(state['gps_timeout']) == false, warning: !stale && _boolNullable(state['gps_timeout']) == true),
++                            ],
++                          ),
++                        ),
++                      ],
++                    );
++                  },
+                 ),
+                 const SizedBox(height: 12),
+                 Text('Systemverteilung', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+@@ -259,6 +314,8 @@
+                   Text('Keine Systemverteilung empfangen.', style: Theme.of(context).textTheme.bodySmall),
+                 _buildDiagnosticSummary(context, state),
+                 _buildDriveDiagnosticsSection(context, state),
++                const SizedBox(height: 16),
++                _buildCombinedSatellitePanel(context),
+                 const SizedBox(height: 10),
+                 Text(
+                   'Schwellen: schwach < ${controller.settingDouble('weak_cn0_threshold', fallback: 20).toStringAsFixed(1)} dB-Hz, gut ≥ ${controller.settingDouble('good_cn0_threshold', fallback: 30).toStringAsFixed(1)} dB-Hz',
+@@ -272,6 +329,81 @@
+     );
+   }
+ 
++
++  Widget _buildCombinedSatellitePanel(BuildContext context) {
++    final showAll = controller.state4Active;
++    final state = showAll ? controller.state4 : controller.state3;
++    final satellites = controller.satellitesForState(showAll ? 4 : 3);
++    final stale = _statePayloadIsStale(state);
++    final visible = controller.state4['visible_count'] ?? controller.state2['visible_count'] ?? satellites.length;
++    final used = controller.state3['used_count'] ?? controller.state2['used_count'] ?? controller.state2['used'] ?? satellites.length;
++
++    return Container(
++      width: double.infinity,
++      padding: const EdgeInsets.all(12),
++      decoration: BoxDecoration(
++        border: Border.all(color: Theme.of(context).dividerColor),
++        borderRadius: BorderRadius.circular(6),
++      ),
++      child: Column(
++        crossAxisAlignment: CrossAxisAlignment.stretch,
++        children: [
++          LayoutBuilder(
++            builder: (context, constraints) {
++              final info = Column(
++                crossAxisAlignment: CrossAxisAlignment.start,
++                children: [
++                  Text('Satelliten', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
++                  const SizedBox(height: 2),
++                  Text(
++                    showAll
++                        ? '${_fmt(visible)} sichtbar · ${_fmt(used)} verwendet'
++                        : '${_fmt(used)} verwendete Satelliten',
++                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
++                  ),
++                ],
++              );
++              final toggle = SwitchListTile.adaptive(
++                contentPadding: EdgeInsets.zero,
++                dense: true,
++                title: const Text('Alle sichtbaren Satelliten anzeigen'),
++                subtitle: const Text('Erhöht den MQTT-Traffic nur während der Diagnose.'),
++                value: showAll,
++                onChanged: (value) => controller.setState4Enabled(value),
++              );
++              if (constraints.maxWidth < 760) {
++                return Column(
++                  crossAxisAlignment: CrossAxisAlignment.stretch,
++                  children: [info, const SizedBox(height: 6), toggle],
++                );
++              }
++              return Row(
++                children: [
++                  Expanded(child: info),
++                  SizedBox(width: 390, child: toggle),
++                ],
++              );
++            },
++          ),
++          if (stale) ...[
++            const SizedBox(height: 8),
++            _staleDataNotice(context, state, stateName: showAll ? 'sichtbare Satelliten' : 'verwendete Satelliten'),
++          ],
++          const SizedBox(height: 10),
++          Opacity(
++            opacity: stale ? 0.55 : 1,
++            child: _satelliteTable(
++              context,
++              satellites,
++              showUsed: showAll,
++              viewportHeight: showAll ? 440 : 320,
++            ),
++          ),
++        ],
++      ),
++    );
++  }
++
+   Widget _buildState3Section(BuildContext context) {
+     final state = controller.state3;
+     final satellites = controller.satellitesForState(3);
+@@ -416,9 +548,9 @@
+     return _sectionCard(
+       context,
+       icon: Icons.fact_check_outlined,
+-      title: 'Fahrfähigkeits-Entscheidungskette (State0)',
++      title: 'Entscheidungsdetails',
+       subtitle: rows.isEmpty
+-          ? 'Noch keine State0-Diagnose empfangen'
++          ? 'Noch keine Entscheidungsdiagnose empfangen'
+           : 'Definition v$definitionVersion, ${rows.length} Entscheidungsknoten',
+       active: controller.state0Active,
+       initiallyExpanded: false,
+@@ -647,52 +779,96 @@
+             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+           ),
+           const SizedBox(height: 12),
+-          Text('Neustart auslösen', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+-          const SizedBox(height: 8),
+-          Wrap(
+-            spacing: 10,
+-            runSpacing: 10,
+-            crossAxisAlignment: WrapCrossAlignment.center,
++          Row(
+             children: [
+-              SizedBox(
+-                width: 270,
+-                child: DropdownButtonFormField<String>(
+-                  key: ValueKey('restart-reset-${controller.restartResetMode.value}'),
+-                  initialValue: controller.restartResetMode.value,
+-                  decoration: const InputDecoration(
+-                    labelText: 'Reset-Modus',
+-                    border: OutlineInputBorder(),
+-                    isDense: true,
+-                  ),
+-                  items: GpsStateController.restartResetModes
+-                      .map((mode) => DropdownMenuItem<String>(value: mode, child: Text(_restartResetModeLabel(mode))))
+-                      .toList(growable: false),
+-                  onChanged: controlsDisabled ? null : (value) {
+-                    if (value != null) controller.restartResetMode.value = value;
+-                  },
+-                ),
++              Expanded(
++                child: Text('Neustart auslösen', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
++              ),
++              OutlinedButton.icon(
++                onPressed: waiting ? null : controller.requestRestartStatus,
++                icon: waiting
++                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
++                    : const Icon(Icons.refresh),
++                label: const Text('Status aktualisieren'),
+               ),
+-              ElevatedButton.icon(
+-                onPressed: controlsDisabled ? null : () => controller.restartF9p('hot_start', resetMode: controller.restartResetMode.value),
+-                icon: const Icon(Icons.flash_on),
++            ],
++          ),
++          const SizedBox(height: 10),
++          Wrap(
++            spacing: 8,
++            runSpacing: 8,
++            children: [
++              ChoiceChip(
++                selected: _selectedRestartMode == 'hot_start',
++                avatar: const Icon(Icons.flash_on, size: 18),
+                 label: const Text('Hot Start'),
++                onSelected: controlsDisabled ? null : (_) => setState(() => _selectedRestartMode = 'hot_start'),
+               ),
+-              ElevatedButton.icon(
+-                onPressed: controlsDisabled ? null : () => controller.restartF9p('warm_start', resetMode: controller.restartResetMode.value),
+-                icon: const Icon(Icons.thermostat),
++              ChoiceChip(
++                selected: _selectedRestartMode == 'warm_start',
++                avatar: const Icon(Icons.thermostat, size: 18),
+                 label: const Text('Warm Start'),
++                onSelected: controlsDisabled ? null : (_) => setState(() => _selectedRestartMode = 'warm_start'),
+               ),
+-              OutlinedButton.icon(
+-                onPressed: controlsDisabled ? null : () => controller.restartF9p('cold_start', resetMode: controller.restartResetMode.value),
+-                icon: const Icon(Icons.ac_unit),
++              ChoiceChip(
++                selected: _selectedRestartMode == 'cold_start',
++                avatar: const Icon(Icons.ac_unit, size: 18),
+                 label: const Text('Cold Start'),
++                onSelected: controlsDisabled ? null : (_) => setState(() => _selectedRestartMode = 'cold_start'),
+               ),
+-              OutlinedButton.icon(
+-                onPressed: waiting ? null : controller.requestRestartStatus,
+-                icon: waiting
+-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+-                    : const Icon(Icons.refresh),
+-                label: const Text('Restart-Status neu laden'),
++            ],
++          ),
++          const SizedBox(height: 8),
++          Text(
++            _selectedRestartMode == 'hot_start'
++                ? 'Schneller Neustart unter weitgehender Beibehaltung vorhandener Empfängerdaten.'
++                : _selectedRestartMode == 'warm_start'
++                    ? 'Teilweiser Neuaufbau der Navigationsdaten.'
++                    : 'Vollständiger Neuaufbau; längste Wiederanlaufzeit.',
++            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
++          ),
++          const SizedBox(height: 10),
++          Align(
++            alignment: Alignment.centerLeft,
++            child: ElevatedButton.icon(
++              onPressed: controlsDisabled
++                  ? null
++                  : () => controller.restartF9p(
++                        _selectedRestartMode,
++                        resetMode: controller.restartResetMode.value,
++                      ),
++              icon: const Icon(Icons.restart_alt),
++              label: const Text('Neustart ausführen'),
++            ),
++          ),
++          const SizedBox(height: 8),
++          ExpansionTile(
++            tilePadding: EdgeInsets.zero,
++            childrenPadding: EdgeInsets.zero,
++            dense: true,
++            title: const Text('Erweiterte Einstellungen'),
++            subtitle: Text('Reset-Modus: ${_restartResetModeLabel(controller.restartResetMode.value)}'),
++            children: [
++              Align(
++                alignment: Alignment.centerLeft,
++                child: SizedBox(
++                  width: 320,
++                  child: DropdownButtonFormField<String>(
++                    key: ValueKey('restart-reset-${controller.restartResetMode.value}'),
++                    initialValue: controller.restartResetMode.value,
++                    decoration: const InputDecoration(
++                      labelText: 'Reset-Modus',
++                      border: OutlineInputBorder(),
++                      isDense: true,
++                    ),
++                    items: GpsStateController.restartResetModes
++                        .map((mode) => DropdownMenuItem<String>(value: mode, child: Text(_restartResetModeLabel(mode))))
++                        .toList(growable: false),
++                    onChanged: controlsDisabled ? null : (value) {
++                      if (value != null) controller.restartResetMode.value = value;
++                    },
++                  ),
++                ),
+               ),
+             ],
+           ),
+@@ -708,12 +884,28 @@
+             _buildCompactLastRestartPanel(context, last),
+             const SizedBox(height: 14),
+           ],
+-          _buildRestartStatusPanel(
+-            context,
+-            title: 'Aktueller Recovery-Ablauf',
+-            payload: status,
+-            live: true,
+-          ),
++          if (_text(status['status']).isNotEmpty && _text(status['status']).toLowerCase() != 'idle')
++            _buildRestartStatusPanel(
++              context,
++              title: 'Aktueller Recovery-Ablauf',
++              payload: status,
++              live: true,
++            )
++          else
++            Container(
++              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
++              decoration: BoxDecoration(
++                border: Border.all(color: Theme.of(context).dividerColor),
++                borderRadius: BorderRadius.circular(5),
++              ),
++              child: const Row(
++                children: [
++                  Icon(Icons.info_outline, size: 20),
++                  SizedBox(width: 8),
++                  Text('Kein Neustart aktiv. Ablaufdetails werden bei einem Neustart eingeblendet.'),
++                ],
++              ),
++            ),
+           if (validation.isNotEmpty) ...[
+             const SizedBox(height: 14),
+             Text('Letzte Befehlsvalidierung', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
