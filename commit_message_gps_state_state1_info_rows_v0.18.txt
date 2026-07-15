@@ -1,0 +1,17 @@
+BL_Refine GPS State1 diagnostics and MQTT status mapping
+Date: 2026-07-15
+
+Summary:
+- Removed the redundant State1 summary tiles above the decision chain.
+- Added informational Current Status row 0 and GPS Quality row between checks 1 and 2.
+- Simplified current-value formatting to avoid repeating thresholds in the value column.
+- Synchronized check 12 with the canonical root drive_ready and drive_state fields.
+- Added the expected MQTT State1 status structure and consistency rules.
+
+Changed files:
+- lib/screens/gps_state.dart
+- docs/gps-state-state1-ui-mqtt-contract-v0.1.md
+- commit_message_gps_state_state1_info_rows_v0.18.txt
+- _Dokumentation/2026-07-15 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State State1 UI und MQTT-Struktur - v0.1.docx
+- _Dokumentation/2026-07-15 - OpenMower-TAF-App - Aenderungsdokumentation - GPS-State State1 UI und MQTT-Struktur - v0.1.pdf
+- openmower_gps_state_state1_info_rows_v0.18.patch

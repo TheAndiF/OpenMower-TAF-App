@@ -167,7 +167,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
 
   Widget _buildState1Section(BuildContext context) {
     final state = controller.state1;
-    final ready = _boolNullable(state['gps_drive_ready']);
+    final ready = _boolNullable(state['drive_ready'] ?? state['gps_drive_ready']);
     return _sectionCard(
       context,
       icon: ready == true
@@ -186,7 +186,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           : 'Bedienstatus, erster Blockierer und vollständige Entscheidungskette',
       active: ready == true,
       initiallyExpanded: true,
-      child: _buildState0Section(context, driveState: state),
+      child: _buildState0Section(context),
     );
   }
 
@@ -545,10 +545,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     );
   }
 
-  Widget _buildState0Section(
-    BuildContext context, {
-    required Map<String, dynamic> driveState,
-  }) {
+  Widget _buildState0Section(BuildContext context) {
     final definition = controller.state0Definition;
     final status = controller.state0Status;
     final rows = _state0DecisionRows(definition, status);
@@ -568,8 +565,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           waiting: waiting,
           snapshotCurrent: snapshotCurrent,
         ),
-        const SizedBox(height: 10),
-        _buildDriveReadinessCard(context, driveState),
+
         if (definition.isEmpty && status.isNotEmpty) ...[
           const SizedBox(height: 10),
           _messageBox(
@@ -2409,8 +2405,10 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     // Einzelmerkmale bleiben auswertbar, auch wenn ein früherer Knoten bereits
     // blockiert. Snapshot-Aktualität wird separat über die Statuszeile gezeigt.
     final effectiveState = _decisionConditionState(row);
-    final color = _decisionStateColor(effectiveState);
-    final stateLabel = waiting
+    final color = row.isInfo ? Colors.blue.shade700 : _decisionStateColor(effectiveState);
+    final stateLabel = row.isInfo
+        ? 'Information'
+        : waiting
         ? 'Aktualisierung läuft'
         : snapshotCurrent
             ? _decisionStateLabel(effectiveState)
@@ -2420,7 +2418,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       constraints: const BoxConstraints(minWidth: 930, minHeight: 44),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: row.isBlocking ? 0.065 : 0.025),
+        color: color.withValues(alpha: row.isInfo ? 0.055 : row.isBlocking ? 0.065 : 0.025),
         borderRadius: BorderRadius.circular(4),
         border: Border.all(color: theme.dividerColor.withValues(alpha: 0.45)),
       ),
@@ -2454,15 +2452,18 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                           : Colors.red.shade400,
                     ),
                   ),
-                Container(
-                  width: 18,
-                  height: 18,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: theme.cardColor,
-                    border: Border.all(color: color, width: 3),
+                if (row.isInfo)
+                  Icon(Icons.info_outline, size: 21, color: color)
+                else
+                  Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: theme.cardColor,
+                      border: Border.all(color: color, width: 3),
+                    ),
                   ),
-                ),
                 if (row.isBlocking)
                   Positioned(
                     right: 0,
@@ -2493,7 +2494,10 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                 row.label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: row.isInfo ? color : null,
+                ),
               ),
             ),
           ),
@@ -2521,7 +2525,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
               child: Tooltip(
                 message: stateLabel,
                 child: Icon(
-                  _decisionStateIcon(effectiveState),
+                  row.isInfo ? Icons.info_outline : _decisionStateIcon(effectiveState),
                   size: 22,
                   color: color,
                 ),
@@ -2640,18 +2644,62 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       orderedKeys.addAll(sorted);
 
       var index = 1;
-      return orderedKeys.map<_DecisionRow>((key) {
+      final decisionRows = orderedKeys.map<_DecisionRow>((key) {
         final row = _buildState0DecisionRowData(
           key,
           definitionChecks[key],
           statusChecks[key],
           index,
+          rootStatus: rootStatus,
           blockingStage: blockingStage,
           blockingKey: blockingKey,
         );
         index++;
         return row;
-      }).toList(growable: false);
+      }).toList(growable: true);
+
+      final nestedData = rootStatus['data'] is Map
+          ? Map<String, dynamic>.from(rootStatus['data'] as Map)
+          : const <String, dynamic>{};
+      final currentStatus = _text(
+        rootStatus['current_status'] ??
+            rootStatus['mowing_status'] ??
+            nestedData['current_status'] ??
+            nestedData['mowing_status'],
+        fallback: '-',
+      );
+      decisionRows.insert(
+        0,
+        _DecisionRow(
+          number: '0',
+          label: 'Current Status',
+          description: 'Aktueller Betriebsstatus des Mähers. Dieser Eintrag ist rein informativ und beeinflusst die Fahrfreigabe nicht.',
+          value: currentStatus,
+          threshold: '-',
+          status: 'Info',
+          ok: null,
+          key: 'current_status',
+          isInfo: true,
+        ),
+      );
+
+      final quality = _text(rootStatus['quality_class'] ?? nestedData['quality_class'], fallback: '-');
+      final stageOneIndex = decisionRows.indexWhere((row) => row.number == '1');
+      decisionRows.insert(
+        stageOneIndex >= 0 ? stageOneIndex + 1 : 1,
+        _DecisionRow(
+          number: '',
+          label: 'GPS Quality',
+          description: 'Zusammengefasste GPS-Qualitätsklasse. Dieser Eintrag ist rein informativ und kein Entscheidungsknoten.',
+          value: quality,
+          threshold: '-',
+          status: 'Info',
+          ok: null,
+          key: 'quality_class',
+          isInfo: true,
+        ),
+      );
+      return decisionRows;
     }
 
     if (definition.isNotEmpty) {
@@ -2678,6 +2726,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     Map<String, dynamic>? definition,
     Map<String, dynamic>? status,
     int fallbackIndex, {
+    required Map<String, dynamic> rootStatus,
     dynamic blockingStage,
     String blockingKey = '',
   }) {
@@ -2687,11 +2736,22 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       fallback: checkId,
     );
     final description = _text(definition?['description'] ?? status?['description']);
-    final value = _state0ValueText(status, definition);
-    final threshold = _state0ThresholdText(status, definition);
-    final statusText = _text(status?['status'] ?? status?['result'] ?? status?['state'], fallback: definition == null ? 'Definition fehlt' : 'Status fehlt');
     final source = _text(definition?['source'] ?? status?['source'], fallback: _text(status?['key'] ?? definition?['key'], fallback: checkId));
     final key = _text(status?['key'] ?? definition?['key'], fallback: checkId);
+    final isDriveReadyRow = stage == '12' || key == 'gps_drive_ready' || checkId == '12_gps_drive_ready';
+    final rootReady = _boolNullable(rootStatus['drive_ready'] ?? rootStatus['gps_drive_ready']);
+    final rootDriveState = _text(rootStatus['drive_state'] ?? rootStatus['gps_drive_state']);
+    final value = isDriveReadyRow
+        ? (rootReady == true
+            ? (rootDriveState.isEmpty ? 'fahrbereit' : rootDriveState)
+            : rootReady == false
+                ? (rootDriveState.isEmpty ? 'blockiert' : rootDriveState)
+                : 'nicht eindeutig')
+        : _state0ValueText(status, definition);
+    final threshold = _state0ThresholdText(status, definition);
+    final statusText = isDriveReadyRow
+        ? (rootReady == true ? 'ok' : rootReady == false ? 'blocked' : 'unknown')
+        : _text(status?['status'] ?? status?['result'] ?? status?['state'], fallback: definition == null ? 'Definition fehlt' : 'Status fehlt');
 
     return _DecisionRow(
       number: stage,
@@ -2700,10 +2760,10 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       value: value,
       threshold: threshold,
       status: statusText,
-      ok: _state0StatusOk(status),
+      ok: isDriveReadyRow ? rootReady : _state0StatusOk(status),
       source: source,
       key: key,
-      severity: _int(status?['severity']),
+      severity: isDriveReadyRow ? _int(rootStatus['severity']) : _int(status?['severity']),
       isBlocking: _state0CheckIsBlocking(stage, checkId, key, blockingStage: blockingStage, blockingKey: blockingKey),
     );
   }
@@ -2722,15 +2782,28 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
   }
 
   String _state0ValueText(Map<String, dynamic>? status, Map<String, dynamic>? definition) {
-    if (status == null) {
-      final expected = definition?['expected'];
-      if (expected != null) return 'Soll: ${_formatValue(expected)}';
-      return '-';
+    if (status == null) return '-';
+    if (!status.containsKey('value')) return '-';
+    final value = status['value'];
+    final unit = _text(definition?['unit'] ?? status['unit']).toLowerCase();
+    if (value is num && unit == 'm' && value.abs() < 1) {
+      return '${(value.toDouble() * 100).toStringAsFixed(1).replaceAll('.', ',')} cm';
     }
-    final display = _text(status['display']);
-    if (display.isNotEmpty) return display;
-    if (status.containsKey('value')) return _formatValue(status['value']);
-    return '-';
+    if (value is num && unit == 's') {
+      return '${value.toDouble().toStringAsFixed(2).replaceAll('.', ',')} s';
+    }
+    if (value is num && unit == 'samples') {
+      return '${_formatValue(value)} Samples';
+    }
+    if (value is bool) {
+      final key = _text(status['key'] ?? definition?['key']).toLowerCase();
+      if (key.contains('enabled')) return value ? 'aktiv' : 'inaktiv';
+      if (key.contains('received')) return value ? 'empfangen' : 'nicht empfangen';
+      if (key.contains('valid')) return value ? 'gültig' : 'ungültig';
+      return value ? 'Ja' : 'Nein';
+    }
+    if (_text(status['display']).toLowerCase() == 'nicht erforderlich') return 'nicht erforderlich';
+    return _formatValue(value);
   }
 
   String _state0ThresholdText(Map<String, dynamic>? status, Map<String, dynamic>? definition) {
@@ -3202,6 +3275,7 @@ class _DecisionRow {
     this.key = '',
     this.severity = 0,
     this.isBlocking = false,
+    this.isInfo = false,
   });
 
   final String number;
@@ -3215,4 +3289,5 @@ class _DecisionRow {
   final String key;
   final int severity;
   final bool isBlocking;
+  final bool isInfo;
 }
