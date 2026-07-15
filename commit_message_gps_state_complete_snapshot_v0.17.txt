@@ -1,0 +1,19 @@
+BL_Add complete GPS state snapshot collection
+Date: 2026-07-15
+
+Summary:
+- Collect all visible and normally hidden GPS state information before exporting the JSON snapshot.
+- Temporarily activate State2, State3, and State4 with dedicated short-lived leases without changing existing UI leases.
+- Request State1, GPS settings, logging status, and restart status for the same point-in-time snapshot.
+- Add timeout, completeness, freshness, request ID, and collection duration metadata.
+- Include State2 satellites and logging status/last/validation payloads in the export.
+- Report whether the downloaded snapshot is complete or contains missing/stale data.
+- Add PDF and DOCX change documentation plus a patch file.
+
+Changed files:
+- lib/controllers/gps_state_controller.dart
+- lib/screens/gps_state.dart
+- _Dokumentation/2026-07-15 - OpenMower-TAF-App - Aenderungsdokumentation - Vollstaendiger GPS-State Snapshot - v0.1.docx
+- _Dokumentation/2026-07-15 - OpenMower-TAF-App - Aenderungsdokumentation - Vollstaendiger GPS-State Snapshot - v0.1.pdf
+- _Dokumentation/2026-07-15 - OpenMower-TAF-App - Patch - Vollstaendiger GPS-State Snapshot - v0.1.patch
+- commit_message_gps_state_complete_snapshot_v0.17.txt

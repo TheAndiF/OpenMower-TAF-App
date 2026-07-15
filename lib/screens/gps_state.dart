@@ -2009,9 +2009,10 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
         '${now.minute.toString().padLeft(2, '0')}-'
         '${now.second.toString().padLeft(2, '0')}.json';
     try {
-      // Build the JSON only when the button is pressed so generated_at and all
-      // exported values represent the exact local app state at that moment.
-      final jsonText = controller.exportJsonString();
+      // Request all visible and normally hidden diagnostic data first. Hidden
+      // detail states are activated only in the background for this snapshot.
+      final snapshot = await controller.collectCompleteSnapshot();
+      final jsonText = const JsonEncoder.withIndent('  ').convert(snapshot);
       await saveTextFile(
         fileName: fileName,
         content: jsonText,
@@ -2019,7 +2020,11 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('GPS-State-Snapshot wurde als $fileName bereitgestellt.')),
+        SnackBar(
+          content: Text(snapshot['snapshot']?['complete'] == true
+              ? 'Vollständiger GPS-State-Snapshot wurde als $fileName bereitgestellt.'
+              : 'GPS-State-Snapshot mit fehlenden oder veralteten Daten wurde als $fileName bereitgestellt.'),
+        ),
       );
     } catch (error) {
       if (!mounted) return;

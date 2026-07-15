@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:get/get.dart';
 import 'package:open_mower_app/io/mqtt_connection.dart';
+import 'package:open_mower_app/controllers/satellite_logging_controller.dart';
 
 class GpsStateController extends GetxController {
   static const List<String> settingKeys = <String>[
@@ -103,6 +104,7 @@ class GpsStateController extends GetxController {
   final restartResetMode = 'controlled_software'.obs;
   final activeDetailStates = <int>{}.obs;
   final state2Satellites = <String, dynamic>{}.obs;
+  final state2SatellitesReceivedAt = Rxn<DateTime>();
   final Map<int, Timer> _leaseTimers = <int, Timer>{};
   static const int detailLeaseMs = 15000;
   static const Map<int, int> detailIntervalsMs = <int, int>{2: 500, 3: 1000, 4: 1000};
@@ -250,6 +252,145 @@ class GpsStateController extends GetxController {
   }
 
   String exportJsonString() => const JsonEncoder.withIndent('  ').convert(buildDebugExport());
+
+  /// Collects a complete point-in-time diagnosis snapshot. Detail states that
+  /// are currently hidden are activated with dedicated short-lived leases,
+  /// refreshed in the background and disabled again afterwards. Existing UI
+  /// leases are never changed.
+  Future<Map<String, dynamic>> collectCompleteSnapshot({
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    final startedAt = DateTime.now();
+    final snapshotId = '$requestClientId-snapshot-${startedAt.millisecondsSinceEpoch}';
+    final mqtt = Get.find<MqttConnection>();
+    final logging = Get.find<SatelliteLoggingController>();
+    final temporarilyActivated = <int>[];
+
+    for (final state in const <int>[2, 3, 4]) {
+      if (!activeDetailStates.contains(state)) {
+        temporarilyActivated.add(state);
+        mqtt.publishGpsStateRequest(state, <String, dynamic>{
+          'command': 'set_active',
+          'state': 'state$state',
+          'active': true,
+          'request_id': '$snapshotId-state$state',
+          'interval_ms': detailIntervalsMs[state] ?? 1000,
+          'lease_ms': timeout.inMilliseconds + 2000,
+          if (state == 2) 'satellite_mode': 'all',
+        });
+      }
+      mqtt.publishGpsStateRequest(state, <String, dynamic>{
+        'command': 'publish_now',
+        'state': 'state$state',
+        'request_id': '$snapshotId-state$state',
+      });
+    }
+
+    mqtt.publishGpsStateRequest(1, <String, dynamic>{
+      'command': 'publish_now',
+      'request_id': '$snapshotId-state1',
+    });
+    mqtt.requestGpsStateSettings(reportError: false);
+    mqtt.requestGpsStateLoggingStatus();
+    mqtt.requestGpsRestartStatus();
+
+    final deadline = startedAt.add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final statesCurrent = List<int>.generate(4, (index) => index + 1).every(
+        (state) => !(stateStatusReceivedAt[state]?.isBefore(startedAt) ?? true),
+      );
+      final satellitesCurrent =
+          !(state2SatellitesReceivedAt.value?.isBefore(startedAt) ?? true);
+      final settingsCurrent = !(settingsReceivedAt.value?.isBefore(startedAt) ?? true);
+      final loggingCurrent = !(logging.lastUpdated.value?.isBefore(startedAt) ?? true);
+      final restartCurrent = !(restartStatusReceivedAt.value?.isBefore(startedAt) ?? true);
+      if (statesCurrent && satellitesCurrent && settingsCurrent && loggingCurrent && restartCurrent) {
+        break;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+
+    for (final state in temporarilyActivated) {
+      mqtt.publishGpsStateRequest(state, <String, dynamic>{
+        'command': 'set_active',
+        'state': 'state$state',
+        'active': false,
+        'request_id': '$snapshotId-state$state',
+      });
+    }
+
+    final finishedAt = DateTime.now();
+    final export = buildDebugExport();
+    final freshness = <String, dynamic>{
+      for (var state = 1; state <= 4; state++)
+        'state$state': <String, dynamic>{
+          'received': stateStatusReceivedAt[state] != null,
+          'current': !(stateStatusReceivedAt[state]?.isBefore(startedAt) ?? true),
+          'received_at': stateStatusReceivedAt[state]?.toUtc().toIso8601String(),
+        },
+      'state2_satellites': <String, dynamic>{
+        'received': state2SatellitesReceivedAt.value != null,
+        'current': !(state2SatellitesReceivedAt.value?.isBefore(startedAt) ?? true),
+        'received_at': state2SatellitesReceivedAt.value?.toUtc().toIso8601String(),
+      },
+      'settings': <String, dynamic>{
+        'received': settingsReceivedAt.value != null,
+        'current': !(settingsReceivedAt.value?.isBefore(startedAt) ?? true),
+        'received_at': settingsReceivedAt.value?.toUtc().toIso8601String(),
+      },
+      'logging': <String, dynamic>{
+        'received': logging.lastUpdated.value != null,
+        'current': !(logging.lastUpdated.value?.isBefore(startedAt) ?? true),
+        'received_at': logging.lastUpdated.value?.toUtc().toIso8601String(),
+      },
+      'restart': <String, dynamic>{
+        'received': restartStatusReceivedAt.value != null,
+        'current': !(restartStatusReceivedAt.value?.isBefore(startedAt) ?? true),
+        'received_at': restartStatusReceivedAt.value?.toUtc().toIso8601String(),
+      },
+    };
+    final complete = freshness.values.every(
+      (value) => value is Map && value['current'] == true,
+    );
+
+    export['schema'] = 'openmower.gps_state.snapshot.v2';
+    export['snapshot_kind'] = 'active_complete_snapshot';
+    export['snapshot'] = <String, dynamic>{
+      'request_id': snapshotId,
+      'started_at': startedAt.toUtc().toIso8601String(),
+      'created_at': finishedAt.toUtc().toIso8601String(),
+      'collection_duration_ms': finishedAt.difference(startedAt).inMilliseconds,
+      'timeout_ms': timeout.inMilliseconds,
+      'complete': complete,
+      'temporarily_activated_states': temporarilyActivated.map((state) => 'state$state').toList(),
+      'ui_leases_preserved': true,
+      'freshness': freshness,
+    };
+    final states = export['states'] as Map<String, dynamic>;
+    final state2Export = states['state2'] as Map<String, dynamic>;
+    state2Export['satellites'] = _partSnapshot(
+      payload: state2Satellites,
+      topic: MqttConnection.gpsState2SatellitesTopic,
+      receivedAt: state2SatellitesReceivedAt.value,
+    );
+    final auxiliary = export['auxiliary'] as Map<String, dynamic>;
+    auxiliary['logging_status'] = _partSnapshot(
+      payload: logging.statusPayload,
+      topic: MqttConnection.gpsStateLoggingStatusJsonTopic,
+      receivedAt: logging.lastUpdated.value,
+    );
+    auxiliary['logging_last'] = _partSnapshot(
+      payload: logging.lastPayload,
+      topic: MqttConnection.gpsStateLoggingLastJsonTopic,
+      receivedAt: logging.lastUpdated.value,
+    );
+    auxiliary['logging_validation'] = _partSnapshot(
+      payload: logging.validationPayload,
+      topic: MqttConnection.gpsStateLoggingValidationJsonTopic,
+      receivedAt: logging.lastUpdated.value,
+    );
+    return export;
+  }
 
   List<Map<String, dynamic>> satellitesForState(int stateNumber) {
     final source = stateNumber == 2 ? state2Satellites : (stateNumber == 4 ? state4 : state3);
@@ -705,8 +846,10 @@ class GpsStateController extends GetxController {
   void setState2Satellites(Map<String, dynamic> payload, {required String topic}) {
     final root = _root(payload);
     state2Satellites.assignAll(_deepCopy(root));
+    final receivedAt = DateTime.now();
+    state2SatellitesReceivedAt.value = receivedAt;
     lastTopic.value = topic;
-    lastUpdated.value = DateTime.now();
+    lastUpdated.value = receivedAt;
   }
 
   void _publishDraft({
