@@ -2432,7 +2432,9 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
             isFirst: index == 0,
             isLast: index == rows.length - 1,
             beforeOrAtFirstBlocker: firstBlockingIndex < 0 || index <= firstBlockingIndex,
-            fulfilledBeforeFirstBlocker: firstBlockingIndex >= 0 && index < firstBlockingIndex && !row.isInfo && _decisionConditionState(row) == _DecisionConditionState.passed,
+            fulfilledBeforeFirstBlocker: !row.isInfo &&
+                _decisionConditionState(row) == _DecisionConditionState.passed &&
+                (firstBlockingIndex < 0 || index < firstBlockingIndex),
             snapshotCurrent: snapshotCurrent,
             waiting: waiting,
           ),

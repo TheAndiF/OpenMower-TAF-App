@@ -1,0 +1,45 @@
+--- a/lib/screens/gps_state.dart
++++ b/lib/screens/gps_state.dart
+@@ -2432,7 +2432,9 @@
+             isFirst: index == 0,
+             isLast: index == rows.length - 1,
+             beforeOrAtFirstBlocker: firstBlockingIndex < 0 || index <= firstBlockingIndex,
+-            fulfilledBeforeFirstBlocker: firstBlockingIndex >= 0 && index < firstBlockingIndex && !row.isInfo && _decisionConditionState(row) == _DecisionConditionState.passed,
++            fulfilledBeforeFirstBlocker: !row.isInfo &&
++                _decisionConditionState(row) == _DecisionConditionState.passed &&
++                (firstBlockingIndex < 0 || index < firstBlockingIndex),
+             snapshotCurrent: snapshotCurrent,
+             waiting: waiting,
+           ),
+--- a/docs/bedienungsanleitung.md
++++ b/docs/bedienungsanleitung.md
+@@ -464,3 +464,14 @@
+ In der Fahrfähigkeitsansicht ist **Current Status** eine nicht nummerierte Informationszeile. Der Wert wird aus `current_status` des State1-Statuspayloads gelesen; der verschachtelte `data.current_status`-Wert dient nur als kompatibler Rückfallwert. Das obere Fahrfreigabefeld richtet seinen Haupttext an `drive_ready`, `drive_state`, `blocking_stage` und `blocking_title` aus. Ein widersprüchlicher allgemeiner Summary-Text überschreibt daher keine eindeutige Fahrfreigabe mehr.
+ 
+ Liegt ein erster Blockierer vor, erhalten alle davor liegenden und erfolgreich erfüllten Prüfstufen einen ausgefüllten Kreis in ihrer Statusfarbe. Der Blockierer selbst behält seine rote Blockiermarkierung; nachfolgende Stufen werden weiterhin nach ihrem eigenen Status dargestellt.
++
++### Darstellung der erfolgreichen State1-Entscheidungskette
++
++Die Kreise vor den nummerierten Entscheidungsknoten zeigen jetzt den bereits erfolgreich abgeschlossenen Teil der Fahrfähigkeitsprüfung:
++
++- Sind alle Prüfschritte erfolgreich und existiert kein Blockierer, werden die Kreise der Stufen 1 bis 12 grün ausgefüllt dargestellt.
++- Existiert ein erster Blockierer, werden nur die erfolgreichen Stufen vor diesem Blockierer ausgefüllt dargestellt.
++- Der blockierende Prüfschritt behält seine eigene Fehler- beziehungsweise Blockierdarstellung.
++- Rein informative Zeilen wie `Current Status` und `GPS Quality` bleiben von dieser Fortschrittsdarstellung ausgenommen.
++
++Die Füllung ergänzt die Ergebnisanzeige rechts und macht auf einen Blick sichtbar, wie weit die Entscheidungskette erfolgreich durchlaufen wurde.
+--- a/docs/mqtt-schnittstelle.md
++++ b/docs/mqtt-schnittstelle.md
+@@ -1102,3 +1102,12 @@
+ ### State1-UI-Bindung und F9P-Resetdarstellung (2026-07-16)
+ 
+ Für die State1-Bedieneransicht gelten `current_status`, `gps_quality`, `drive_ready`, `drive_state`, `blocking_stage` und `blocking_title` als direkte UI-Quellen. `data.current_status` und `data.gps_quality` werden nur kompatibel verwendet, wenn die Top-Level-Felder fehlen. Die Reset-Anforderung selbst bleibt unverändert; geändert wurde ausschließlich die Auswahl- und Bewertungsdarstellung in der App.
++
++### State1-Darstellung der abgeschlossenen Prüfkette
++
++Für die visuelle Fortschrittsdarstellung der nummerierten `state1`-Checks verwendet die App den Status jedes Prüfschritts sowie `blocking_stage` beziehungsweise `blocking_key`:
++
++- Ohne Blockierer werden alle Checks mit erfolgreichem Status als ausgefüllter grüner Kreis angezeigt.
++- Bei vorhandenem Blockierer werden erfolgreiche Checks nur dann ausgefüllt dargestellt, wenn ihre Position vor dem ersten Blockierer liegt.
++- Der Blockierer selbst sowie nachfolgende oder nicht bewertete Checks verwenden weiterhin ihre jeweilige Statusdarstellung.
++- Die Informationszeilen `current_status` und `gps_quality` gehören nicht zur nummerierten Entscheidungskette und werden nicht als abgeschlossene Prüfschritte gefüllt.

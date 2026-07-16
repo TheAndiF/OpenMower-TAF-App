@@ -1,0 +1,18 @@
+BL_Fill completed State1 decision chain
+Date: 2026-07-16
+
+Summary:
+- Filled successful State1 decision circles when the full chain has no blocker.
+- Kept the existing behavior that only successful stages before the first blocker are filled when a blocker exists.
+- Excluded Current Status and GPS Quality information rows from the completion fill.
+- Updated user and MQTT documentation.
+- Added PDF/DOCX change documentation and the source patch.
+
+Changed files:
+- lib/screens/gps_state.dart
+- docs/bedienungsanleitung.md
+- docs/mqtt-schnittstelle.md
+- commit_message_state1_completed_chain.txt
+- _Dokumentation/2026-07-16 - OpenMower-TAF-App - Aenderungsdokumentation - State1-abgeschlossene-Pruefkette - v0.3.pdf
+- _Dokumentation/2026-07-16 - OpenMower-TAF-App - Aenderungsdokumentation - State1-abgeschlossene-Pruefkette - v0.3.docx
+- _Dokumentation/2026-07-16 - OpenMower-TAF-App - Patch - State1-abgeschlossene-Pruefkette - v0.3.patch

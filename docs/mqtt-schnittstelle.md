@@ -1102,3 +1102,12 @@ Für eine vollständige Anzeige sollte das Backend bei einem abgeschlossenen Abl
 ### State1-UI-Bindung und F9P-Resetdarstellung (2026-07-16)
 
 Für die State1-Bedieneransicht gelten `current_status`, `gps_quality`, `drive_ready`, `drive_state`, `blocking_stage` und `blocking_title` als direkte UI-Quellen. `data.current_status` und `data.gps_quality` werden nur kompatibel verwendet, wenn die Top-Level-Felder fehlen. Die Reset-Anforderung selbst bleibt unverändert; geändert wurde ausschließlich die Auswahl- und Bewertungsdarstellung in der App.
+
+### State1-Darstellung der abgeschlossenen Prüfkette
+
+Für die visuelle Fortschrittsdarstellung der nummerierten `state1`-Checks verwendet die App den Status jedes Prüfschritts sowie `blocking_stage` beziehungsweise `blocking_key`:
+
+- Ohne Blockierer werden alle Checks mit erfolgreichem Status als ausgefüllter grüner Kreis angezeigt.
+- Bei vorhandenem Blockierer werden erfolgreiche Checks nur dann ausgefüllt dargestellt, wenn ihre Position vor dem ersten Blockierer liegt.
+- Der Blockierer selbst sowie nachfolgende oder nicht bewertete Checks verwenden weiterhin ihre jeweilige Statusdarstellung.
+- Die Informationszeilen `current_status` und `gps_quality` gehören nicht zur nummerierten Entscheidungskette und werden nicht als abgeschlossene Prüfschritte gefüllt.

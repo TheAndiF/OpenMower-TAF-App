@@ -464,3 +464,14 @@ Der Bereich **F9P-Neustart und Recovery** verwendet für Reset-Modus und Startty
 In der Fahrfähigkeitsansicht ist **Current Status** eine nicht nummerierte Informationszeile. Der Wert wird aus `current_status` des State1-Statuspayloads gelesen; der verschachtelte `data.current_status`-Wert dient nur als kompatibler Rückfallwert. Das obere Fahrfreigabefeld richtet seinen Haupttext an `drive_ready`, `drive_state`, `blocking_stage` und `blocking_title` aus. Ein widersprüchlicher allgemeiner Summary-Text überschreibt daher keine eindeutige Fahrfreigabe mehr.
 
 Liegt ein erster Blockierer vor, erhalten alle davor liegenden und erfolgreich erfüllten Prüfstufen einen ausgefüllten Kreis in ihrer Statusfarbe. Der Blockierer selbst behält seine rote Blockiermarkierung; nachfolgende Stufen werden weiterhin nach ihrem eigenen Status dargestellt.
+
+### Darstellung der erfolgreichen State1-Entscheidungskette
+
+Die Kreise vor den nummerierten Entscheidungsknoten zeigen jetzt den bereits erfolgreich abgeschlossenen Teil der Fahrfähigkeitsprüfung:
+
+- Sind alle Prüfschritte erfolgreich und existiert kein Blockierer, werden die Kreise der Stufen 1 bis 12 grün ausgefüllt dargestellt.
+- Existiert ein erster Blockierer, werden nur die erfolgreichen Stufen vor diesem Blockierer ausgefüllt dargestellt.
+- Der blockierende Prüfschritt behält seine eigene Fehler- beziehungsweise Blockierdarstellung.
+- Rein informative Zeilen wie `Current Status` und `GPS Quality` bleiben von dieser Fortschrittsdarstellung ausgenommen.
+
+Die Füllung ergänzt die Ergebnisanzeige rechts und macht auf einen Blick sichtbar, wie weit die Entscheidungskette erfolgreich durchlaufen wurde.
