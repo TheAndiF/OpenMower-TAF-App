@@ -1079,3 +1079,21 @@ Die App sendet standardmäßig `reset_mode=controlled_software`. Ein Status `sen
 ### GPS-State JSON-Snapshot der App
 
 Die GPS-State-Seite kann den aktuell lokal vorhandenen Datenstand über **JSON-Ansicht > Download** als `openmower-gps-state-snapshot-YYYY-MM-DD_HH-mm-ss.json` exportieren. Position, Download-Symbol und Beschriftung entsprechen der JSON-Ansicht der Flächenseite. Der Export umfasst die rohen Definition-/Status-Payloads von State0 bis State4, Settings, Validierungen, Restartdaten, die jeweils zugehörigen Topics und Empfangszeiten sowie den lokalen Einstellungsentwurf. Der Export publiziert selbst keine MQTT-Nachricht; bei Bedarf ist vorher `gps_state/set/renew/json` über **Status neu laden** auszulösen.
+
+### Darstellung des aktuellen F9P-Recovery-Schritts
+
+Die App wertet weiterhin `gps_state/restart/status/json` und `gps_state/restart/last/json` aus. In der Oberfläche wird daraus bewusst nur ein einzelner aktueller Schritt dargestellt. Für den Abschlusszeitpunkt wird vorrangig `completed_at` aus dem aktiven Status, ersatzweise aus dem letzten abgeschlossenen Neustart verwendet.
+
+Für eine vollständige Anzeige sollte das Backend bei einem abgeschlossenen Ablauf mindestens folgende Werte liefern:
+
+```json
+{
+  "status": "success",
+  "mode": "hot_start",
+  "reset_mode": "controlled_software",
+  "nav_pvt_received": true,
+  "nav_sat_received": true,
+  "receiver_restart_confirmed": true,
+  "completed_at": "2026-07-16T10:42:18+02:00"
+}
+```

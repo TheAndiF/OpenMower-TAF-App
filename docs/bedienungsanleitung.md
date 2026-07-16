@@ -443,3 +443,15 @@ Im Bereich **F9P-Neustart und Recovery** können Hot Start, Warm Start und Cold 
 Die Prüfkette zeigt getrennt, ob die Neustartanforderung empfangen, der Reset ausgeführt, neue NAV-PVT-Daten empfangen, neue NAV-SAT-Daten empfangen und der Receiver-Neustart bestätigt wurde. Angezeigt werden außerdem Restart-Sequenz, Startart, Reset-Modus, Anforderungszeit, Abschlusszeit und Dauer. Ein Neustart gilt erst bei `success` und bestätigten neuen NAV-PVT-/NAV-SAT-Ausgaben als erfolgreich; RTK Fixed ist dafür nicht erforderlich.
 
 Der retained MQTT-Stand `gps_state/restart/last/json` erscheint als eigener Bereich **Letzter abgeschlossener Neustart** und bleibt damit auch nach erneutem Öffnen der Seite nachvollziehbar. Technische Fehlergründe werden verständlich erklärt, der Originalcode bleibt unter **Technische Details** sichtbar.
+
+### Geordneter F9P-Neustartdialog
+
+Der Bereich **F9P-Neustart und Recovery** folgt nun einer festen Bedienreihenfolge:
+
+1. Reset-Modus auswählen.
+2. Starttyp (Hot, Warm oder Cold Start) auswählen.
+3. **Neustart ausführen** betätigen.
+
+Unterhalb der Bedienelemente wird nur noch der aktuell relevante Recovery-Schritt angezeigt. Die bisherige gleichzeitige Darstellung aller Prüfschritte entfällt. Mögliche Anzeigen sind unter anderem `Befehl gesendet`, `Empfänger antwortet`, `NAV-PVT empfangen`, `NAV-SAT empfangen` und `Empfängerausgaben bestätigt`.
+
+Nach einem erfolgreich abgeschlossenen Neustart zeigt dasselbe Statusfeld zusätzlich den Abschlusszeitpunkt aus `completed_at` an. Ist kein aktueller Ablauf aktiv, bleibt der letzte Abschlusszeitpunkt sichtbar, sofern das Backend einen Wert über `gps_state/restart/last/json` geliefert hat.

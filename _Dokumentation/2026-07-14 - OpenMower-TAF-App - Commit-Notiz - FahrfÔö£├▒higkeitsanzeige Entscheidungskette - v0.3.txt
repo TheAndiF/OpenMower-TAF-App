@@ -1,0 +1,13 @@
+BL_Refine GPS drive readiness decision chain
+Date: 2026-07-14
+
+Summary:
+- Combined the State1 overview and State0 decision details in one drive-readiness section.
+- Added a header icon that reflects the current drive-release state.
+- Placed the first blocking condition before the snapshot controls and decision chain.
+- Replaced result labels with compact status icons and tooltips.
+- Added a connected process line and a flag for the first blocking node.
+- Kept known values and individual evaluations visible after an earlier blocker.
+
+Changed files:
+- lib/screens/gps_state.dart

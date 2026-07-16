@@ -1,0 +1,14 @@
+BL_Reorder F9P restart controls and simplify recovery status
+Date: 2026-07-16
+
+Summary:
+- Reordered the F9P restart controls to select the reset mode first, the start type second, and execute the restart last.
+- Replaced the multi-row recovery checklist with one current-status field and an optional progress bar.
+- Added the completion timestamp of the last successful restart to the same status field.
+- Documented the UI behavior and the expected MQTT completion timestamp.
+
+Changed files:
+- lib/screens/gps_state.dart
+- docs/bedienungsanleitung.md
+- docs/mqtt-schnittstelle.md
+- commit_message_f9p_restart_linear_ui.txt

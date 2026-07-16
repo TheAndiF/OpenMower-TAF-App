@@ -767,7 +767,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       icon: Icons.restart_alt,
       title: 'F9P-Neustart und Recovery',
       subtitle: status.isEmpty
-          ? 'Neustart auslösen und Wiederherstellung von NAV-PVT/NAV-SAT prüfen'
+          ? 'Reset-Modus und Starttyp wählen'
           : 'Aktueller Zustand: ${_restartStatusLabel(_text(status['status']))}',
       active: _text(status['status']).toLowerCase() == 'success',
       initiallyExpanded: status.isNotEmpty || last.isNotEmpty || validation.isNotEmpty,
@@ -778,22 +778,30 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
             'Ein Neustart gilt erst als erfolgreich, wenn nach UBX-CFG-RST sowohl neue NAV-PVT- als auch neue NAV-SAT-Daten empfangen und die Empfängerausgaben bestätigt wurden.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: Text('Neustart auslösen', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 14),
+          Text('1. Reset-Modus auswählen', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: 360,
+            child: DropdownButtonFormField<String>(
+              key: ValueKey('restart-reset-${controller.restartResetMode.value}'),
+              initialValue: controller.restartResetMode.value,
+              decoration: const InputDecoration(
+                labelText: 'Reset-Modus',
+                border: OutlineInputBorder(),
+                isDense: true,
               ),
-              OutlinedButton.icon(
-                onPressed: waiting ? null : controller.requestRestartStatus,
-                icon: waiting
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.refresh),
-                label: const Text('Status aktualisieren'),
-              ),
-            ],
+              items: GpsStateController.restartResetModes
+                  .map((mode) => DropdownMenuItem<String>(value: mode, child: Text(_restartResetModeLabel(mode))))
+                  .toList(growable: false),
+              onChanged: controlsDisabled ? null : (value) {
+                if (value != null) controller.restartResetMode.value = value;
+              },
+            ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
+          Text('2. Starttyp auswählen', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -827,48 +835,28 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                     : 'Vollständiger Neuaufbau; längste Wiederanlaufzeit.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
           ),
-          const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: ElevatedButton.icon(
-              onPressed: controlsDisabled
-                  ? null
-                  : () => controller.restartF9p(
-                        _selectedRestartMode,
-                        resetMode: controller.restartResetMode.value,
-                      ),
-              icon: const Icon(Icons.restart_alt),
-              label: const Text('Neustart ausführen'),
-            ),
-          ),
+          const SizedBox(height: 14),
+          Text('3. Neustart ausführen', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            childrenPadding: EdgeInsets.zero,
-            dense: true,
-            title: const Text('Erweiterte Einstellungen'),
-            subtitle: Text('Reset-Modus: ${_restartResetModeLabel(controller.restartResetMode.value)}'),
+          Row(
             children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: SizedBox(
-                  width: 320,
-                  child: DropdownButtonFormField<String>(
-                    key: ValueKey('restart-reset-${controller.restartResetMode.value}'),
-                    initialValue: controller.restartResetMode.value,
-                    decoration: const InputDecoration(
-                      labelText: 'Reset-Modus',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    items: GpsStateController.restartResetModes
-                        .map((mode) => DropdownMenuItem<String>(value: mode, child: Text(_restartResetModeLabel(mode))))
-                        .toList(growable: false),
-                    onChanged: controlsDisabled ? null : (value) {
-                      if (value != null) controller.restartResetMode.value = value;
-                    },
-                  ),
-                ),
+              ElevatedButton.icon(
+                onPressed: controlsDisabled
+                    ? null
+                    : () => controller.restartF9p(
+                          _selectedRestartMode,
+                          resetMode: controller.restartResetMode.value,
+                        ),
+                icon: const Icon(Icons.restart_alt),
+                label: const Text('Neustart ausführen'),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton.icon(
+                onPressed: waiting ? null : controller.requestRestartStatus,
+                icon: waiting
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh),
+                label: const Text('Status aktualisieren'),
               ),
             ],
           ),
@@ -880,53 +868,108 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
             ),
           ],
           const SizedBox(height: 16),
-          if (last.isNotEmpty) ...[
-            _buildCompactLastRestartPanel(context, last),
-            const SizedBox(height: 14),
-          ],
-          if (_text(status['status']).isNotEmpty && _text(status['status']).toLowerCase() != 'idle')
-            _buildRestartStatusPanel(
+          _buildRestartCurrentStateField(context, status: status, last: last),
+          if (validation.isNotEmpty && _boolNullable(validation['valid'] ?? validation['accepted']) == false) ...[
+            const SizedBox(height: 12),
+            _messageBox(
               context,
-              title: 'Aktueller Recovery-Ablauf',
-              payload: status,
-              live: true,
-            )
-          else
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                border: Border.all(color: Theme.of(context).dividerColor),
-                borderRadius: BorderRadius.circular(5),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.info_outline, size: 20),
-                  SizedBox(width: 8),
-                  Text('Kein Neustart aktiv. Ablaufdetails werden bei einem Neustart eingeblendet.'),
-                ],
-              ),
+              'Neustartbefehl nicht angenommen',
+              _text(validation['reason'] ?? validation['error'] ?? validation['message'], fallback: 'Der Neustartbefehl wurde vom Backend abgelehnt.'),
             ),
-          if (validation.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Text('Letzte Befehlsvalidierung', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _compactStatusChip(context, 'Gültig', _boolText(validation['valid'] ?? validation['accepted']), accent: _boolNullable(validation['valid'] ?? validation['accepted']) == true, warning: _boolNullable(validation['valid'] ?? validation['accepted']) == false),
-                _compactStatusChip(context, 'Startart', _restartModeLabel(_text(validation['mode'], fallback: '-'))),
-                _compactStatusChip(context, 'Reset-Modus', _text(validation['reset_mode'], fallback: '-')),
-              ],
-            ),
-            if (_text(validation['reason'] ?? validation['error'] ?? validation['message']).isNotEmpty) ...[
-              const SizedBox(height: 8),
-              _messageBox(context, 'Validierungsantwort', _text(validation['reason'] ?? validation['error'] ?? validation['message'])),
-            ],
           ],
         ],
       ),
     );
+  }
+
+  Widget _buildRestartCurrentStateField(
+    BuildContext context, {
+    required Map<String, dynamic> status,
+    required Map<String, dynamic> last,
+  }) {
+    final theme = Theme.of(context);
+    final rawStatus = _text(status['status']).toLowerCase();
+    final effective = rawStatus.isEmpty || rawStatus == 'idle'
+        ? _text(last['status']).toLowerCase()
+        : rawStatus;
+    final activePayload = rawStatus.isEmpty || rawStatus == 'idle' ? last : status;
+    final color = _restartStatusColor(effective, theme);
+    final inProgress = effective == 'requested' ||
+        effective == 'accepted' ||
+        effective == 'sent' ||
+        effective == 'resetting' ||
+        effective == 'waiting_for_receiver' ||
+        effective == 'validating';
+    final currentStep = _restartCurrentStepLabel(effective, activePayload);
+    final completedAt = _restartTimestampText(
+      activePayload['completed_at'] ?? last['completed_at'],
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: color.withValues(alpha: 0.38)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(_restartStatusIcon(effective), color: color, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Aktueller Neustartstatus', style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
+                    const SizedBox(height: 2),
+                    Text(currentStep, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: color)),
+                  ],
+                ),
+              ),
+              if (completedAt != '-' && (effective == 'success' || rawStatus.isEmpty || rawStatus == 'idle'))
+                Text(
+                  'Abgeschlossen: $completedAt',
+                  style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                ),
+            ],
+          ),
+          if (inProgress) ...[
+            const SizedBox(height: 10),
+            LinearProgressIndicator(color: color),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _restartCurrentStepLabel(String status, Map<String, dynamic> payload) {
+    if (status.isEmpty || status == 'idle') {
+      return 'Kein Neustart aktiv';
+    }
+    if (status == 'requested' || status == 'accepted' || status == 'sent' || status == 'resetting') {
+      return 'Befehl gesendet';
+    }
+    if (status == 'waiting_for_receiver') {
+      if (_boolNullable(payload['nav_pvt_received']) == true && _boolNullable(payload['nav_sat_received']) != true) {
+        return 'NAV-PVT empfangen';
+      }
+      return 'Empfänger antwortet';
+    }
+    if (status == 'validating') {
+      if (_boolNullable(payload['nav_sat_received']) == true) {
+        return 'NAV-SAT empfangen';
+      }
+      return 'Empfängerausgaben werden bestätigt';
+    }
+    if (status == 'success') return 'Empfängerausgaben bestätigt';
+    if (status == 'failed' || status == 'error' || status == 'rejected' || status == 'send_failed') {
+      return 'Neustart fehlgeschlagen: ${_restartReasonLabel(_text(payload['reason']))}';
+    }
+    return _restartStatusLabel(status);
   }
 
 
