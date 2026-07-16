@@ -1097,3 +1097,8 @@ Für eine vollständige Anzeige sollte das Backend bei einem abgeschlossenen Abl
   "completed_at": "2026-07-16T10:42:18+02:00"
 }
 ```
+
+
+### State1-UI-Bindung und F9P-Resetdarstellung (2026-07-16)
+
+Für die State1-Bedieneransicht gelten `current_status`, `gps_quality`, `drive_ready`, `drive_state`, `blocking_stage` und `blocking_title` als direkte UI-Quellen. `data.current_status` und `data.gps_quality` werden nur kompatibel verwendet, wenn die Top-Level-Felder fehlen. Die Reset-Anforderung selbst bleibt unverändert; geändert wurde ausschließlich die Auswahl- und Bewertungsdarstellung in der App.

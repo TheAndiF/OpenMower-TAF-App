@@ -685,30 +685,36 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     final blockingTitle = _text(status['blocking_title']);
     final summary = _text(status['summary'], fallback: ready == true ? 'Alle Bedingungen erfüllt' : 'Keine Zusammenfassung empfangen');
     final blockingRow = _state0BlockingRow(rows, blockingStage: blockingStage, blockingKey: blockingKey);
-    final rowStates = rows.map(_decisionConditionState).toList(growable: false);
+    final rowStates = rows.where((row) => !row.isInfo).map(_decisionConditionState).toList(growable: false);
     final hasUnknown = rowStates.any((item) => item == _DecisionConditionState.unknown);
     final hasFailed = rowStates.any((item) => item == _DecisionConditionState.failed);
     final readyIsConsistent = ready == true && !hasUnknown && !hasFailed;
     final reportedReadyButIncomplete = ready == true && !readyIsConsistent;
-    final state = readyIsConsistent && severity == 0 && blockingStage == null
+    final state = readyIsConsistent && blockingStage == null
         ? _DecisionConditionState.passed
         : reportedReadyButIncomplete
             ? _DecisionConditionState.warning
-            : ready == false || severity > 0 || blockingStage != null
+            : ready == false || blockingStage != null
                 ? _DecisionConditionState.failed
-                : _DecisionConditionState.warning;
+                : severity > 0
+                    ? _DecisionConditionState.warning
+                    : _DecisionConditionState.warning;
     final color = _decisionStateColor(state);
     final title = reportedReadyButIncomplete
-        ? 'Fahrfreigabe gemeldet, Prüfkette aber nicht vollständig aktuell'
-        : state == _DecisionConditionState.passed
-            ? 'Fahrfreigabe erteilt'
-            : blockingRow != null
-                ? 'Fahrfreigabe hängt bei Stufe ${blockingRow.number}: ${blockingRow.label}'
-                : blockingTitle.isNotEmpty
-                    ? 'Fahrfreigabe hängt bei: $blockingTitle'
-                    : 'Fahrfreigabe noch nicht eindeutig';
+        ? 'Fahrbereit gemeldet, Prüfkette aber nicht vollständig aktuell'
+        : ready == true
+            ? 'Fahrbereit'
+            : ready == false && blockingRow != null
+                ? 'Nicht fahrbereit - Blockiert bei Stufe ${blockingRow.number}: ${blockingRow.label}'
+                : ready == false && blockingTitle.isNotEmpty
+                    ? 'Nicht fahrbereit - Blockiert bei: $blockingTitle'
+                    : ready == false
+                        ? 'Nicht fahrbereit'
+                        : 'Fahrfreigabe noch nicht eindeutig';
     final details = <String>[];
-    if (summary.isNotEmpty) details.add(summary);
+    if (ready == null && summary.isNotEmpty) details.add(summary);
+    final driveState = _text(status['drive_state'] ?? status['gps_drive_state']);
+    if (driveState.isNotEmpty) details.add('Fahrzustand: $driveState');
     if (reportedReadyButIncomplete) details.add('Ein grüner Gesamtstatus wird erst angezeigt, wenn die Einzelprüfungen vollständig vorliegen.');
     if (blockingKey.isNotEmpty) details.add('Blockierender Schlüssel: $blockingKey');
     final llAge = _millisecondsText(status['ll_gps_age_ms']);
@@ -781,23 +787,19 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           const SizedBox(height: 14),
           Text('1. Reset-Modus auswählen', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          SizedBox(
-            width: 360,
-            child: DropdownButtonFormField<String>(
-              key: ValueKey('restart-reset-${controller.restartResetMode.value}'),
-              initialValue: controller.restartResetMode.value,
-              decoration: const InputDecoration(
-                labelText: 'Reset-Modus',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              items: GpsStateController.restartResetModes
-                  .map((mode) => DropdownMenuItem<String>(value: mode, child: Text(_restartResetModeLabel(mode))))
-                  .toList(growable: false),
-              onChanged: controlsDisabled ? null : (value) {
-                if (value != null) controller.restartResetMode.value = value;
-              },
-            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: GpsStateController.restartResetModes
+                .map(
+                  (mode) => ChoiceChip(
+                    selected: controller.restartResetMode.value == mode,
+                    avatar: Icon(_restartResetModeIcon(mode), size: 18),
+                    label: Text(_restartResetModeLabel(mode)),
+                    onSelected: controlsDisabled ? null : (_) => controller.restartResetMode.value = mode,
+                  ),
+                )
+                .toList(growable: false),
           ),
           const SizedBox(height: 14),
           Text('2. Starttyp auswählen', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
@@ -838,7 +840,10 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           const SizedBox(height: 14),
           Text('3. Neustart ausführen', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          Row(
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               ElevatedButton.icon(
                 onPressed: controlsDisabled
@@ -850,7 +855,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                 icon: const Icon(Icons.restart_alt),
                 label: const Text('Neustart ausführen'),
               ),
-              const SizedBox(width: 10),
+              _restartInterventionBadge(context, controller.restartResetMode.value),
               OutlinedButton.icon(
                 onPressed: waiting ? null : controller.requestRestartStatus,
                 icon: waiting
@@ -2427,6 +2432,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
             isFirst: index == 0,
             isLast: index == rows.length - 1,
             beforeOrAtFirstBlocker: firstBlockingIndex < 0 || index <= firstBlockingIndex,
+            fulfilledBeforeFirstBlocker: firstBlockingIndex >= 0 && index < firstBlockingIndex && !row.isInfo && _decisionConditionState(row) == _DecisionConditionState.passed,
             snapshotCurrent: snapshotCurrent,
             waiting: waiting,
           ),
@@ -2441,6 +2447,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
     required bool isFirst,
     required bool isLast,
     required bool beforeOrAtFirstBlocker,
+    required bool fulfilledBeforeFirstBlocker,
     required bool snapshotCurrent,
     required bool waiting,
   }) {
@@ -2503,7 +2510,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
                     height: 18,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: theme.cardColor,
+                      color: fulfilledBeforeFirstBlocker ? color : theme.cardColor,
                       border: Border.all(color: color, width: 3),
                     ),
                   ),
@@ -2714,7 +2721,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
       decisionRows.insert(
         0,
         _DecisionRow(
-          number: '0',
+          number: '',
           label: 'Current Status',
           description: 'Aktueller Betriebsstatus des Mähers. Dieser Eintrag ist rein informativ und beeinflusst die Fahrfreigabe nicht.',
           value: currentStatus,
@@ -2726,7 +2733,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
         ),
       );
 
-      final quality = _text(rootStatus['quality_class'] ?? nestedData['quality_class'], fallback: '-');
+      final quality = _text(rootStatus['gps_quality'] ?? nestedData['gps_quality'] ?? rootStatus['quality_class'] ?? nestedData['quality_class'], fallback: '-');
       final stageOneIndex = decisionRows.indexWhere((row) => row.number == '1');
       decisionRows.insert(
         stageOneIndex >= 0 ? stageOneIndex + 1 : 1,
@@ -2738,7 +2745,7 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
           threshold: '-',
           status: 'Info',
           ok: null,
-          key: 'quality_class',
+          key: 'gps_quality',
           isInfo: true,
         ),
       );
@@ -3005,8 +3012,76 @@ class _GpsStateScreenState extends State<GpsStateScreen> {
         return 'gnss_only';
       case 'hardware_watchdog':
         return 'hardware_watchdog';
+      case 'hardware_after_shutdown':
+        return 'hardware_after_shutdown';
     }
     return mode;
+  }
+
+  IconData _restartResetModeIcon(String mode) {
+    switch (mode) {
+      case 'controlled_software':
+        return Icons.memory;
+      case 'gnss_only':
+        return Icons.satellite_alt;
+      case 'hardware_after_shutdown':
+        return Icons.settings_power;
+      case 'hardware_watchdog':
+        return Icons.bolt;
+    }
+    return Icons.restart_alt;
+  }
+
+  String _restartInterventionStrength(String mode) {
+    switch (mode) {
+      case 'gnss_only':
+        return 'niedrig bis mittel';
+      case 'controlled_software':
+        return 'mittel';
+      case 'hardware_after_shutdown':
+      case 'hardware_watchdog':
+        return 'hoch';
+    }
+    return 'unbekannt';
+  }
+
+  Color _restartInterventionColor(String mode) {
+    switch (mode) {
+      case 'gnss_only':
+        return Colors.green.shade700;
+      case 'controlled_software':
+        return Colors.orange.shade700;
+      case 'hardware_after_shutdown':
+      case 'hardware_watchdog':
+        return Colors.red.shade700;
+    }
+    return Colors.grey.shade700;
+  }
+
+  Widget _restartInterventionBadge(BuildContext context, String mode) {
+    final color = _restartInterventionColor(mode);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.shield_outlined, size: 18, color: color),
+          const SizedBox(width: 6),
+          Text(
+            'Eingriffsstärke: ${_restartInterventionStrength(mode)}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ],
+      ),
+    );
   }
 
   String _restartModeLabel(String mode) {

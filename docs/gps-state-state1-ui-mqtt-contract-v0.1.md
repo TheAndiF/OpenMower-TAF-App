@@ -5,7 +5,7 @@ Stand: 2026-07-15
 ## UI-Verhalten
 
 - Die bisherigen oberen Zusammenfassungskacheln (`Status`, `RTK`, `Genauigkeit`, `Grenzwert`, `Pose-Alter`, `Quality`) entfallen.
-- Vor Prüfstufe 1 wird eine rein informative Zeile `Current Status` mit der Nummer `0` angezeigt.
+- Vor Prüfstufe 1 wird eine rein informative, nicht nummerierte Zeile `Current Status` angezeigt.
 - Zwischen Prüfstufe 1 und Prüfstufe 2 wird eine rein informative Zeile `GPS Quality` angezeigt.
 - Informationszeilen verwenden ein blaues Info-Symbol und nehmen nicht an der Freigabeentscheidung teil.
 - In der Spalte `Aktueller Wert` wird nur der Ist-Wert angezeigt. Grenzwerte und Sollbedingungen stehen ausschließlich in der Spalte `Bedingung`.
@@ -104,3 +104,11 @@ Die App akzeptiert für eine Übergangszeit auch `mowing_status` als Fallback f�
 ```
 
 Für Prüfstufe 12 gelten die Root-Felder als kanonisch. Abweichende Werte im Check werden in der App nicht mehr als eigenständige Fahrfreigabe dargestellt.
+
+
+## UI-Ergänzung v0.2
+
+- `Current Status` wird ohne Stufennummer dargestellt und vorrangig aus `current_status` gelesen.
+- Der Gesamtbanner verwendet `drive_ready`, `drive_state`, `blocking_stage` und `blocking_title` als fachlich führende Werte.
+- Bei vorhandenem Blockierer werden erfolgreiche Stufen vor dem Blockierer durch einen ausgefüllten Kreis in der jeweiligen Statusfarbe gekennzeichnet.
+- `gps_quality` wird als aktuelle Qualitätsquelle unterstützt; `quality_class` bleibt als Kompatibilitätsrückfall erhalten.

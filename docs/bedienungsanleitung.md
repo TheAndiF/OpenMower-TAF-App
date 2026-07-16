@@ -455,3 +455,12 @@ Der Bereich **F9P-Neustart und Recovery** folgt nun einer festen Bedienreihenfol
 Unterhalb der Bedienelemente wird nur noch der aktuell relevante Recovery-Schritt angezeigt. Die bisherige gleichzeitige Darstellung aller Prüfschritte entfällt. Mögliche Anzeigen sind unter anderem `Befehl gesendet`, `Empfänger antwortet`, `NAV-PVT empfangen`, `NAV-SAT empfangen` und `Empfängerausgaben bestätigt`.
 
 Nach einem erfolgreich abgeschlossenen Neustart zeigt dasselbe Statusfeld zusätzlich den Abschlusszeitpunkt aus `completed_at` an. Ist kein aktueller Ablauf aktiv, bleibt der letzte Abschlusszeitpunkt sichtbar, sofern das Backend einen Wert über `gps_state/restart/last/json` geliefert hat.
+
+
+### F9P-Reset-Auswahl und State1-Statusdarstellung (2026-07-16)
+
+Der Bereich **F9P-Neustart und Recovery** verwendet für Reset-Modus und Starttyp nun dieselbe direkte Auswahlart. Die vier Reset-Modi werden als Auswahl-Chips dargestellt; das bisherige Ausklappfeld entfällt. Neben **Neustart ausführen** zeigt ein farblich hervorgehobenes Feld die Eingriffsstärke des gewählten Reset-Modus: `gnss_only` = niedrig bis mittel, `controlled_software` = mittel, `hardware_after_shutdown` und `hardware_watchdog` = hoch.
+
+In der Fahrfähigkeitsansicht ist **Current Status** eine nicht nummerierte Informationszeile. Der Wert wird aus `current_status` des State1-Statuspayloads gelesen; der verschachtelte `data.current_status`-Wert dient nur als kompatibler Rückfallwert. Das obere Fahrfreigabefeld richtet seinen Haupttext an `drive_ready`, `drive_state`, `blocking_stage` und `blocking_title` aus. Ein widersprüchlicher allgemeiner Summary-Text überschreibt daher keine eindeutige Fahrfreigabe mehr.
+
+Liegt ein erster Blockierer vor, erhalten alle davor liegenden und erfolgreich erfüllten Prüfstufen einen ausgefüllten Kreis in ihrer Statusfarbe. Der Blockierer selbst behält seine rote Blockiermarkierung; nachfolgende Stufen werden weiterhin nach ihrem eigenen Status dargestellt.

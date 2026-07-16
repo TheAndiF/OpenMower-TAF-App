@@ -1,0 +1,18 @@
+BL_Improve F9P reset controls and State1 readiness display
+Date: 2026-07-16
+
+Summary:
+- Replaced the F9P reset-mode dropdown with direct selection chips matching the start-type controls.
+- Added a dynamic intervention-strength badge next to the restart action.
+- Removed the numeric prefix from the Current Status information row and bound it to the State1 current_status value.
+- Made the readiness banner derive its primary result from drive_ready, drive_state and blocker fields.
+- Filled the status circles for successful decision stages located before the first blocker.
+- Added compatible gps_quality mapping with quality_class fallback.
+- Updated the user guide, MQTT documentation and State1 UI contract.
+
+Changed files:
+- lib/screens/gps_state.dart
+- docs/bedienungsanleitung.md
+- docs/mqtt-schnittstelle.md
+- docs/gps-state-state1-ui-mqtt-contract-v0.1.md
+- commit_message_f9p_reset_and_state1_ui.txt
