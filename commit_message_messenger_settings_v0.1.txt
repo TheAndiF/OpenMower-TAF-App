@@ -1,0 +1,18 @@
+BL_Add open messenger settings page
+Date: 2026-07-17
+Summary:
+- Added a metadata-driven messenger settings page aligned with the hardware and software settings workflow.
+- Added separate settings, runtime status, and expert diagnostics sections.
+- Subscribed to the existing WAHA and Mobert MQTT runtime topics.
+- Added the generic messenger/settings MQTT contract for session and persistent updates.
+- Added dynamic backend-provided messenger actions and documented backend requirements.
+Changed files:
+- lib/controllers/messenger_settings_controller.dart
+- lib/screens/messenger_settings.dart
+- lib/io/mqtt_connection.dart
+- lib/main.dart
+- lib/screens/main_screen.dart
+- _Dokumentation/2026-07-17 - OpenMower-TAF-App - Aenderungsdokumentation - Offene Messenger-Einstellungsseite - v0.1.docx
+- _Dokumentation/2026-07-17 - OpenMower-TAF-App - Aenderungsdokumentation - Offene Messenger-Einstellungsseite - v0.1.pdf
+- commit_message_messenger_settings_v0.1.txt
+- openmower_messenger_settings_v0.1.patch

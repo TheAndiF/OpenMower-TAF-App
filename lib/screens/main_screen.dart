@@ -16,6 +16,7 @@ import 'package:open_mower_app/screens/status_transition_log.dart';
 import 'package:open_mower_app/screens/area_editor.dart';
 import 'package:open_mower_app/screens/mower_logic_settings.dart';
 import 'package:open_mower_app/screens/hardware_settings.dart';
+import 'package:open_mower_app/screens/messenger_settings.dart';
 import 'package:open_mower_app/screens/settings.dart';
 import 'package:open_mower_app/views/logo_widget.dart';
 import 'package:open_mower_app/views/logo_widget_drawer.dart';
@@ -48,6 +49,7 @@ class _MainScreenState extends State<MainScreen> {
       const AreaEditorScreen(),
       const SensorSettingsScreen(),
       const GpsStateScreen(),
+      const MessengerSettingsScreen(),
     ];
   }
 
@@ -80,6 +82,7 @@ class _MainScreenState extends State<MainScreen> {
     'Flächeneditor',
     'Sensor-Einstellungen',
     'GPS-State',
+    'Einstellungen Messenger',
   ];
 
   static final Uri _manualUri = Uri.parse('https://theandif.github.io/OpenMower-TAF-App/bedienungsanleitung/');
@@ -507,6 +510,11 @@ class _MainScreenState extends State<MainScreen> {
         leading: const _SoftwareSettingsDrawerIcon(),
         title: 'Einstellungen Software',
         index: 7,
+      ),
+      _buildDrawerTile(
+        leading: n.Icon(Icons.forum_outlined),
+        title: 'Einstellungen Messenger',
+        index: 12,
       ),
       if (settingsController.expertModeEnabled.value)
         _buildDrawerTile(

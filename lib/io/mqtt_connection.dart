@@ -13,6 +13,7 @@ import 'package:open_mower_app/controllers/mow_load_factor_settings_controller.d
 import 'package:open_mower_app/controllers/low_level_power_settings_controller.dart';
 import 'package:open_mower_app/controllers/satellite_logging_controller.dart';
 import 'package:open_mower_app/controllers/gps_state_controller.dart';
+import 'package:open_mower_app/controllers/messenger_settings_controller.dart';
 import 'package:open_mower_app/models/map_model.dart';
 import 'package:open_mower_app/models/robot_state.dart';
 import 'package:open_mower_app/models/map_overlay_model.dart';
@@ -58,6 +59,7 @@ class MqttConnection  {
   final LowLevelPowerSettingsController lowLevelPowerSettingsController = Get.find();
   final SatelliteLoggingController satelliteLoggingController = Get.find();
   final GpsStateController gpsStateController = Get.find();
+  final MessengerSettingsController messengerSettingsController = Get.find();
 
   final RegExp exp = RegExp(r'^sensors/([^/]+)/bson$');
   final RegExp expJson = RegExp(r'^sensors/([^/]+)/json$');
@@ -131,6 +133,27 @@ class MqttConnection  {
   static const String lowLevelPowerSetSessionJsonTopic = "settings/ll_board/set/session/json";
   static const String lowLevelPowerSetPersistentJsonTopic = "settings/ll_board/set/persistent/json";
   static const String lowLevelPowerRenewJsonTopic = "settings/ll_board/set/renew/json";
+
+  // Open messenger settings/status contract. Runtime topics already exist in WUP;
+  // messenger/settings/... mirrors the generic hardware/software settings API.
+  static const String messengerSettingsJsonTopic = "messenger/settings/json";
+  static const String messengerSettingsValidationJsonTopic = "messenger/settings/validation/json";
+  static const String messengerSettingsSetSessionJsonTopic = "messenger/settings/set/session/json";
+  static const String messengerSettingsSetPersistentJsonTopic = "messenger/settings/set/persistent/json";
+  static const String messengerSettingsRenewJsonTopic = "messenger/settings/set/renew/json";
+  static const String messengerStatusJsonTopic = "messenger/status/json";
+  static const String messengerWahaJsonTopic = "messenger/waha/json";
+  static const String messengerSessionJsonTopic = "messenger/waha/session/json";
+  static const String messengerRepairJsonTopic = "messenger/waha/session/repair/json";
+  static const String messengerGroupsJsonTopic = "messenger/waha/groups/json";
+  static const String messengerContactsStatusJsonTopic = "messenger/waha/contacts/status/json";
+  static const String messengerMessagesJsonTopic = "messenger/waha/messages/json";
+  static const String messengerActionsJsonTopic = "messenger/waha/actions/json";
+  static const String messengerBotJsonTopic = "messenger/bot/json";
+  static const String messengerListenerJsonTopic = "messenger/bot/listener/json";
+  static const String messengerStatusPushJsonTopic = "messenger/bot/status_push/json";
+  static const String messengerCommandsJsonTopic = "messenger/bot/commands/json";
+  static const String messengerCommandsValidationJsonTopic = "messenger/bot/commands/validation/json";
 
   static const String mapOverlayJsonTopic = "map/overlay/json";
   static const String mapMowingProgressJsonTopic = "map/mowing_progress/json";
@@ -969,6 +992,62 @@ class MqttConnection  {
     } catch(e) {
       debugPrint("error publishing low level persistent settings via mqtt");
       lowLevelPowerSettingsController.setError("Low-Level-Board-Werte konnten nicht dauerhaft gespeichert werden.", topic: lowLevelPowerSetPersistentJsonTopic);
+    }
+  }
+
+  void requestMessengerSettings() {
+    try {
+      _publishJson(messengerSettingsRenewJsonTopic, <String, dynamic>{});
+      // Existing backend action keeps command/runtime data fresh even before
+      // messenger/settings/json is implemented.
+      _publishJson("messenger/bot/commands/set/renew/json", <String, dynamic>{});
+    } catch (e) {
+      messengerSettingsController.lastStatus.value = "Messenger-Anfrage konnte nicht gesendet werden.";
+    }
+  }
+
+  void publishMessengerSessionSettings(Map<String, dynamic> settings) {
+    try {
+      _publishJson(messengerSettingsSetSessionJsonTopic, settings, qos: MqttQos.exactlyOnce);
+    } catch (e) {
+      messengerSettingsController.lastStatus.value = "Messenger-Sessionwerte konnten nicht gesendet werden.";
+    }
+  }
+
+  void publishMessengerPersistentSettings(Map<String, dynamic> settings) {
+    try {
+      _publishJson(messengerSettingsSetPersistentJsonTopic, settings, qos: MqttQos.exactlyOnce);
+    } catch (e) {
+      messengerSettingsController.lastStatus.value = "Messenger-Werte konnten nicht dauerhaft gespeichert werden.";
+    }
+  }
+
+  void publishMessengerAction(String actionId) {
+    try {
+      _publishJson("messenger/action/json", <String, dynamic>{"action_id": actionId}, qos: MqttQos.exactlyOnce);
+    } catch (e) {
+      messengerSettingsController.lastStatus.value = "Messenger-Aktion konnte nicht gesendet werden.";
+    }
+  }
+
+  void parseMessengerMessage(String topic, MqttPublishMessage payload) {
+    try {
+      final map = _decodeMap(payload);
+      if (map == null) return;
+      if (topic == messengerSettingsJsonTopic) {
+        messengerSettingsController.setSettingsPayload(map);
+      } else if (topic == messengerSettingsValidationJsonTopic || topic == messengerCommandsValidationJsonTopic) {
+        messengerSettingsController.setValidation(map);
+      } else if (topic == messengerActionsJsonTopic) {
+        messengerSettingsController.setActionsPayload(map);
+      } else if (topic == messengerRepairJsonTopic || topic == messengerContactsStatusJsonTopic ||
+          topic == messengerMessagesJsonTopic || topic == messengerCommandsJsonTopic) {
+        messengerSettingsController.setDiagnosticPayload(topic, map);
+      } else {
+        messengerSettingsController.setRuntimePayload(topic, map);
+      }
+    } catch (e) {
+      messengerSettingsController.lastStatus.value = "Messenger-Payload konnte nicht gelesen werden: $e";
     }
   }
 
@@ -2039,6 +2118,24 @@ class MqttConnection  {
               parseGpsRestartValidation(payload);
             }
             break;
+            case messengerSettingsJsonTopic:
+            case messengerSettingsValidationJsonTopic:
+            case messengerStatusJsonTopic:
+            case messengerWahaJsonTopic:
+            case messengerSessionJsonTopic:
+            case messengerRepairJsonTopic:
+            case messengerGroupsJsonTopic:
+            case messengerContactsStatusJsonTopic:
+            case messengerMessagesJsonTopic:
+            case messengerActionsJsonTopic:
+            case messengerBotJsonTopic:
+            case messengerListenerJsonTopic:
+            case messengerStatusPushJsonTopic:
+            case messengerCommandsJsonTopic:
+            case messengerCommandsValidationJsonTopic: {
+              parseMessengerMessage(msg.topic!, payload);
+            }
+            break;
             case lowLevelPowerJsonTopic: {
               parseLowLevelPowerSettings(payload);
             }
@@ -2144,6 +2241,21 @@ class MqttConnection  {
     client.subscribe(gpsStateLoggingLastJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(gpsStateLoggingValidationJsonTopic, MqttQos.atLeastOnce);
     // Mäh-Lastregelung wird ausschließlich über settings/mower_logic/... verarbeitet.
+    client.subscribe(messengerSettingsJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerSettingsValidationJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerStatusJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerWahaJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerSessionJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerRepairJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerGroupsJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerContactsStatusJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerMessagesJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerActionsJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerBotJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerListenerJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerStatusPushJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerCommandsJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerCommandsValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(lowLevelPowerJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(lowLevelPowerValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(gpsState1DefinitionTopic, MqttQos.atLeastOnce);

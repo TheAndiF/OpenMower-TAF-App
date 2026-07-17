@@ -1,0 +1,637 @@
+--- /mnt/data/orig_app/OpenMower-TAF-App/lib/io/mqtt_connection.dart	2026-07-16 14:41:41.000000000 +0000
++++ lib/io/mqtt_connection.dart	2026-07-17 10:13:07.663561918 +0000
+@@ -13,6 +13,7 @@
+ import 'package:open_mower_app/controllers/low_level_power_settings_controller.dart';
+ import 'package:open_mower_app/controllers/satellite_logging_controller.dart';
+ import 'package:open_mower_app/controllers/gps_state_controller.dart';
++import 'package:open_mower_app/controllers/messenger_settings_controller.dart';
+ import 'package:open_mower_app/models/map_model.dart';
+ import 'package:open_mower_app/models/robot_state.dart';
+ import 'package:open_mower_app/models/map_overlay_model.dart';
+@@ -58,6 +59,7 @@
+   final LowLevelPowerSettingsController lowLevelPowerSettingsController = Get.find();
+   final SatelliteLoggingController satelliteLoggingController = Get.find();
+   final GpsStateController gpsStateController = Get.find();
++  final MessengerSettingsController messengerSettingsController = Get.find();
+ 
+   final RegExp exp = RegExp(r'^sensors/([^/]+)/bson$');
+   final RegExp expJson = RegExp(r'^sensors/([^/]+)/json$');
+@@ -132,6 +134,27 @@
+   static const String lowLevelPowerSetPersistentJsonTopic = "settings/ll_board/set/persistent/json";
+   static const String lowLevelPowerRenewJsonTopic = "settings/ll_board/set/renew/json";
+ 
++  // Open messenger settings/status contract. Runtime topics already exist in WUP;
++  // messenger/settings/... mirrors the generic hardware/software settings API.
++  static const String messengerSettingsJsonTopic = "messenger/settings/json";
++  static const String messengerSettingsValidationJsonTopic = "messenger/settings/validation/json";
++  static const String messengerSettingsSetSessionJsonTopic = "messenger/settings/set/session/json";
++  static const String messengerSettingsSetPersistentJsonTopic = "messenger/settings/set/persistent/json";
++  static const String messengerSettingsRenewJsonTopic = "messenger/settings/set/renew/json";
++  static const String messengerStatusJsonTopic = "messenger/status/json";
++  static const String messengerWahaJsonTopic = "messenger/waha/json";
++  static const String messengerSessionJsonTopic = "messenger/waha/session/json";
++  static const String messengerRepairJsonTopic = "messenger/waha/session/repair/json";
++  static const String messengerGroupsJsonTopic = "messenger/waha/groups/json";
++  static const String messengerContactsStatusJsonTopic = "messenger/waha/contacts/status/json";
++  static const String messengerMessagesJsonTopic = "messenger/waha/messages/json";
++  static const String messengerActionsJsonTopic = "messenger/waha/actions/json";
++  static const String messengerBotJsonTopic = "messenger/bot/json";
++  static const String messengerListenerJsonTopic = "messenger/bot/listener/json";
++  static const String messengerStatusPushJsonTopic = "messenger/bot/status_push/json";
++  static const String messengerCommandsJsonTopic = "messenger/bot/commands/json";
++  static const String messengerCommandsValidationJsonTopic = "messenger/bot/commands/validation/json";
++
+   static const String mapOverlayJsonTopic = "map/overlay/json";
+   static const String mapMowingProgressJsonTopic = "map/mowing_progress/json";
+   static const String mapMowingProgressStatusJsonTopic = "map/mowing_progress/status/json";
+@@ -972,6 +995,62 @@
+     }
+   }
+ 
++  void requestMessengerSettings() {
++    try {
++      _publishJson(messengerSettingsRenewJsonTopic, <String, dynamic>{});
++      // Existing backend action keeps command/runtime data fresh even before
++      // messenger/settings/json is implemented.
++      _publishJson("messenger/bot/commands/set/renew/json", <String, dynamic>{});
++    } catch (e) {
++      messengerSettingsController.lastStatus.value = "Messenger-Anfrage konnte nicht gesendet werden.";
++    }
++  }
++
++  void publishMessengerSessionSettings(Map<String, dynamic> settings) {
++    try {
++      _publishJson(messengerSettingsSetSessionJsonTopic, settings, qos: MqttQos.exactlyOnce);
++    } catch (e) {
++      messengerSettingsController.lastStatus.value = "Messenger-Sessionwerte konnten nicht gesendet werden.";
++    }
++  }
++
++  void publishMessengerPersistentSettings(Map<String, dynamic> settings) {
++    try {
++      _publishJson(messengerSettingsSetPersistentJsonTopic, settings, qos: MqttQos.exactlyOnce);
++    } catch (e) {
++      messengerSettingsController.lastStatus.value = "Messenger-Werte konnten nicht dauerhaft gespeichert werden.";
++    }
++  }
++
++  void publishMessengerAction(String actionId) {
++    try {
++      _publishJson("messenger/action/json", <String, dynamic>{"action_id": actionId}, qos: MqttQos.exactlyOnce);
++    } catch (e) {
++      messengerSettingsController.lastStatus.value = "Messenger-Aktion konnte nicht gesendet werden.";
++    }
++  }
++
++  void parseMessengerMessage(String topic, MqttPublishMessage payload) {
++    try {
++      final map = _decodeMap(payload);
++      if (map == null) return;
++      if (topic == messengerSettingsJsonTopic) {
++        messengerSettingsController.setSettingsPayload(map);
++      } else if (topic == messengerSettingsValidationJsonTopic || topic == messengerCommandsValidationJsonTopic) {
++        messengerSettingsController.setValidation(map);
++      } else if (topic == messengerActionsJsonTopic) {
++        messengerSettingsController.setActionsPayload(map);
++      } else if (topic == messengerRepairJsonTopic || topic == messengerContactsStatusJsonTopic ||
++          topic == messengerMessagesJsonTopic || topic == messengerCommandsJsonTopic) {
++        messengerSettingsController.setDiagnosticPayload(topic, map);
++      } else {
++        messengerSettingsController.setRuntimePayload(topic, map);
++      }
++    } catch (e) {
++      messengerSettingsController.lastStatus.value = "Messenger-Payload konnte nicht gelesen werden: $e";
++    }
++  }
++
+   void requestSensorSettings() {
+     try {
+       _publishJson(sensorSettingsRenewJsonTopic, <String, dynamic>{});
+@@ -2039,6 +2118,24 @@
+               parseGpsRestartValidation(payload);
+             }
+             break;
++            case messengerSettingsJsonTopic:
++            case messengerSettingsValidationJsonTopic:
++            case messengerStatusJsonTopic:
++            case messengerWahaJsonTopic:
++            case messengerSessionJsonTopic:
++            case messengerRepairJsonTopic:
++            case messengerGroupsJsonTopic:
++            case messengerContactsStatusJsonTopic:
++            case messengerMessagesJsonTopic:
++            case messengerActionsJsonTopic:
++            case messengerBotJsonTopic:
++            case messengerListenerJsonTopic:
++            case messengerStatusPushJsonTopic:
++            case messengerCommandsJsonTopic:
++            case messengerCommandsValidationJsonTopic: {
++              parseMessengerMessage(msg.topic!, payload);
++            }
++            break;
+             case lowLevelPowerJsonTopic: {
+               parseLowLevelPowerSettings(payload);
+             }
+@@ -2144,6 +2241,21 @@
+     client.subscribe(gpsStateLoggingLastJsonTopic, MqttQos.atLeastOnce);
+     client.subscribe(gpsStateLoggingValidationJsonTopic, MqttQos.atLeastOnce);
+     // Mäh-Lastregelung wird ausschließlich über settings/mower_logic/... verarbeitet.
++    client.subscribe(messengerSettingsJsonTopic, MqttQos.atLeastOnce);
++    client.subscribe(messengerSettingsValidationJsonTopic, MqttQos.atLeastOnce);
++    client.subscribe(messengerStatusJsonTopic, MqttQos.atLeastOnce);
++    client.subscribe(messengerWahaJsonTopic, MqttQos.atLeastOnce);
++    client.subscribe(messengerSessionJsonTopic, MqttQos.atLeastOnce);
++    client.subscribe(messengerRepairJsonTopic, MqttQos.atLeastOnce);
++    client.subscribe(messengerGroupsJsonTopic, MqttQos.atLeastOnce);
++    client.subscribe(messengerContactsStatusJsonTopic, MqttQos.atLeastOnce);
++    client.subscribe(messengerMessagesJsonTopic, MqttQos.atLeastOnce);
++    client.subscribe(messengerActionsJsonTopic, MqttQos.atLeastOnce);
++    client.subscribe(messengerBotJsonTopic, MqttQos.atLeastOnce);
++    client.subscribe(messengerListenerJsonTopic, MqttQos.atLeastOnce);
++    client.subscribe(messengerStatusPushJsonTopic, MqttQos.atLeastOnce);
++    client.subscribe(messengerCommandsJsonTopic, MqttQos.atLeastOnce);
++    client.subscribe(messengerCommandsValidationJsonTopic, MqttQos.atLeastOnce);
+     client.subscribe(lowLevelPowerJsonTopic, MqttQos.atLeastOnce);
+     client.subscribe(lowLevelPowerValidationJsonTopic, MqttQos.atLeastOnce);
+     client.subscribe(gpsState1DefinitionTopic, MqttQos.atLeastOnce);
+--- /mnt/data/orig_app/OpenMower-TAF-App/lib/main.dart	2026-07-16 14:41:41.000000000 +0000
++++ lib/main.dart	2026-07-17 10:13:08.956301075 +0000
+@@ -17,6 +17,7 @@
+ import 'package:open_mower_app/controllers/low_level_power_settings_controller.dart';
+ import 'package:open_mower_app/controllers/satellite_logging_controller.dart';
+ import 'package:open_mower_app/controllers/gps_state_controller.dart';
++import 'package:open_mower_app/controllers/messenger_settings_controller.dart';
+ import 'package:open_mower_app/io/mqtt_connection.dart';
+ import 'package:open_mower_app/screens/main_screen.dart';
+ 
+@@ -55,6 +56,7 @@
+   Get.put(LowLevelPowerSettingsController());
+   Get.put(SatelliteLoggingController());
+   Get.put(GpsStateController());
++  Get.put(MessengerSettingsController());
+ 
+   initServices();
+   final MqttConnection mqttConnection = Get.find();
+--- /mnt/data/orig_app/OpenMower-TAF-App/lib/screens/main_screen.dart	2026-07-16 14:41:41.000000000 +0000
++++ lib/screens/main_screen.dart	2026-07-17 10:13:10.258020605 +0000
+@@ -16,6 +16,7 @@
+ import 'package:open_mower_app/screens/area_editor.dart';
+ import 'package:open_mower_app/screens/mower_logic_settings.dart';
+ import 'package:open_mower_app/screens/hardware_settings.dart';
++import 'package:open_mower_app/screens/messenger_settings.dart';
+ import 'package:open_mower_app/screens/settings.dart';
+ import 'package:open_mower_app/views/logo_widget.dart';
+ import 'package:open_mower_app/views/logo_widget_drawer.dart';
+@@ -48,6 +49,7 @@
+       const AreaEditorScreen(),
+       const SensorSettingsScreen(),
+       const GpsStateScreen(),
++      const MessengerSettingsScreen(),
+     ];
+   }
+ 
+@@ -80,6 +82,7 @@
+     'Flächeneditor',
+     'Sensor-Einstellungen',
+     'GPS-State',
++    'Einstellungen Messenger',
+   ];
+ 
+   static final Uri _manualUri = Uri.parse('https://theandif.github.io/OpenMower-TAF-App/bedienungsanleitung/');
+@@ -508,6 +511,11 @@
+         title: 'Einstellungen Software',
+         index: 7,
+       ),
++      _buildDrawerTile(
++        leading: n.Icon(Icons.forum_outlined),
++        title: 'Einstellungen Messenger',
++        index: 12,
++      ),
+       if (settingsController.expertModeEnabled.value)
+         _buildDrawerTile(
+           leading: n.Icon(Icons.sensors_outlined),
+--- /dev/null	2026-07-17 10:07:43.638614118 +0000
++++ lib/controllers/messenger_settings_controller.dart	2026-07-17 10:12:28.603529334 +0000
+@@ -0,0 +1,198 @@
++import 'dart:convert';
++
++import 'package:flutter/material.dart';
++import 'package:get/get.dart';
++import 'package:open_mower_app/io/mqtt_connection.dart';
++
++class MessengerSettingsController extends GetxController {
++  final settings = <String, Map<String, dynamic>>{}.obs;
++  final drafts = <String, dynamic>{}.obs;
++  final dirtyKeys = <String>{}.obs;
++  final runtime = <String, Map<String, dynamic>>{}.obs;
++  final diagnostics = <String, Map<String, dynamic>>{}.obs;
++  final actions = <Map<String, dynamic>>[].obs;
++  final lastValidation = <String, dynamic>{}.obs;
++  final lastUpdated = Rxn<DateTime>();
++  final lastStatus = ''.obs;
++
++  bool get hasSettings => settings.isNotEmpty;
++  int get dirtyCount => dirtyKeys.length;
++  int get differenceCount => settings.entries.where((e) => _different(e.value)).length;
++
++  List<String> groups({required bool expertMode}) {
++    final result = settings.values
++        .where((s) => expertMode || !_bool(s['expert']))
++        .where((s) => _boolDefault(s['visible'], true))
++        .map((s) => (s['group'] ?? 'general').toString())
++        .toSet()
++        .toList();
++    result.sort((a, b) => groupOrder(a).compareTo(groupOrder(b)));
++    return result;
++  }
++
++  List<MapEntry<String, Map<String, dynamic>>> entriesForGroup(String group, {required bool expertMode}) {
++    final result = settings.entries
++        .where((e) => (e.value['group'] ?? 'general').toString() == group)
++        .where((e) => expertMode || !_bool(e.value['expert']))
++        .where((e) => _boolDefault(e.value['visible'], true))
++        .toList();
++    result.sort((a, b) {
++      final ao = _int(a.value['order']) ?? 9999;
++      final bo = _int(b.value['order']) ?? 9999;
++      final c = ao.compareTo(bo);
++      return c == 0 ? a.key.compareTo(b.key) : c;
++    });
++    return result;
++  }
++
++  String groupLabel(String group) => const <String, String>{
++        'general': 'Allgemein',
++        'connection': 'WAHA-Verbindung',
++        'session': 'WhatsApp-Session',
++        'bot': 'Mobert-Bot',
++        'groups': 'Gruppen und Ziele',
++        'status_push': 'Automatische Statusmeldungen',
++        'messages': 'Nachrichtenverlauf',
++        'repair': 'Automatische Reparatur',
++        'commands': 'Befehle und Flows',
++        'security': 'Sicherheit',
++      }[group] ?? group;
++
++  IconData groupIcon(String group) => const <String, IconData>{
++        'general': Icons.tune,
++        'connection': Icons.hub_outlined,
++        'session': Icons.chat_outlined,
++        'bot': Icons.smart_toy_outlined,
++        'groups': Icons.groups_outlined,
++        'status_push': Icons.notifications_active_outlined,
++        'messages': Icons.history_outlined,
++        'repair': Icons.build_circle_outlined,
++        'commands': Icons.account_tree_outlined,
++        'security': Icons.security_outlined,
++      }[group] ?? Icons.settings_outlined;
++
++  int groupOrder(String group) => const <String, int>{
++        'general': 10,
++        'connection': 20,
++        'session': 30,
++        'bot': 40,
++        'groups': 50,
++        'status_push': 60,
++        'messages': 70,
++        'repair': 80,
++        'commands': 90,
++        'security': 100,
++      }[group] ?? 999;
++
++  dynamic valueFor(String key) => drafts.containsKey(key) ? drafts[key] : settings[key]?['value'];
++  bool isDirty(String key) => dirtyKeys.contains(key);
++
++  void updateDraft(String key, dynamic value) {
++    drafts[key] = value;
++    final original = settings[key]?['value'];
++    if (_same(original, value)) {
++      dirtyKeys.remove(key);
++      drafts.remove(key);
++    } else {
++      dirtyKeys.add(key);
++    }
++    drafts.refresh();
++    dirtyKeys.refresh();
++  }
++
++  void discard({String? group}) {
++    if (group == null) {
++      drafts.clear();
++      dirtyKeys.clear();
++      return;
++    }
++    final keys = entriesForGroup(group, expertMode: true).map((e) => e.key).toSet();
++    drafts.removeWhere((key, _) => keys.contains(key));
++    dirtyKeys.removeWhere(keys.contains);
++  }
++
++  void setSettingsPayload(Map<String, dynamic> payload) {
++    final root = _root(payload);
++    final raw = root['settings'];
++    if (raw is! Map) return;
++    final next = <String, Map<String, dynamic>>{};
++    raw.forEach((key, value) {
++      if (value is Map) next[key.toString()] = Map<String, dynamic>.from(value);
++    });
++    settings.assignAll(next);
++    drafts.clear();
++    dirtyKeys.clear();
++    lastUpdated.value = DateTime.now();
++    lastStatus.value = 'Messenger-Einstellungen aktualisiert.';
++  }
++
++  void setRuntimePayload(String topic, Map<String, dynamic> payload) {
++    runtime[topic] = _root(payload);
++    lastUpdated.value = DateTime.now();
++  }
++
++  void setDiagnosticPayload(String topic, Map<String, dynamic> payload) {
++    diagnostics[topic] = _root(payload);
++    lastUpdated.value = DateTime.now();
++  }
++
++  void setActionsPayload(Map<String, dynamic> payload) {
++    final root = payload['d'] ?? payload;
++    final list = root is List ? root : (root is Map ? root['actions'] : null);
++    if (list is List) {
++      actions.assignAll(list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)));
++    }
++  }
++
++  void setValidation(Map<String, dynamic> payload) {
++    lastValidation.assignAll(_root(payload));
++    lastUpdated.value = DateTime.now();
++  }
++
++  Map<String, dynamic> _changes({String? group}) {
++    final result = <String, dynamic>{};
++    for (final key in dirtyKeys) {
++      if (group != null && (settings[key]?['group'] ?? 'general').toString() != group) continue;
++      result[key] = drafts[key];
++    }
++    return result;
++  }
++
++  void requestAll() => Get.find<MqttConnection>().requestMessengerSettings();
++
++  void applySession({String? group}) {
++    final changes = _changes(group: group);
++    if (changes.isEmpty) return;
++    Get.find<MqttConnection>().publishMessengerSessionSettings({'settings': changes});
++    lastStatus.value = 'Messenger-Sessionänderungen gesendet.';
++  }
++
++  void applyPersistent({String? group}) {
++    final changes = _changes(group: group);
++    if (changes.isEmpty) return;
++    Get.find<MqttConnection>().publishMessengerPersistentSettings({'settings': changes});
++    lastStatus.value = 'Dauerhafte Messenger-Änderungen gesendet.';
++  }
++
++  void runAction(String actionId) {
++    Get.find<MqttConnection>().publishMessengerAction(actionId);
++    lastStatus.value = 'Aktion gesendet: $actionId';
++  }
++
++  String prettyJson(dynamic value) {
++    try {
++      return const JsonEncoder.withIndent('  ').convert(value);
++    } catch (_) {
++      return value.toString();
++    }
++  }
++
++  Map<String, dynamic> _root(Map<String, dynamic> payload) =>
++      payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
++
++  bool _different(Map<String, dynamic> s) => _bool(s['different']) || !_same(s['active'], s['persistent']);
++  bool _same(dynamic a, dynamic b) => jsonEncode(a) == jsonEncode(b);
++  bool _bool(dynamic v) => v == true || v == 1 || v?.toString().toLowerCase() == 'true' || v?.toString().toLowerCase() == 'on';
++  bool _boolDefault(dynamic v, bool fallback) => v == null ? fallback : _bool(v);
++  int? _int(dynamic v) => v is num ? v.toInt() : int.tryParse(v?.toString() ?? '');
++}
+--- /dev/null	2026-07-17 10:07:43.638614118 +0000
++++ lib/screens/messenger_settings.dart	2026-07-17 10:12:28.610636396 +0000
+@@ -0,0 +1,221 @@
++import 'package:flutter/material.dart';
++import 'package:get/get.dart';
++import 'package:open_mower_app/controllers/messenger_settings_controller.dart';
++import 'package:open_mower_app/controllers/settings_controller.dart';
++
++class MessengerSettingsScreen extends StatefulWidget {
++  const MessengerSettingsScreen({super.key});
++
++  @override
++  State<MessengerSettingsScreen> createState() => _MessengerSettingsScreenState();
++}
++
++class _MessengerSettingsScreenState extends State<MessengerSettingsScreen> {
++  final controller = Get.find<MessengerSettingsController>();
++  final appSettings = Get.find<SettingsController>();
++
++  @override
++  void initState() {
++    super.initState();
++    Future<void>.delayed(Duration.zero, controller.requestAll);
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    return Obx(() {
++      final expert = appSettings.expertModeEnabled.value;
++      return ListView(
++        padding: const EdgeInsets.all(12),
++        children: [
++          _header(context),
++          const SizedBox(height: 12),
++          _settingsSection(context, expert),
++          const SizedBox(height: 12),
++          _runtimeSection(context),
++          const SizedBox(height: 12),
++          _diagnosticsSection(context, expert),
++        ],
++      );
++    });
++  }
++
++  Widget _header(BuildContext context) {
++    final status = controller.runtime['messenger/status/json'] ?? const <String, dynamic>{};
++    final online = status['online'] == true;
++    final text = (status['text'] ?? controller.lastStatus.value).toString();
++    return Card(
++      child: Padding(
++        padding: const EdgeInsets.all(16),
++        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
++          Row(children: [
++            Icon(Icons.forum_outlined, size: 38, color: Theme.of(context).primaryColor),
++            const SizedBox(width: 12),
++            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
++              Text('Einstellungen Messenger', style: Theme.of(context).textTheme.headlineSmall),
++              const Text('Offener MQTT-Aufbau wie bei Hardware- und Softwareeinstellungen'),
++            ])),
++            Icon(online ? Icons.check_circle : Icons.warning_amber_rounded,
++                color: online ? Colors.green : Colors.orange, size: 30),
++          ]),
++          if (text.isNotEmpty) ...[const SizedBox(height: 10), Text(text)],
++          const SizedBox(height: 12),
++          Wrap(spacing: 8, runSpacing: 8, children: [
++            Chip(label: Text('${controller.settings.length} Einstellungen')),
++            Chip(label: Text('${controller.dirtyCount} geändert')),
++            Chip(label: Text('${controller.differenceCount} Abweichungen')),
++            OutlinedButton.icon(onPressed: controller.requestAll, icon: const Icon(Icons.refresh), label: const Text('Neu laden')),
++          ]),
++        ]),
++      ),
++    );
++  }
++
++  Widget _settingsSection(BuildContext context, bool expert) {
++    return Card(
++      child: ExpansionTile(
++        initiallyExpanded: true,
++        leading: const Icon(Icons.tune),
++        title: const Text('Einstellungen'),
++        subtitle: const Text('Änderbare Werte, gruppiert und durch Backend-Metadaten gesteuert'),
++        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
++        children: [
++          if (!controller.hasSettings)
++            const Padding(
++              padding: EdgeInsets.all(16),
++              child: Text('Noch keine messenger/settings/json-Metadaten empfangen. Betriebsstatus und Diagnose funktionieren bereits über die vorhandenen Messenger-Topics.'),
++            )
++          else
++            ...controller.groups(expertMode: expert).map((g) => _group(context, g, expert)),
++        ],
++      ),
++    );
++  }
++
++  Widget _group(BuildContext context, String group, bool expert) {
++    final entries = controller.entriesForGroup(group, expertMode: expert);
++    final dirty = entries.where((e) => controller.isDirty(e.key)).length;
++    return Card(
++      margin: const EdgeInsets.only(top: 8),
++      child: ExpansionTile(
++        initiallyExpanded: group == 'general' || group == 'connection',
++        leading: Icon(controller.groupIcon(group), color: Theme.of(context).primaryColor),
++        title: Text(controller.groupLabel(group)),
++        subtitle: Text('${entries.length} Felder${dirty > 0 ? ' · $dirty geändert' : ''}'),
++        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
++        children: [
++          ...entries.map((e) => _field(context, e.key, e.value)),
++          const Divider(),
++          Wrap(spacing: 8, children: [
++            TextButton(onPressed: dirty == 0 ? null : () => controller.discard(group: group), child: const Text('Verwerfen')),
++            OutlinedButton(onPressed: dirty == 0 ? null : () => controller.applySession(group: group), child: const Text('Jetzt anwenden')),
++            FilledButton(onPressed: dirty == 0 ? null : () => controller.applyPersistent(group: group), child: const Text('Dauerhaft speichern')),
++          ]),
++        ],
++      ),
++    );
++  }
++
++  Widget _field(BuildContext context, String key, Map<String, dynamic> meta) {
++    final label = (meta['label'] ?? key).toString();
++    final description = (meta['description'] ?? '').toString();
++    final type = (meta['type'] ?? 'string').toString();
++    final readonly = meta['readonly'] == true;
++    final value = controller.valueFor(key);
++    Widget input;
++    if (type == 'bool' || type == 'boolean') {
++      input = Switch(value: value == true, onChanged: readonly ? null : (v) => controller.updateDraft(key, v));
++    } else if (type == 'enum' && meta['options'] is List) {
++      final options = (meta['options'] as List).map((e) => e.toString()).toList();
++      input = DropdownButton<String>(value: options.contains(value?.toString()) ? value.toString() : null,
++          items: options.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
++          onChanged: readonly ? null : (v) => controller.updateDraft(key, v));
++    } else {
++      input = SizedBox(width: 220, child: TextFormField(
++        key: ValueKey('$key-$value'), initialValue: value?.toString() ?? '', readOnly: readonly,
++        decoration: InputDecoration(isDense: true, suffixText: meta['unit']?.toString()),
++        onChanged: (v) {
++          dynamic parsed = v;
++          if (type == 'int' || type == 'integer') parsed = int.tryParse(v) ?? v;
++          if (type == 'double' || type == 'number') parsed = double.tryParse(v) ?? v;
++          controller.updateDraft(key, parsed);
++        },
++      ));
++    }
++    return Padding(
++      padding: const EdgeInsets.symmetric(vertical: 6),
++      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
++        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
++          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
++          if (description.isNotEmpty) Text(description, style: Theme.of(context).textTheme.bodySmall),
++          if (meta['active'] != null || meta['persistent'] != null)
++            Text('Aktiv: ${meta['active']} · Persistent: ${meta['persistent']}', style: Theme.of(context).textTheme.bodySmall),
++        ])),
++        const SizedBox(width: 12), input,
++      ]),
++    );
++  }
++
++  Widget _runtimeSection(BuildContext context) {
++    return Card(
++      child: ExpansionTile(
++        initiallyExpanded: true,
++        leading: const Icon(Icons.monitor_heart_outlined),
++        title: const Text('Betriebsstatus'),
++        subtitle: const Text('Live-Zustand von WAHA, Session, Bot, Gruppen und Statusmeldungen'),
++        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
++        children: [
++          _statusTile('Messenger', controller.runtime['messenger/status/json']),
++          _statusTile('WAHA', controller.runtime['messenger/waha/json']),
++          _statusTile('Session', controller.runtime['messenger/waha/session/json']),
++          _statusTile('Mobert-Bot', controller.runtime['messenger/bot/json']),
++          _statusTile('Listener', controller.runtime['messenger/bot/listener/json']),
++          _statusTile('Gruppen', controller.runtime['messenger/waha/groups/json']),
++          _statusTile('Status-Push', controller.runtime['messenger/bot/status_push/json']),
++          _actions(context),
++        ],
++      ),
++    );
++  }
++
++  Widget _statusTile(String title, Map<String, dynamic>? value) {
++    if (value == null) return ListTile(title: Text(title), subtitle: const Text('Noch keine Daten empfangen'), leading: const Icon(Icons.cloud_off_outlined));
++    final summary = (value['text'] ?? value['summary'] ?? value['status'] ?? value['count'] ?? 'Daten vorhanden').toString();
++    return ExpansionTile(title: Text(title), subtitle: Text(summary), leading: const Icon(Icons.check_circle_outline),
++      children: [SelectableText(controller.prettyJson(value), style: const TextStyle(fontFamily: 'monospace', fontSize: 12))]);
++  }
++
++  Widget _actions(BuildContext context) {
++    if (controller.actions.isEmpty) return const SizedBox.shrink();
++    return Padding(
++      padding: const EdgeInsets.only(top: 8),
++      child: Align(alignment: Alignment.centerLeft, child: Wrap(spacing: 8, runSpacing: 8,
++        children: controller.actions.map((a) {
++          final enabled = a['enabled'] == true || a['enabled'] == 1;
++          return OutlinedButton.icon(
++            onPressed: enabled ? () => controller.runAction((a['action_id'] ?? '').toString()) : null,
++            icon: const Icon(Icons.play_arrow), label: Text((a['label'] ?? a['action_id']).toString()));
++        }).toList())),
++    );
++  }
++
++  Widget _diagnosticsSection(BuildContext context, bool expert) {
++    return Card(
++      child: ExpansionTile(
++        initiallyExpanded: false,
++        leading: const Icon(Icons.troubleshoot),
++        title: const Text('Diagnose'),
++        subtitle: Text(expert ? 'Fehler, Reparatur, Validierung und MQTT-Rohdaten' : 'Technische Details im Expertenmodus'),
++        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
++        children: expert
++            ? [
++                _statusTile('Session-Reparatur', controller.diagnostics['messenger/waha/session/repair/json']),
++                _statusTile('Kontakte', controller.diagnostics['messenger/waha/contacts/status/json']),
++                _statusTile('Nachrichten', controller.diagnostics['messenger/waha/messages/json']),
++                _statusTile('Bot-Konfiguration', controller.diagnostics['messenger/bot/commands/json']),
++                _statusTile('Validierung', controller.lastValidation),
++              ]
++            : const [Padding(padding: EdgeInsets.all(12), child: Text('Aktiviere den Expertenmodus, um Rohdaten und technische Diagnosewerte einzublenden.'))],
++      ),
++    );
++  }
++}
