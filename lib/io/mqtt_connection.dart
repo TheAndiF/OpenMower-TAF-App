@@ -145,6 +145,7 @@ class MqttConnection  {
   static const String messengerWahaJsonTopic = "messenger/waha/json";
   static const String messengerSessionJsonTopic = "messenger/waha/session/json";
   static const String messengerRepairJsonTopic = "messenger/waha/session/repair/json";
+  static const String messengerQrJsonTopic = "messenger/waha/session/qr/json";
   static const String messengerGroupsJsonTopic = "messenger/waha/groups/json";
   static const String messengerContactsStatusJsonTopic = "messenger/waha/contacts/status/json";
   static const String messengerMessagesJsonTopic = "messenger/waha/messages/json";
@@ -1040,6 +1041,8 @@ class MqttConnection  {
         messengerSettingsController.setValidation(map);
       } else if (topic == messengerActionsJsonTopic) {
         messengerSettingsController.setActionsPayload(map);
+      } else if (topic == messengerQrJsonTopic) {
+        messengerSettingsController.setQrPayload(map);
       } else if (topic == messengerRepairJsonTopic || topic == messengerContactsStatusJsonTopic ||
           topic == messengerMessagesJsonTopic || topic == messengerCommandsJsonTopic) {
         messengerSettingsController.setDiagnosticPayload(topic, map);
@@ -2124,6 +2127,7 @@ class MqttConnection  {
             case messengerWahaJsonTopic:
             case messengerSessionJsonTopic:
             case messengerRepairJsonTopic:
+            case messengerQrJsonTopic:
             case messengerGroupsJsonTopic:
             case messengerContactsStatusJsonTopic:
             case messengerMessagesJsonTopic:
@@ -2247,6 +2251,7 @@ class MqttConnection  {
     client.subscribe(messengerWahaJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(messengerSessionJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(messengerRepairJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerQrJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(messengerGroupsJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(messengerContactsStatusJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(messengerMessagesJsonTopic, MqttQos.atLeastOnce);

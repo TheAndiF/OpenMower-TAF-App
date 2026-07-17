@@ -1,0 +1,18 @@
+BL_Add messenger settings and QR pairing view
+Date: 2026-07-17
+
+Summary:
+- Added a complete fallback catalog for the 24 configurable messenger settings.
+- Kept the metadata-driven settings_v2 behavior for backend-provided settings.
+- Added a WhatsApp QR pairing card for SCAN_QR_CODE sessions.
+- Added support for base64 and URL based QR images via MQTT.
+- Added a QR refresh action and WAHA dashboard fallback.
+
+Changed files:
+- lib/controllers/messenger_settings_controller.dart
+- lib/screens/messenger_settings.dart
+- lib/io/mqtt_connection.dart
+- _Dokumentation/2026-07-17 - OpenMower-TAF-App - Aenderungsdokumentation - Messenger-Einstellungen und QR-Kopplung - v0.2.docx
+- _Dokumentation/2026-07-17 - OpenMower-TAF-App - Aenderungsdokumentation - Messenger-Einstellungen und QR-Kopplung - v0.2.pdf
+- commit_message_messenger_settings_qr_v0.2.txt
+- openmower_messenger_settings_qr_v0.2.patch

@@ -1,7 +1,11 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/messenger_settings_controller.dart';
 import 'package:open_mower_app/controllers/settings_controller.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class MessengerSettingsScreen extends StatefulWidget {
   const MessengerSettingsScreen({super.key});
@@ -167,6 +171,7 @@ class _MessengerSettingsScreenState extends State<MessengerSettingsScreen> {
           _statusTile('Messenger', controller.runtime['messenger/status/json']),
           _statusTile('WAHA', controller.runtime['messenger/waha/json']),
           _statusTile('Session', controller.runtime['messenger/waha/session/json']),
+          _qrCodeCard(context),
           _statusTile('Mobert-Bot', controller.runtime['messenger/bot/json']),
           _statusTile('Listener', controller.runtime['messenger/bot/listener/json']),
           _statusTile('Gruppen', controller.runtime['messenger/waha/groups/json']),
@@ -182,6 +187,106 @@ class _MessengerSettingsScreenState extends State<MessengerSettingsScreen> {
     final summary = (value['text'] ?? value['summary'] ?? value['status'] ?? value['count'] ?? 'Daten vorhanden').toString();
     return ExpansionTile(title: Text(title), subtitle: Text(summary), leading: const Icon(Icons.check_circle_outline),
       children: [SelectableText(controller.prettyJson(value), style: const TextStyle(fontFamily: 'monospace', fontSize: 12))]);
+  }
+
+  Widget _qrCodeCard(BuildContext context) {
+    final session = controller.runtime['messenger/waha/session/json'] ?? const <String, dynamic>{};
+    final status = (session['status'] ?? '').toString();
+    final needsQr = status == 'SCAN_QR_CODE' || controller.hasQrCode;
+    if (!needsQr) return const SizedBox.shrink();
+
+    final data = controller.qrCode;
+    final raw = data['image_base64'] ?? data['base64'] ?? data['data'] ?? data['qr'] ?? data['qr_code'];
+    final imageUrl = (data['image_url'] ?? data['url'] ?? '').toString();
+    Uint8List? bytes;
+    if (raw is String && raw.trim().isNotEmpty) {
+      var encoded = raw.trim();
+      final comma = encoded.indexOf(',');
+      if (encoded.startsWith('data:image') && comma >= 0) encoded = encoded.substring(comma + 1);
+      try {
+        bytes = base64Decode(encoded);
+      } catch (_) {
+        bytes = null;
+      }
+    }
+    final dashboard = _dashboardUrl();
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(Icons.qr_code_2, color: Theme.of(context).primaryColor, size: 30),
+            const SizedBox(width: 10),
+            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('WhatsApp koppeln', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
+              Text('QR-Code mit WhatsApp scannen, um die WAHA-Session zu verbinden.'),
+            ])),
+          ]),
+          const SizedBox(height: 14),
+          Center(
+            child: Container(
+              width: 280,
+              constraints: const BoxConstraints(minHeight: 220),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: Theme.of(context).dividerColor),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: bytes != null
+                  ? Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true,
+                      errorBuilder: (_, __, ___) => _qrPlaceholder('QR-Bild konnte nicht dargestellt werden.'))
+                  : imageUrl.isNotEmpty
+                      ? Image.network(imageUrl, fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => _qrPlaceholder('QR-Bild konnte nicht geladen werden.'))
+                      : _qrPlaceholder('Noch kein QR-Code empfangen. Fordere ihn erneut an oder öffne das WAHA-Dashboard.'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            FilledButton.icon(
+              onPressed: controller.requestQrCode,
+              icon: const Icon(Icons.refresh),
+              label: const Text('QR-Code anfordern'),
+            ),
+            if (dashboard != null)
+              OutlinedButton.icon(
+                onPressed: () => launchUrl(dashboard, mode: LaunchMode.externalApplication),
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('WAHA-Dashboard öffnen'),
+              ),
+          ]),
+          const SizedBox(height: 8),
+          Text(
+            'Der QR-Code sollte nur kurzfristig angezeigt und nach erfolgreicher Kopplung automatisch ausgeblendet werden.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _qrPlaceholder(String text) => SizedBox(
+        height: 220,
+        child: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.qr_code_scanner, size: 72, color: Colors.black54),
+            const SizedBox(height: 12),
+            Text(text, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black87)),
+          ]),
+        ),
+      );
+
+  Uri? _dashboardUrl() {
+    final status = controller.runtime['messenger/status/json'] ?? const <String, dynamic>{};
+    final description = status['description'];
+    String raw = '';
+    if (description is Map) raw = (description['waha_dashboard_url'] ?? '').toString();
+    if (raw.isEmpty) raw = (status['waha_dashboard_url'] ?? '').toString();
+    if (raw.isEmpty || raw.contains('<openmower-ip>')) return null;
+    return Uri.tryParse(raw);
   }
 
   Widget _actions(BuildContext context) {
