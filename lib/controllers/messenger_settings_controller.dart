@@ -1,279 +1,671 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/io/mqtt_connection.dart';
 
+enum MessengerSurface { bot, waha }
+
 class MessengerSettingsController extends GetxController {
-  final settings = <String, Map<String, dynamic>>{}.obs;
-  final drafts = <String, dynamic>{}.obs;
-  final dirtyKeys = <String>{}.obs;
-  final runtime = <String, Map<String, dynamic>>{}.obs;
-  final diagnostics = <String, Map<String, dynamic>>{}.obs;
-  final actions = <Map<String, dynamic>>[].obs;
-  final lastValidation = <String, dynamic>{}.obs;
-  final lastUpdated = Rxn<DateTime>();
+  static const Duration responseTimeout = Duration(seconds: 8);
+
+  final botSnapshot = <String, dynamic>{}.obs;
+  final wahaSnapshot = <String, dynamic>{}.obs;
+  final botValidation = <String, dynamic>{}.obs;
+  final wahaValidation = <String, dynamic>{}.obs;
+  final botEvents = <String, dynamic>{}.obs;
+  final botPendingConfirmations = <String, dynamic>{}.obs;
+
+  final botSettingDrafts = <String, dynamic>{}.obs;
+  final wahaSettingDrafts = <String, dynamic>{}.obs;
+  final botFlowDrafts = <String, dynamic>{}.obs;
+  final botDirtySettings = <String>{}.obs;
+  final wahaDirtySettings = <String>{}.obs;
+  final botDirtyFlows = <String>{}.obs;
+
+  final botWaitingMode = ''.obs;
+  final wahaWaitingMode = ''.obs;
   final lastStatus = ''.obs;
-  final qrCode = <String, dynamic>{}.obs;
+  final lastTopic = ''.obs;
+  final lastUpdated = Rxn<DateTime>();
 
-  bool get hasSettings => settings.isNotEmpty;
-  bool get hasQrCode => qrCode.isNotEmpty;
-  int get dirtyCount => dirtyKeys.length;
-  int get differenceCount => settings.entries.where((e) => _different(e.value)).length;
+  Timer? _botTimer;
+  Timer? _wahaTimer;
 
-  List<String> groups({required bool expertMode}) {
-    final result = settings.values
-        .where((s) => expertMode || !_bool(s['expert']))
-        .where((s) => _boolDefault(s['visible'], true))
-        .map((s) => (s['group'] ?? 'general').toString())
-        .toSet()
-        .toList();
-    result.sort((a, b) => groupOrder(a).compareTo(groupOrder(b)));
-    return result;
+  bool get hasBotSnapshot => botSnapshot.isNotEmpty;
+  bool get hasWahaSnapshot => wahaSnapshot.isNotEmpty;
+  bool get hasQrCode => qrCodeData != null;
+  int get dirtyCount => botDirtySettings.length + wahaDirtySettings.length + botDirtyFlows.length;
+
+  String get botState => _statusValue(MessengerSurface.bot, 'state');
+  String get wahaState => _statusValue(MessengerSurface.waha, 'state');
+
+  String? get qrCodeData {
+    final status = statusFor(MessengerSurface.waha);
+    final connected = _bool(status['connected']);
+    final authRequired = _bool(status['authentication_required']);
+    final available = _bool(status['qr_code_available']);
+    final raw = status['QR_Code_Data'];
+    if (connected || !authRequired || !available || raw is! String || raw.trim().isEmpty) {
+      return null;
+    }
+    return raw.trim();
   }
 
-  List<MapEntry<String, Map<String, dynamic>>> entriesForGroup(String group, {required bool expertMode}) {
-    final result = settings.entries
-        .where((e) => (e.value['group'] ?? 'general').toString() == group)
-        .where((e) => expertMode || !_bool(e.value['expert']))
-        .where((e) => _boolDefault(e.value['visible'], true))
+  Map<String, dynamic> snapshotFor(MessengerSurface surface) =>
+      surface == MessengerSurface.bot ? botSnapshot : wahaSnapshot;
+
+  Map<String, dynamic> validationFor(MessengerSurface surface) =>
+      surface == MessengerSurface.bot ? botValidation : wahaValidation;
+
+  Map<String, dynamic> statusFor(MessengerSurface surface) =>
+      _map(snapshotFor(surface)['status']);
+
+  Map<String, dynamic> metaFor(MessengerSurface surface) =>
+      _map(snapshotFor(surface)['meta']);
+
+  Map<String, Map<String, dynamic>> settingsFor(MessengerSurface surface) =>
+      _mapOfMaps(snapshotFor(surface)['settings']);
+
+  Map<String, Map<String, dynamic>> flowsForBot() => _mapOfMaps(botSnapshot['flows']);
+
+  bool isWaiting(MessengerSurface surface) => waitingMode(surface).isNotEmpty;
+
+  String waitingMode(MessengerSurface surface) =>
+      surface == MessengerSurface.bot ? botWaitingMode.value : wahaWaitingMode.value;
+
+  int differenceCount(MessengerSurface surface) => settingsFor(surface)
+      .values
+      .where((entry) => _bool(entry['different']) || !_same(entry['active'], entry['persistent']))
+      .length;
+
+  List<String> groups(MessengerSurface surface, {required bool expertMode}) {
+    final result = settingsFor(surface)
+        .values
+        .where((setting) => expertMode || !_bool(setting['expert']))
+        .map((setting) => (setting['group'] ?? 'general').toString())
+        .toSet()
         .toList();
     result.sort((a, b) {
-      final ao = _int(a.value['order']) ?? 9999;
-      final bo = _int(b.value['order']) ?? 9999;
-      final c = ao.compareTo(bo);
-      return c == 0 ? a.key.compareTo(b.key) : c;
+      final order = groupOrder(surface, a).compareTo(groupOrder(surface, b));
+      return order == 0 ? a.compareTo(b) : order;
     });
     return result;
   }
 
-  String groupLabel(String group) => const <String, String>{
-        'general': 'Allgemein',
-        'connection': 'WAHA-Verbindung',
-        'session': 'WhatsApp-Session',
-        'bot': 'Mobert-Bot',
-        'groups': 'Gruppen und Ziele',
-        'status_push': 'Automatische Statusmeldungen',
-        'messages': 'Nachrichtenverlauf',
-        'repair': 'Automatische Reparatur',
-        'commands': 'Befehle und Flows',
-        'security': 'Sicherheit',
-      }[group] ?? group;
+  List<MapEntry<String, Map<String, dynamic>>> entriesForGroup(
+    MessengerSurface surface,
+    String group, {
+    required bool expertMode,
+  }) {
+    final entries = settingsFor(surface)
+        .entries
+        .where((entry) => (entry.value['group'] ?? 'general').toString() == group)
+        .where((entry) => expertMode || !_bool(entry.value['expert']))
+        .toList();
+    entries.sort((a, b) {
+      final order = (_int(a.value['order']) ?? 9999).compareTo(_int(b.value['order']) ?? 9999);
+      return order == 0 ? a.key.compareTo(b.key) : order;
+    });
+    return entries;
+  }
+
+  String groupLabel(MessengerSurface surface, String group) {
+    final descriptor = _groupDescriptor(surface, group);
+    final label = descriptor['label'] ?? descriptor['name'] ?? descriptor['title'];
+    if (label != null && label.toString().trim().isNotEmpty) return label.toString();
+    return const <String, String>{
+          'general': 'Allgemein',
+          'messenger': 'Messenger',
+          'notifications': 'Benachrichtigungen',
+          'commands': 'Befehle und Flows',
+          'session': 'Session',
+          'repair': 'Automatische Reparatur',
+        }[group] ??
+        group;
+  }
 
   IconData groupIcon(String group) => const <String, IconData>{
         'general': Icons.tune,
-        'connection': Icons.hub_outlined,
-        'session': Icons.chat_outlined,
-        'bot': Icons.smart_toy_outlined,
-        'groups': Icons.groups_outlined,
-        'status_push': Icons.notifications_active_outlined,
-        'messages': Icons.history_outlined,
-        'repair': Icons.build_circle_outlined,
+        'messenger': Icons.groups_outlined,
+        'notifications': Icons.notifications_active_outlined,
         'commands': Icons.account_tree_outlined,
-        'security': Icons.security_outlined,
+        'session': Icons.chat_outlined,
+        'repair': Icons.build_circle_outlined,
       }[group] ?? Icons.settings_outlined;
 
-  int groupOrder(String group) => const <String, int>{
-        'general': 10,
-        'connection': 20,
-        'session': 30,
-        'bot': 40,
-        'groups': 50,
-        'status_push': 60,
-        'messages': 70,
-        'repair': 80,
-        'commands': 90,
-        'security': 100,
-      }[group] ?? 999;
+  int groupOrder(MessengerSurface surface, String group) {
+    final descriptor = _groupDescriptor(surface, group);
+    final order = _int(descriptor['order']);
+    if (order != null) return order;
+    return const <String, int>{
+          'general': 100,
+          'messenger': 200,
+          'notifications': 300,
+          'session': 400,
+          'repair': 500,
+          'commands': 600,
+        }[group] ??
+        9999;
+  }
 
-  dynamic valueFor(String key) => drafts.containsKey(key) ? drafts[key] : settings[key]?['value'];
-  bool isDirty(String key) => dirtyKeys.contains(key);
+  dynamic settingValue(MessengerSurface surface, String key) {
+    final drafts = _settingDrafts(surface);
+    if (drafts.containsKey(key)) return drafts[key];
+    final setting = settingsFor(surface)[key];
+    return setting == null ? null : _initialValue(setting);
+  }
 
-  void updateDraft(String key, dynamic value) {
-    drafts[key] = value;
-    final original = settings[key]?['value'];
+  dynamic flowValue(String key) {
+    if (botFlowDrafts.containsKey(key)) return botFlowDrafts[key];
+    final flow = flowsForBot()[key];
+    return flow == null ? null : _initialValue(flow);
+  }
+
+  bool isSettingDirty(MessengerSurface surface, String key) => _dirtySettings(surface).contains(key);
+  bool isFlowDirty(String key) => botDirtyFlows.contains(key);
+
+  void updateSettingDraft(MessengerSurface surface, String key, dynamic value) {
+    final setting = settingsFor(surface)[key];
+    if (setting == null || _bool(setting['readonly'])) return;
+    final drafts = _settingDrafts(surface);
+    final dirty = _dirtySettings(surface);
+    final original = _initialValue(setting);
     if (_same(original, value)) {
-      dirtyKeys.remove(key);
       drafts.remove(key);
+      dirty.remove(key);
     } else {
-      dirtyKeys.add(key);
+      drafts[key] = value;
+      dirty.add(key);
     }
     drafts.refresh();
-    dirtyKeys.refresh();
+    dirty.refresh();
   }
 
-  void discard({String? group}) {
+  void updateFlowDraft(String key, bool value) {
+    final flow = flowsForBot()[key];
+    if (flow == null || _bool(flow['readonly'])) return;
+    final original = _bool(_initialValue(flow));
+    if (original == value) {
+      botFlowDrafts.remove(key);
+      botDirtyFlows.remove(key);
+    } else {
+      botFlowDrafts[key] = value;
+      botDirtyFlows.add(key);
+    }
+    botFlowDrafts.refresh();
+    botDirtyFlows.refresh();
+  }
+
+  void discardSettings(MessengerSurface surface, {String? group}) {
+    final drafts = _settingDrafts(surface);
+    final dirty = _dirtySettings(surface);
     if (group == null) {
       drafts.clear();
-      dirtyKeys.clear();
+      dirty.clear();
       return;
     }
-    final keys = entriesForGroup(group, expertMode: true).map((e) => e.key).toSet();
+    final keys = settingsFor(surface)
+        .entries
+        .where((entry) => (entry.value['group'] ?? 'general').toString() == group)
+        .map((entry) => entry.key)
+        .toSet();
     drafts.removeWhere((key, _) => keys.contains(key));
-    dirtyKeys.removeWhere(keys.contains);
+    dirty.removeWhere(keys.contains);
   }
 
-  void ensureFallbackSettings() {
-    if (settings.isNotEmpty) return;
-    final session = runtime['messenger/waha/session/json'] ?? const <String, dynamic>{};
-    final waha = runtime['messenger/waha/json'] ?? const <String, dynamic>{};
-    final bot = runtime['messenger/bot/json'] ?? const <String, dynamic>{};
-    final listener = runtime['messenger/bot/listener/json'] ?? const <String, dynamic>{};
-    final groups = runtime['messenger/waha/groups/json'] ?? const <String, dynamic>{};
-    final push = runtime['messenger/bot/status_push/json'] ?? const <String, dynamic>{};
-    final messages = diagnostics['messenger/waha/messages/json'] ?? const <String, dynamic>{};
-    final repair = diagnostics['messenger/waha/session/repair/json'] ??
-        (session['repair'] is Map ? Map<String, dynamic>.from(session['repair']) : const <String, dynamic>{});
-    final defaultGroup = groups['default_group'] is Map ? Map<String, dynamic>.from(groups['default_group']) : const <String, dynamic>{};
-    final listenerGroup = listener['group'] is Map ? Map<String, dynamic>.from(listener['group']) : const <String, dynamic>{};
-    final targetGroup = push['target_group'] ?? push['target'] ?? defaultGroup['alias'];
-    settings.assignAll(<String, Map<String, dynamic>>{
-      'messenger_enabled': _meta('Messenger aktiviert', 'Aktiviert die Messenger-Funktion.', 'general', 10, 'bool', true),
-      'waha_enabled': _meta('WAHA aktiviert', 'Aktiviert die WhatsApp-Bridge.', 'connection', 10, 'bool', waha['enabled'] ?? true),
-      'waha_api_url': _meta('WAHA-API-URL', 'Interne Adresse der WAHA-API.', 'connection', 20, 'string', waha['url'] ?? 'http://waha:3000', expert: true),
-      'session_name': _meta('Sessionname', 'Name der verwendeten WhatsApp-Session.', 'session', 10, 'string', session['name'] ?? ''),
-      'bot_enabled': _meta('Mobert-Bot aktiviert', 'Aktiviert die Bot-Befehlsverarbeitung.', 'bot', 10, 'bool', bot['enabled'] ?? true),
-      'wake_word': _meta('Wake Word', 'Präfix für Messenger-Befehle.', 'bot', 20, 'string', listener['wake_word'] ?? 'Mobert'),
-      'wake_word_required': _meta('Wake Word erforderlich', 'Befehle werden nur mit Wake Word erkannt.', 'bot', 30, 'bool', true),
-      'wake_word_case_sensitive': _meta('Groß-/Kleinschreibung beachten', 'Vergleicht das Wake Word unter Beachtung der Schreibweise.', 'bot', 40, 'bool', false, expert: true),
-      'wake_word_syntax': _meta('Wake-Word-Syntax', 'Syntax zwischen Wake Word und Befehl.', 'bot', 50, 'enum', 'colon', expert: true, options: const ['colon']),
-      'default_group': _meta('Standard-Zielgruppe', 'Standardgruppe für Antworten und Meldungen.', 'groups', 10, 'string', defaultGroup['alias'] ?? ''),
-      'listener_group': _meta('Lauschgruppe', 'Gruppe, in der Mobert auf Befehle lauscht.', 'groups', 20, 'string', listenerGroup['alias'] ?? ''),
-      'status_push_enabled': _meta('Automatischer Status aktiviert', 'Sendet regelmäßig den OpenMower-Status.', 'status_push', 10, 'bool', push['enabled'] ?? false),
-      'status_push_interval_minutes': _meta('Statusintervall', 'Intervall automatischer Statusmeldungen.', 'status_push', 20, 'int', push['interval_minutes'] ?? 30, unit: 'min', min: 5, max: 1440),
-      'status_push_target_group': _meta('Status-Zielgruppe', 'Zielgruppe der automatischen Statusmeldungen.', 'status_push', 30, 'string', targetGroup ?? ''),
-      'append_status_to_confirmations': _meta('Status nach Befehl anhängen', 'Hängt den OpenMower-Status an Befehlsbestätigungen an.', 'status_push', 40, 'bool', false),
-      'message_history_enabled': _meta('Nachrichtenverlauf aktiviert', 'Speichert die begrenzte Ein- und Ausgangshistorie.', 'messages', 10, 'bool', messages['enabled'] ?? true),
-      'message_history_limit': _meta('Verlaufslimit', 'Maximale Anzahl gespeicherter Verlaufseinträge.', 'messages', 20, 'int', messages['limit'] ?? 10, expert: true, min: 1, max: 100),
-      'repair_enabled': _meta('Reparatur-Watchdog aktiviert', 'Überwacht und repariert die WAHA-Session.', 'repair', 10, 'bool', repair['enabled'] ?? true, expert: true),
-      'repair_start_stopped_session': _meta('Gestoppte Session automatisch starten', 'Startet eine gestoppte Session automatisch.', 'repair', 20, 'bool', repair['start_stopped_session'] ?? true, expert: true),
-      'repair_starting_timeout_seconds': _meta('Start-Timeout', 'Maximale Startdauer der Session.', 'repair', 30, 'int', repair['starting_timeout_seconds'] ?? 90, unit: 's', expert: true, min: 10, max: 600),
-      'repair_cooldown_seconds': _meta('Reparatur-Cooldown', 'Pause zwischen Reparaturversuchen.', 'repair', 40, 'int', repair['repair_cooldown_seconds'] ?? 300, unit: 's', expert: true, min: 10, max: 3600),
-      'repair_max_restarts_per_hour': _meta('Maximale Neustarts pro Stunde', 'Begrenzt automatische Session-Neustarts.', 'repair', 50, 'int', repair['max_restarts_per_hour'] ?? 3, expert: true, min: 0, max: 20),
-      'repair_send_ready_wait_seconds': _meta('Wartezeit auf Versandbereitschaft', 'Wartezeit nach Sessionstart bis zum Versandtest.', 'repair', 60, 'int', repair['send_ready_wait_seconds'] ?? 30, unit: 's', expert: true, min: 0, max: 300),
-      'repair_watchdog_seconds': _meta('Watchdog-Intervall', 'Prüfintervall des Session-Watchdogs.', 'repair', 70, 'int', repair['watchdog_seconds'] ?? 60, unit: 's', expert: true, min: 10, max: 3600),
+  void discardFlows() {
+    botFlowDrafts.clear();
+    botDirtyFlows.clear();
+  }
+
+  bool canApplySession(MessengerSurface surface, {String? group, bool includeFlows = false}) {
+    final settings = settingsFor(surface);
+    final hasSetting = _dirtySettings(surface).any((key) {
+      final setting = settings[key];
+      if (setting == null) return false;
+      if (group != null && (setting['group'] ?? 'general').toString() != group) return false;
+      return !_bool(setting['readonly']) && _boolDefault(setting['session_apply_supported'], true);
     });
+    if (hasSetting) return true;
+    if (surface == MessengerSurface.bot && includeFlows) {
+      final flows = flowsForBot();
+      return botDirtyFlows.any((key) {
+        final flow = flows[key];
+        return flow != null && !_bool(flow['readonly']) && _boolDefault(flow['session_apply_supported'], true);
+      });
+    }
+    return false;
   }
 
-  Map<String, dynamic> _meta(String label, String description, String group, int order,
-      String type, dynamic value,
-      {bool expert = false, String? unit, num? min, num? max, List<String>? options}) {
-    return <String, dynamic>{
-      'label': label,
-      'description': description,
-      'group': group,
-      'order': order,
-      'type': type,
-      'value': value,
-      'active': value,
-      'persistent': value,
-      'different': false,
-      'visible': true,
-      'expert': expert,
-      'readonly': false,
-      'session_apply_supported': true,
-      'persistent_apply_supported': true,
-      if (unit != null) 'unit': unit,
-      if (min != null) 'min': min,
-      if (max != null) 'max': max,
-      if (options != null) 'options': options,
-    };
-  }
-
-  void setQrPayload(Map<String, dynamic> payload) {
-    qrCode.assignAll(_root(payload));
-    lastUpdated.value = DateTime.now();
-  }
-
-  void setSettingsPayload(Map<String, dynamic> payload) {
-    final root = _root(payload);
-    final raw = root['settings'];
-    if (raw is! Map) return;
-    final next = <String, Map<String, dynamic>>{};
-    raw.forEach((key, value) {
-      if (value is Map) next[key.toString()] = Map<String, dynamic>.from(value);
+  bool hasPersistentChanges(MessengerSurface surface, {String? group, bool includeFlows = false}) {
+    final settings = settingsFor(surface);
+    final hasSetting = _dirtySettings(surface).any((key) {
+      final setting = settings[key];
+      if (setting == null) return false;
+      if (group != null && (setting['group'] ?? 'general').toString() != group) return false;
+      return !_bool(setting['readonly']);
     });
-    settings.assignAll(next);
-    drafts.clear();
-    dirtyKeys.clear();
-    lastUpdated.value = DateTime.now();
-    lastStatus.value = 'Messenger-Einstellungen aktualisiert.';
+    if (hasSetting) return true;
+    return surface == MessengerSurface.bot && includeFlows && botDirtyFlows.isNotEmpty;
   }
 
-  void setRuntimePayload(String topic, Map<String, dynamic> payload) {
-    runtime[topic] = _root(payload);
-    ensureFallbackSettings();
-    lastUpdated.value = DateTime.now();
+  Map<String, dynamic> buildWritePayload(
+    MessengerSurface surface, {
+    String? group,
+    required bool session,
+    bool includeFlows = false,
+  }) {
+    final payload = <String, dynamic>{};
+    final settingsPayload = <String, dynamic>{};
+    final settings = settingsFor(surface);
+    for (final key in _dirtySettings(surface)) {
+      final meta = settings[key];
+      if (meta == null || _bool(meta['readonly'])) continue;
+      if (group != null && (meta['group'] ?? 'general').toString() != group) continue;
+      if (session && !_boolDefault(meta['session_apply_supported'], true)) continue;
+      final value = _settingDrafts(surface)[key];
+      if (_validateValue(surface, key, meta, value) != null) continue;
+      settingsPayload[key] = <String, dynamic>{'value': value};
+    }
+    if (settingsPayload.isNotEmpty) payload['settings'] = settingsPayload;
+
+    if (surface == MessengerSurface.bot && includeFlows) {
+      final flowPayload = <String, dynamic>{};
+      final flows = flowsForBot();
+      for (final key in botDirtyFlows) {
+        final meta = flows[key];
+        if (meta == null || _bool(meta['readonly'])) continue;
+        if (session && !_boolDefault(meta['session_apply_supported'], true)) continue;
+        flowPayload[key] = <String, dynamic>{'value': _bool(botFlowDrafts[key])};
+      }
+      if (flowPayload.isNotEmpty) payload['flows'] = flowPayload;
+    }
+    return payload;
   }
 
-  void setDiagnosticPayload(String topic, Map<String, dynamic> payload) {
-    diagnostics[topic] = _root(payload);
-    ensureFallbackSettings();
-    lastUpdated.value = DateTime.now();
+  String? validationErrorFor(MessengerSurface surface, String key) {
+    final setting = settingsFor(surface)[key];
+    if (setting == null || !_settingDrafts(surface).containsKey(key)) return null;
+    return _validateValue(surface, key, setting, _settingDrafts(surface)[key]);
   }
 
-  void setActionsPayload(Map<String, dynamic> payload) {
-    final root = payload['d'] ?? payload;
-    final list = root is List ? root : (root is Map ? root['actions'] : null);
-    if (list is List) {
-      actions.assignAll(list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)));
+  void request(MessengerSurface surface) {
+    _beginWait(surface, 'renew');
+    final mqtt = Get.find<MqttConnection>();
+    if (surface == MessengerSurface.bot) {
+      mqtt.requestMessengerBot();
+    } else {
+      mqtt.requestMessengerWaha();
     }
   }
 
-  void setValidation(Map<String, dynamic> payload) {
-    lastValidation.assignAll(_root(payload));
+  void requestAll() {
+    request(MessengerSurface.bot);
+    request(MessengerSurface.waha);
+  }
+
+  void requestGroupOptions() => request(MessengerSurface.bot);
+
+  void applySession(MessengerSurface surface, {String? group, bool includeFlows = false}) {
+    final error = _firstValidationError(surface, group: group);
+    if (error != null) {
+      lastStatus.value = error;
+      return;
+    }
+    final payload = buildWritePayload(surface, group: group, session: true, includeFlows: includeFlows);
+    if (payload.isEmpty) {
+      lastStatus.value = 'Keine session-fähigen Änderungen zum Senden.';
+      return;
+    }
+    _beginWait(surface, 'session');
+    final mqtt = Get.find<MqttConnection>();
+    if (surface == MessengerSurface.bot) {
+      mqtt.publishMessengerBotSession(payload);
+    } else {
+      mqtt.publishMessengerWahaSession(payload);
+    }
+  }
+
+  void applyPersistent(MessengerSurface surface, {String? group, bool includeFlows = false}) {
+    final error = _firstValidationError(surface, group: group);
+    if (error != null) {
+      lastStatus.value = error;
+      return;
+    }
+    final payload = buildWritePayload(surface, group: group, session: false, includeFlows: includeFlows);
+    if (payload.isEmpty) {
+      lastStatus.value = 'Keine Änderungen zum dauerhaften Speichern.';
+      return;
+    }
+    _beginWait(surface, 'persistent');
+    final mqtt = Get.find<MqttConnection>();
+    if (surface == MessengerSurface.bot) {
+      mqtt.publishMessengerBotPersistent(payload);
+    } else {
+      mqtt.publishMessengerWahaPersistent(payload);
+    }
+  }
+
+  void setSnapshot(MessengerSurface surface, Map<String, dynamic> payload, {required String topic}) {
+    final root = _root(payload);
+    final error = _schemaError(surface, root);
+    if (error != null) {
+      lastTopic.value = topic;
+      lastStatus.value = error;
+      return;
+    }
+
+    if (surface == MessengerSurface.waha) {
+      final status = _map(root['status']);
+      if (!_bool(status['authentication_required']) || !_bool(status['qr_code_available']) || _bool(status['connected'])) {
+        status['QR_Code_Data'] = null;
+        root['status'] = status;
+      }
+      wahaSnapshot.assignAll(root);
+    } else {
+      botSnapshot.assignAll(root);
+    }
+
+    _reconcileDrafts(surface);
+    lastTopic.value = topic;
+    lastUpdated.value = DateTime.now();
+    if (waitingMode(surface) == 'renew') _finishWait(surface);
+  }
+
+  void setValidation(MessengerSurface surface, Map<String, dynamic> payload, {required String topic}) {
+    final root = _root(payload);
+    if (surface == MessengerSurface.bot) {
+      botValidation.assignAll(root);
+    } else {
+      wahaValidation.assignAll(root);
+    }
+    _applyAccepted(surface, root['accepted']);
+    _finishWait(surface);
+    lastTopic.value = topic;
+    lastUpdated.value = DateTime.now();
+    lastStatus.value = _validationSummary(root);
+  }
+
+  void setBotRuntime(String topic, Map<String, dynamic> payload) {
+    final root = _root(payload);
+    if (topic == MqttConnection.messengerBotEventsJsonTopic) {
+      botEvents.assignAll(root);
+    } else if (topic == MqttConnection.messengerBotPendingConfirmationsJsonTopic) {
+      botPendingConfirmations.assignAll(root);
+    }
+    lastTopic.value = topic;
     lastUpdated.value = DateTime.now();
   }
 
-  Map<String, dynamic> _changes({String? group}) {
-    final result = <String, dynamic>{};
-    for (final key in dirtyKeys) {
-      if (group != null && (settings[key]?['group'] ?? 'general').toString() != group) continue;
-      result[key] = drafts[key];
+  String prettyJsonSafe(dynamic value) {
+    try {
+      return const JsonEncoder.withIndent('  ').convert(_redact(value));
+    } catch (_) {
+      return _redact(value).toString();
+    }
+  }
+
+  @override
+  void onClose() {
+    _botTimer?.cancel();
+    _wahaTimer?.cancel();
+    super.onClose();
+  }
+
+  RxMap<String, dynamic> _settingDrafts(MessengerSurface surface) =>
+      surface == MessengerSurface.bot ? botSettingDrafts : wahaSettingDrafts;
+
+  RxSet<String> _dirtySettings(MessengerSurface surface) =>
+      surface == MessengerSurface.bot ? botDirtySettings : wahaDirtySettings;
+
+  String _statusValue(MessengerSurface surface, String key) =>
+      (statusFor(surface)[key] ?? '').toString();
+
+  dynamic _initialValue(Map<String, dynamic> meta) {
+    if (meta.containsKey('value')) return meta['value'];
+    if (meta.containsKey('active')) return meta['active'];
+    return meta['persistent'];
+  }
+
+  String? _firstValidationError(MessengerSurface surface, {String? group}) {
+    final settings = settingsFor(surface);
+    for (final key in _dirtySettings(surface)) {
+      final meta = settings[key];
+      if (meta == null) continue;
+      if (group != null && (meta['group'] ?? 'general').toString() != group) continue;
+      final error = _validateValue(surface, key, meta, _settingDrafts(surface)[key]);
+      if (error != null) return error;
+    }
+    return null;
+  }
+
+  String? _validateValue(MessengerSurface surface, String key, Map<String, dynamic> meta, dynamic value) {
+    final type = (meta['type'] ?? '').toString().toLowerCase();
+    if (type == 'bool' || type == 'boolean') {
+      if (value is! bool) return '${meta['label'] ?? key}: boolescher Wert erforderlich.';
+    } else if (type == 'int' || type == 'integer') {
+      if (value is! int) return '${meta['label'] ?? key}: Ganzzahl erforderlich.';
+    } else if (type == 'string') {
+      if (value is! String) return '${meta['label'] ?? key}: Textwert erforderlich.';
+    }
+
+    if (value is num) {
+      final min = _num(meta['min']);
+      final max = _num(meta['max']);
+      if (min != null && value < min) return '${meta['label'] ?? key}: Mindestwert ist $min.';
+      if (max != null && value > max) return '${meta['label'] ?? key}: Höchstwert ist $max.';
+    }
+
+    final options = optionItems(meta);
+    if (options.isNotEmpty && !options.any((option) => _same(option.value, value))) {
+      return '${meta['label'] ?? key}: nur ein aktuell gelieferter Auswahlwert ist zulässig.';
+    }
+
+    if ((surface == MessengerSurface.bot && key == 'wake_word') ||
+        (surface == MessengerSurface.waha && key == 'session')) {
+      if (value is! String || value.trim().isEmpty) return '${meta['label'] ?? key}: darf nicht leer sein.';
+    }
+    return null;
+  }
+
+  List<MessengerOption> optionItems(Map<String, dynamic> meta) {
+    final raw = meta['options'];
+    if (raw is! List) return const <MessengerOption>[];
+    final result = <MessengerOption>[];
+    for (final item in raw) {
+      if (item is Map) {
+        final map = Map<String, dynamic>.from(item);
+        if (!map.containsKey('value')) continue;
+        result.add(MessengerOption(map['value'], (map['label'] ?? map['value']).toString()));
+      } else {
+        result.add(MessengerOption(item, item.toString()));
+      }
     }
     return result;
   }
 
-  void requestAll() => Get.find<MqttConnection>().requestMessengerSettings();
-
-  void applySession({String? group}) {
-    final changes = _changes(group: group);
-    if (changes.isEmpty) return;
-    Get.find<MqttConnection>().publishMessengerSessionSettings({'settings': changes});
-    lastStatus.value = 'Messenger-Sessionänderungen gesendet.';
+  Map<String, dynamic> _groupDescriptor(MessengerSurface surface, String group) {
+    final raw = metaFor(surface)['groups'];
+    if (raw is Map) {
+      final value = raw[group];
+      if (value is Map) return Map<String, dynamic>.from(value);
+      if (value is num) return <String, dynamic>{'order': value};
+      if (value != null) return <String, dynamic>{'label': value.toString()};
+    }
+    if (raw is List) {
+      for (var index = 0; index < raw.length; index++) {
+        final value = raw[index];
+        if (value is String && value == group) return <String, dynamic>{'order': index};
+        if (value is Map) {
+          final map = Map<String, dynamic>.from(value);
+          final id = map['key'] ?? map['id'] ?? map['group'] ?? map['value'] ?? map['name'];
+          if (id?.toString() == group) return <String, dynamic>{'order': index, ...map};
+        }
+      }
+    }
+    return const <String, dynamic>{};
   }
 
-  void applyPersistent({String? group}) {
-    final changes = _changes(group: group);
-    if (changes.isEmpty) return;
-    Get.find<MqttConnection>().publishMessengerPersistentSettings({'settings': changes});
-    lastStatus.value = 'Dauerhafte Messenger-Änderungen gesendet.';
+  void _reconcileDrafts(MessengerSurface surface) {
+    final settings = settingsFor(surface);
+    final drafts = _settingDrafts(surface);
+    final dirty = _dirtySettings(surface);
+    final resolved = <String>[];
+    for (final key in dirty) {
+      final meta = settings[key];
+      if (meta == null || _same(_initialValue(meta), drafts[key])) resolved.add(key);
+    }
+    for (final key in resolved) {
+      drafts.remove(key);
+      dirty.remove(key);
+    }
+
+    if (surface == MessengerSurface.bot) {
+      final flows = flowsForBot();
+      final resolvedFlows = <String>[];
+      for (final key in botDirtyFlows) {
+        final flow = flows[key];
+        if (flow == null || _same(_initialValue(flow), botFlowDrafts[key])) resolvedFlows.add(key);
+      }
+      for (final key in resolvedFlows) {
+        botFlowDrafts.remove(key);
+        botDirtyFlows.remove(key);
+      }
+    }
   }
 
-  void requestQrCode() {
-    Get.find<MqttConnection>().publishMessengerAction('messenger:waha/session/qr');
-    lastStatus.value = 'QR-Code wurde angefordert.';
+  void _applyAccepted(MessengerSurface surface, dynamic accepted) {
+    if (accepted is! Map) return;
+    final acceptedMap = Map<String, dynamic>.from(accepted);
+    final settingsAccepted = acceptedMap['settings'];
+    if (settingsAccepted is Map) {
+      for (final key in settingsAccepted.keys.map((key) => key.toString())) {
+        _settingDrafts(surface).remove(key);
+        _dirtySettings(surface).remove(key);
+      }
+    }
+    if (surface == MessengerSurface.bot && acceptedMap['flows'] is Map) {
+      final flowsAccepted = Map<dynamic, dynamic>.from(acceptedMap['flows'] as Map);
+      for (final key in flowsAccepted.keys.map((key) => key.toString())) {
+        botFlowDrafts.remove(key);
+        botDirtyFlows.remove(key);
+      }
+    }
   }
 
-  void runAction(String actionId) {
-    Get.find<MqttConnection>().publishMessengerAction(actionId);
-    lastStatus.value = 'Aktion gesendet: $actionId';
+  String _validationSummary(Map<String, dynamic> root) {
+    final remarks = root['remarks'];
+    final messages = <String>[];
+    if (remarks is List) {
+      messages.addAll(remarks.where((item) => item != null).map((item) => item.toString()));
+    }
+    final rejected = root['rejected'];
+    final rejectedCount = rejected is Map ? rejected.length : 0;
+    if (rejectedCount > 0) messages.add('$rejectedCount Bereich(e) abgelehnt.');
+    if (messages.isNotEmpty) return messages.join(' ');
+    final mode = (root['mode'] ?? '').toString();
+    final valid = _bool(root['valid']);
+    return valid ? 'Messenger-$mode erfolgreich bestätigt.' : 'Messenger-$mode wurde nicht vollständig bestätigt.';
   }
 
-  String prettyJson(dynamic value) {
-    try {
-      return const JsonEncoder.withIndent('  ').convert(value);
-    } catch (_) {
-      return value.toString();
+  String? _schemaError(MessengerSurface surface, Map<String, dynamic> root) {
+    final expectedNamespace = surface == MessengerSurface.bot ? 'messenger_bot' : 'messenger_waha';
+    final expectedSchema = surface == MessengerSurface.bot ? 'bot_v1' : 'waha_v1';
+    if (root['namespace']?.toString() != expectedNamespace ||
+        root['schema']?.toString() != expectedSchema ||
+        root['schema_version']?.toString() != '1.0') {
+      return 'Nicht unterstütztes Messenger-Schema. Erwartet: $expectedNamespace / $expectedSchema / 1.0.';
+    }
+    if (root['settings'] is! Map || root['status'] is! Map) {
+      return 'Ungültiger Messenger-Snapshot: status/settings fehlen.';
+    }
+    if (surface == MessengerSurface.bot && root['flows'] is! Map) {
+      return 'Ungültiger Bot-Snapshot: flows fehlt.';
+    }
+    return null;
+  }
+
+  void _beginWait(MessengerSurface surface, String mode) {
+    _timerFor(surface)?.cancel();
+    _setWaitingMode(surface, mode);
+    lastStatus.value = mode == 'renew' ? 'Messenger-Status wird neu angefordert …' : 'Messenger-$mode wurde gesendet …';
+    final timer = Timer(responseTimeout, () {
+      if (waitingMode(surface) == mode) {
+        _setWaitingMode(surface, '');
+        lastStatus.value = 'Keine passende Backend-Antwort innerhalb von 8 Sekunden. Der nächste Snapshot kann den Zustand weiterhin aktualisieren.';
+      }
+    });
+    if (surface == MessengerSurface.bot) {
+      _botTimer = timer;
+    } else {
+      _wahaTimer = timer;
+    }
+  }
+
+  void _finishWait(MessengerSurface surface) {
+    _timerFor(surface)?.cancel();
+    _setWaitingMode(surface, '');
+  }
+
+  Timer? _timerFor(MessengerSurface surface) => surface == MessengerSurface.bot ? _botTimer : _wahaTimer;
+
+  void _setWaitingMode(MessengerSurface surface, String value) {
+    if (surface == MessengerSurface.bot) {
+      botWaitingMode.value = value;
+    } else {
+      wahaWaitingMode.value = value;
     }
   }
 
   Map<String, dynamic> _root(Map<String, dynamic> payload) =>
-      payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : payload;
+      payload['d'] is Map ? Map<String, dynamic>.from(payload['d'] as Map) : Map<String, dynamic>.from(payload);
 
-  bool _different(Map<String, dynamic> s) => _bool(s['different']) || !_same(s['active'], s['persistent']);
-  bool _same(dynamic a, dynamic b) => jsonEncode(a) == jsonEncode(b);
-  bool _bool(dynamic v) => v == true || v == 1 || v?.toString().toLowerCase() == 'true' || v?.toString().toLowerCase() == 'on';
-  bool _boolDefault(dynamic v, bool fallback) => v == null ? fallback : _bool(v);
-  int? _int(dynamic v) => v is num ? v.toInt() : int.tryParse(v?.toString() ?? '');
+  Map<String, dynamic> _map(dynamic value) =>
+      value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
+
+  Map<String, Map<String, dynamic>> _mapOfMaps(dynamic value) {
+    final result = <String, Map<String, dynamic>>{};
+    if (value is Map) {
+      value.forEach((key, entry) {
+        if (entry is Map) result[key.toString()] = Map<String, dynamic>.from(entry);
+      });
+    }
+    return result;
+  }
+
+  dynamic _redact(dynamic value) {
+    if (value is Map) {
+      final result = <String, dynamic>{};
+      value.forEach((key, item) {
+        result[key.toString()] = key.toString() == 'QR_Code_Data' && item != null ? '<redacted>' : _redact(item);
+      });
+      return result;
+    }
+    if (value is List) return value.map(_redact).toList();
+    return value;
+  }
+
+  bool _same(dynamic a, dynamic b) {
+    try {
+      return jsonEncode(a) == jsonEncode(b);
+    } catch (_) {
+      return a == b;
+    }
+  }
+
+  bool _bool(dynamic value) =>
+      value == true || value == 1 || value?.toString().toLowerCase().trim() == 'true' || value?.toString().toLowerCase().trim() == 'on';
+
+  bool _boolDefault(dynamic value, bool fallback) => value == null ? fallback : _bool(value);
+  int? _int(dynamic value) => value is num ? value.toInt() : int.tryParse(value?.toString() ?? '');
+  num? _num(dynamic value) => value is num ? value : num.tryParse(value?.toString() ?? '');
+}
+
+class MessengerOption {
+  const MessengerOption(this.value, this.label);
+
+  final dynamic value;
+  final String label;
 }

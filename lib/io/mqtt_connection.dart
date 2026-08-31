@@ -134,27 +134,20 @@ class MqttConnection  {
   static const String lowLevelPowerSetPersistentJsonTopic = "settings/ll_board/set/persistent/json";
   static const String lowLevelPowerRenewJsonTopic = "settings/ll_board/set/renew/json";
 
-  // Open messenger settings/status contract. Runtime topics already exist in WUP;
-  // messenger/settings/... mirrors the generic hardware/software settings API.
-  static const String messengerSettingsJsonTopic = "messenger/settings/json";
-  static const String messengerSettingsValidationJsonTopic = "messenger/settings/validation/json";
-  static const String messengerSettingsSetSessionJsonTopic = "messenger/settings/set/session/json";
-  static const String messengerSettingsSetPersistentJsonTopic = "messenger/settings/set/persistent/json";
-  static const String messengerSettingsRenewJsonTopic = "messenger/settings/set/renew/json";
-  static const String messengerStatusJsonTopic = "messenger/status/json";
-  static const String messengerWahaJsonTopic = "messenger/waha/json";
-  static const String messengerSessionJsonTopic = "messenger/waha/session/json";
-  static const String messengerRepairJsonTopic = "messenger/waha/session/repair/json";
-  static const String messengerQrJsonTopic = "messenger/waha/session/qr/json";
-  static const String messengerGroupsJsonTopic = "messenger/waha/groups/json";
-  static const String messengerContactsStatusJsonTopic = "messenger/waha/contacts/status/json";
-  static const String messengerMessagesJsonTopic = "messenger/waha/messages/json";
-  static const String messengerActionsJsonTopic = "messenger/waha/actions/json";
+  // Openmower-Taf-WUP messenger contract bot_v1 / waha_v1.
   static const String messengerBotJsonTopic = "messenger/bot/json";
-  static const String messengerListenerJsonTopic = "messenger/bot/listener/json";
-  static const String messengerStatusPushJsonTopic = "messenger/bot/status_push/json";
-  static const String messengerCommandsJsonTopic = "messenger/bot/commands/json";
-  static const String messengerCommandsValidationJsonTopic = "messenger/bot/commands/validation/json";
+  static const String messengerBotValidationJsonTopic = "messenger/bot/validation/json";
+  static const String messengerBotSetRenewJsonTopic = "messenger/bot/set/renew/json";
+  static const String messengerBotSetSessionJsonTopic = "messenger/bot/set/session/json";
+  static const String messengerBotSetPersistentJsonTopic = "messenger/bot/set/persistent/json";
+  static const String messengerBotEventsJsonTopic = "messenger/bot/events/json";
+  static const String messengerBotPendingConfirmationsJsonTopic = "messenger/bot/confirmations/pending/json";
+
+  static const String messengerWahaJsonTopic = "messenger/waha/json";
+  static const String messengerWahaValidationJsonTopic = "messenger/waha/validation/json";
+  static const String messengerWahaSetRenewJsonTopic = "messenger/waha/set/renew/json";
+  static const String messengerWahaSetSessionJsonTopic = "messenger/waha/set/session/json";
+  static const String messengerWahaSetPersistentJsonTopic = "messenger/waha/set/persistent/json";
 
   static const String mapOverlayJsonTopic = "map/overlay/json";
   static const String mapMowingProgressJsonTopic = "map/mowing_progress/json";
@@ -996,38 +989,51 @@ class MqttConnection  {
     }
   }
 
-  void requestMessengerSettings() {
+  void requestMessengerBot() {
     try {
-      _publishJson(messengerSettingsRenewJsonTopic, <String, dynamic>{});
-      // Existing backend action keeps command/runtime data fresh even before
-      // messenger/settings/json is implemented.
-      _publishJson("messenger/bot/commands/set/renew/json", <String, dynamic>{});
+      _publishJson(messengerBotSetRenewJsonTopic, <String, dynamic>{}, qos: MqttQos.atMostOnce);
     } catch (e) {
-      messengerSettingsController.lastStatus.value = "Messenger-Anfrage konnte nicht gesendet werden.";
+      messengerSettingsController.lastStatus.value = "Bot-Status konnte nicht neu angefordert werden.";
     }
   }
 
-  void publishMessengerSessionSettings(Map<String, dynamic> settings) {
+  void requestMessengerWaha() {
     try {
-      _publishJson(messengerSettingsSetSessionJsonTopic, settings, qos: MqttQos.exactlyOnce);
+      _publishJson(messengerWahaSetRenewJsonTopic, <String, dynamic>{}, qos: MqttQos.atMostOnce);
     } catch (e) {
-      messengerSettingsController.lastStatus.value = "Messenger-Sessionwerte konnten nicht gesendet werden.";
+      messengerSettingsController.lastStatus.value = "WAHA-Status konnte nicht neu angefordert werden.";
     }
   }
 
-  void publishMessengerPersistentSettings(Map<String, dynamic> settings) {
+  void publishMessengerBotSession(Map<String, dynamic> payload) {
     try {
-      _publishJson(messengerSettingsSetPersistentJsonTopic, settings, qos: MqttQos.exactlyOnce);
+      _publishJson(messengerBotSetSessionJsonTopic, payload, qos: MqttQos.atMostOnce);
     } catch (e) {
-      messengerSettingsController.lastStatus.value = "Messenger-Werte konnten nicht dauerhaft gespeichert werden.";
+      messengerSettingsController.lastStatus.value = "Bot-Sessionänderungen konnten nicht gesendet werden.";
     }
   }
 
-  void publishMessengerAction(String actionId) {
+  void publishMessengerBotPersistent(Map<String, dynamic> payload) {
     try {
-      _publishJson("messenger/action/json", <String, dynamic>{"action_id": actionId}, qos: MqttQos.exactlyOnce);
+      _publishJson(messengerBotSetPersistentJsonTopic, payload, qos: MqttQos.atMostOnce);
     } catch (e) {
-      messengerSettingsController.lastStatus.value = "Messenger-Aktion konnte nicht gesendet werden.";
+      messengerSettingsController.lastStatus.value = "Bot-Einstellungen konnten nicht dauerhaft gespeichert werden.";
+    }
+  }
+
+  void publishMessengerWahaSession(Map<String, dynamic> payload) {
+    try {
+      _publishJson(messengerWahaSetSessionJsonTopic, payload, qos: MqttQos.atMostOnce);
+    } catch (e) {
+      messengerSettingsController.lastStatus.value = "WAHA-Sessionänderungen konnten nicht gesendet werden.";
+    }
+  }
+
+  void publishMessengerWahaPersistent(Map<String, dynamic> payload) {
+    try {
+      _publishJson(messengerWahaSetPersistentJsonTopic, payload, qos: MqttQos.atMostOnce);
+    } catch (e) {
+      messengerSettingsController.lastStatus.value = "WAHA-Einstellungen konnten nicht dauerhaft gespeichert werden.";
     }
   }
 
@@ -1035,19 +1041,39 @@ class MqttConnection  {
     try {
       final map = _decodeMap(payload);
       if (map == null) return;
-      if (topic == messengerSettingsJsonTopic) {
-        messengerSettingsController.setSettingsPayload(map);
-      } else if (topic == messengerSettingsValidationJsonTopic || topic == messengerCommandsValidationJsonTopic) {
-        messengerSettingsController.setValidation(map);
-      } else if (topic == messengerActionsJsonTopic) {
-        messengerSettingsController.setActionsPayload(map);
-      } else if (topic == messengerQrJsonTopic) {
-        messengerSettingsController.setQrPayload(map);
-      } else if (topic == messengerRepairJsonTopic || topic == messengerContactsStatusJsonTopic ||
-          topic == messengerMessagesJsonTopic || topic == messengerCommandsJsonTopic) {
-        messengerSettingsController.setDiagnosticPayload(topic, map);
-      } else {
-        messengerSettingsController.setRuntimePayload(topic, map);
+      switch (topic) {
+        case messengerBotJsonTopic:
+          messengerSettingsController.setSnapshot(
+            MessengerSurface.bot,
+            map,
+            topic: messengerBotJsonTopic,
+          );
+          break;
+        case messengerBotValidationJsonTopic:
+          messengerSettingsController.setValidation(
+            MessengerSurface.bot,
+            map,
+            topic: messengerBotValidationJsonTopic,
+          );
+          break;
+        case messengerWahaJsonTopic:
+          messengerSettingsController.setSnapshot(
+            MessengerSurface.waha,
+            map,
+            topic: messengerWahaJsonTopic,
+          );
+          break;
+        case messengerWahaValidationJsonTopic:
+          messengerSettingsController.setValidation(
+            MessengerSurface.waha,
+            map,
+            topic: messengerWahaValidationJsonTopic,
+          );
+          break;
+        case messengerBotEventsJsonTopic:
+        case messengerBotPendingConfirmationsJsonTopic:
+          messengerSettingsController.setBotRuntime(topic, map);
+          break;
       }
     } catch (e) {
       messengerSettingsController.lastStatus.value = "Messenger-Payload konnte nicht gelesen werden: $e";
@@ -2121,22 +2147,12 @@ class MqttConnection  {
               parseGpsRestartValidation(payload);
             }
             break;
-            case messengerSettingsJsonTopic:
-            case messengerSettingsValidationJsonTopic:
-            case messengerStatusJsonTopic:
-            case messengerWahaJsonTopic:
-            case messengerSessionJsonTopic:
-            case messengerRepairJsonTopic:
-            case messengerQrJsonTopic:
-            case messengerGroupsJsonTopic:
-            case messengerContactsStatusJsonTopic:
-            case messengerMessagesJsonTopic:
-            case messengerActionsJsonTopic:
             case messengerBotJsonTopic:
-            case messengerListenerJsonTopic:
-            case messengerStatusPushJsonTopic:
-            case messengerCommandsJsonTopic:
-            case messengerCommandsValidationJsonTopic: {
+            case messengerBotValidationJsonTopic:
+            case messengerBotEventsJsonTopic:
+            case messengerBotPendingConfirmationsJsonTopic:
+            case messengerWahaJsonTopic:
+            case messengerWahaValidationJsonTopic: {
               parseMessengerMessage(msg.topic!, payload);
             }
             break;
@@ -2245,22 +2261,12 @@ class MqttConnection  {
     client.subscribe(gpsStateLoggingLastJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(gpsStateLoggingValidationJsonTopic, MqttQos.atLeastOnce);
     // Mäh-Lastregelung wird ausschließlich über settings/mower_logic/... verarbeitet.
-    client.subscribe(messengerSettingsJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(messengerSettingsValidationJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(messengerStatusJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(messengerWahaJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(messengerSessionJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(messengerRepairJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(messengerQrJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(messengerGroupsJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(messengerContactsStatusJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(messengerMessagesJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(messengerActionsJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(messengerBotJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(messengerListenerJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(messengerStatusPushJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(messengerCommandsJsonTopic, MqttQos.atLeastOnce);
-    client.subscribe(messengerCommandsValidationJsonTopic, MqttQos.atLeastOnce);
+    client.subscribe(messengerBotJsonTopic, MqttQos.atMostOnce);
+    client.subscribe(messengerBotValidationJsonTopic, MqttQos.atMostOnce);
+    client.subscribe(messengerBotEventsJsonTopic, MqttQos.atMostOnce);
+    client.subscribe(messengerBotPendingConfirmationsJsonTopic, MqttQos.atMostOnce);
+    client.subscribe(messengerWahaJsonTopic, MqttQos.atMostOnce);
+    client.subscribe(messengerWahaValidationJsonTopic, MqttQos.atMostOnce);
     client.subscribe(lowLevelPowerJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(lowLevelPowerValidationJsonTopic, MqttQos.atLeastOnce);
     client.subscribe(gpsState1DefinitionTopic, MqttQos.atLeastOnce);

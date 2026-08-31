@@ -1,0 +1,23 @@
+BL_Align messenger app with bot_v1 and waha_v1 contract
+Date: 2026-09-01
+
+Summary:
+- Reworked the OpenMower messenger settings client to consume the bot_v1 and waha_v1 MQTT/JSON contract.
+- Replaced legacy messenger status/session/QR/group/message/command topics with the documented bot and WAHA snapshot, renew, session, persistent, validation, event and pending-confirmation topics.
+- Added schema/version checks, metadata-driven settings editors, local drafts, dynamic flow activation, partial validation handling and 8-second response timeouts.
+- Added contract-safe WAHA QR rendering with QR raw-data redaction and no persistent QR storage.
+- Added contract-focused controller tests and the qr_flutter dependency.
+- Added PDF/DOCX change documentation and a unified patch while keeping the original OpenMower-TAF-App root folder unchanged.
+- Static contract checks passed. Flutter/Dart SDK tooling was not available in the execution environment, so flutter pub get, flutter analyze and flutter test still need to be executed before release approval.
+
+Changed files:
+- lib/controllers/messenger_settings_controller.dart
+- lib/screens/messenger_settings.dart
+- lib/io/mqtt_connection.dart
+- pubspec.yaml
+- pubspec.lock
+- test/messenger_settings_controller_test.dart
+- _Dokumentation/2026-09-01 - OpenMower-TAF-App - Aenderungsdokumentation - Messenger Bot und WAHA Vertragsumstellung - v0.3.docx
+- _Dokumentation/2026-09-01 - OpenMower-TAF-App - Aenderungsdokumentation - Messenger Bot und WAHA Vertragsumstellung - v0.3.pdf
+- 2026-09-01 - OpenMower-TAF-App - Patch - Messenger Bot und WAHA Vertragsumstellung - v0.3.patch
+- 2026-09-01 - OpenMower-TAF-App - Commit-Notiz - Messenger Bot und WAHA Vertragsumstellung - v0.3.txt

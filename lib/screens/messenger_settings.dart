@@ -1,11 +1,8 @@
-import 'dart:convert';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:open_mower_app/controllers/messenger_settings_controller.dart';
 import 'package:open_mower_app/controllers/settings_controller.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 class MessengerSettingsScreen extends StatefulWidget {
   const MessengerSettingsScreen({super.key});
@@ -33,294 +30,494 @@ class _MessengerSettingsScreenState extends State<MessengerSettingsScreen> {
         children: [
           _header(context),
           const SizedBox(height: 12),
-          _settingsSection(context, expert),
+          _surfaceSection(context, MessengerSurface.bot, expert),
           const SizedBox(height: 12),
-          _runtimeSection(context),
+          _surfaceSection(context, MessengerSurface.waha, expert),
           const SizedBox(height: 12),
-          _diagnosticsSection(context, expert),
+          _diagnostics(context, expert),
         ],
       );
     });
   }
 
   Widget _header(BuildContext context) {
-    final status = controller.runtime['messenger/status/json'] ?? const <String, dynamic>{};
-    final online = status['online'] == true;
-    final text = (status['text'] ?? controller.lastStatus.value).toString();
+    final botReady = controller.hasBotSnapshot;
+    final wahaReady = controller.hasWahaSnapshot;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Row(children: [
-            Icon(Icons.forum_outlined, size: 38, color: Theme.of(context).primaryColor),
-            const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Einstellungen Messenger', style: Theme.of(context).textTheme.headlineSmall),
-              const Text('Offener MQTT-Aufbau wie bei Hardware- und Softwareeinstellungen'),
-            ])),
-            Icon(online ? Icons.check_circle : Icons.warning_amber_rounded,
-                color: online ? Colors.green : Colors.orange, size: 30),
-          ]),
-          if (text.isNotEmpty) ...[const SizedBox(height: 10), Text(text)],
-          const SizedBox(height: 12),
-          Wrap(spacing: 8, runSpacing: 8, children: [
-            Chip(label: Text('${controller.settings.length} Einstellungen')),
-            Chip(label: Text('${controller.dirtyCount} geändert')),
-            Chip(label: Text('${controller.differenceCount} Abweichungen')),
-            OutlinedButton.icon(onPressed: controller.requestAll, icon: const Icon(Icons.refresh), label: const Text('Neu laden')),
-          ]),
-        ]),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.forum_outlined, size: 38, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Einstellungen Messenger', style: Theme.of(context).textTheme.headlineSmall),
+                      const Text('MQTT-Vertrag bot_v1 / waha_v1 - Snapshot, Session, Persistent und Validierung'),
+                    ],
+                  ),
+                ),
+                if (controller.botWaitingMode.isNotEmpty || controller.wahaWaitingMode.isNotEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5)),
+                  ),
+              ],
+            ),
+            if (controller.lastStatus.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(controller.lastStatus.value),
+            ],
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                Chip(label: Text(botReady ? 'Bot: ${_displayState(controller.botState)}' : 'Bot: keine Daten')),
+                Chip(label: Text(wahaReady ? 'WAHA: ${_displayState(controller.wahaState)}' : 'WAHA: keine Daten')),
+                Chip(label: Text('${controller.dirtyCount} lokale Änderung(en)')),
+                OutlinedButton.icon(
+                  onPressed: controller.requestAll,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Alles neu laden'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _settingsSection(BuildContext context, bool expert) {
+  Widget _surfaceSection(BuildContext context, MessengerSurface surface, bool expert) {
+    final isBot = surface == MessengerSurface.bot;
+    final hasSnapshot = isBot ? controller.hasBotSnapshot : controller.hasWahaSnapshot;
+    final state = isBot ? controller.botState : controller.wahaState;
+    final status = controller.statusFor(surface);
+    final settings = controller.settingsFor(surface);
+    final title = isBot ? 'Messenger Bot' : 'WAHA / WhatsApp';
+    final subtitle = isBot
+        ? 'Provider-neutrale Bot-Einstellungen und Aktivierung vorhandener Flows'
+        : 'Technischer WAHA-Status, QR-Anmeldung und WAHA-Einstellungen';
+
     return Card(
       child: ExpansionTile(
         initiallyExpanded: true,
-        leading: const Icon(Icons.tune),
-        title: const Text('Einstellungen'),
-        subtitle: const Text('Änderbare Werte, gruppiert und durch Backend-Metadaten gesteuert'),
+        leading: Icon(isBot ? Icons.smart_toy_outlined : Icons.chat_outlined),
+        title: Text(title),
+        subtitle: Text(subtitle),
         childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         children: [
-          if (!controller.hasSettings)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Noch keine messenger/settings/json-Metadaten empfangen. Betriebsstatus und Diagnose funktionieren bereits über die vorhandenen Messenger-Topics.'),
+          _statusCard(context, surface, status, state),
+          if (!hasSnapshot)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                isBot
+                    ? 'Noch kein gültiger messenger/bot/json-Snapshot mit namespace=messenger_bot, schema=bot_v1 und schema_version=1.0 empfangen.'
+                    : 'Noch kein gültiger messenger/waha/json-Snapshot mit namespace=messenger_waha, schema=waha_v1 und schema_version=1.0 empfangen.',
+              ),
             )
-          else
-            ...controller.groups(expertMode: expert).map((g) => _group(context, g, expert)),
+          else ...[
+            if (!isBot) _qrCard(context),
+            if (settings.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: Text('Der Snapshot enthält aktuell keine editierbaren Settings.'),
+              )
+            else
+              ...controller.groups(surface, expertMode: expert).map((group) => _settingsGroup(context, surface, group, expert)),
+            if (isBot) _flowsSection(context, expert),
+          ],
         ],
       ),
     );
   }
 
-  Widget _group(BuildContext context, String group, bool expert) {
-    final entries = controller.entriesForGroup(group, expertMode: expert);
-    final dirty = entries.where((e) => controller.isDirty(e.key)).length;
+  Widget _statusCard(
+    BuildContext context,
+    MessengerSurface surface,
+    Map<String, dynamic> status,
+    String state,
+  ) {
+    final text = (status['text'] ?? '').toString();
+    final error = (status['last_error'] ?? '').toString();
+    final ready = status['ready'] == true;
+    final differenceCount = controller.differenceCount(surface);
+    return Card(
+      margin: const EdgeInsets.only(top: 8, bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                Text('Status: ${_displayState(state)}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                Chip(label: Text(ready ? 'bereit' : 'nicht bereit')),
+                if (differenceCount > 0) Chip(label: Text('$differenceCount Abweichung(en)')),
+                OutlinedButton.icon(
+                  onPressed: () => controller.request(surface),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Status neu laden'),
+                ),
+              ],
+            ),
+            if (text.isNotEmpty) ...[const SizedBox(height: 6), Text(text)],
+            if (error.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text('Letzter Fehler: $error', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _settingsGroup(BuildContext context, MessengerSurface surface, String group, bool expert) {
+    final entries = controller.entriesForGroup(surface, group, expertMode: expert);
+    final dirty = entries.where((entry) => controller.isSettingDirty(surface, entry.key)).length;
+    final canSession = controller.canApplySession(surface, group: group);
+    final canPersistent = controller.hasPersistentChanges(surface, group: group);
     return Card(
       margin: const EdgeInsets.only(top: 8),
       child: ExpansionTile(
-        initiallyExpanded: group == 'general' || group == 'connection',
-        leading: Icon(controller.groupIcon(group), color: Theme.of(context).primaryColor),
-        title: Text(controller.groupLabel(group)),
-        subtitle: Text('${entries.length} Felder${dirty > 0 ? ' · $dirty geändert' : ''}'),
+        initiallyExpanded: group == 'general' || group == 'messenger' || group == 'session',
+        leading: Icon(controller.groupIcon(group), color: Theme.of(context).colorScheme.primary),
+        title: Text(controller.groupLabel(surface, group)),
+        subtitle: Text('${entries.length} Feld(er)${dirty > 0 ? ' - $dirty geändert' : ''}'),
         childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         children: [
-          ...entries.map((e) => _field(context, e.key, e.value)),
+          ...entries.map((entry) => _settingField(context, surface, entry.key, entry.value)),
           const Divider(),
-          Wrap(spacing: 8, children: [
-            TextButton(onPressed: dirty == 0 ? null : () => controller.discard(group: group), child: const Text('Verwerfen')),
-            OutlinedButton(onPressed: dirty == 0 ? null : () => controller.applySession(group: group), child: const Text('Jetzt anwenden')),
-            FilledButton(onPressed: dirty == 0 ? null : () => controller.applyPersistent(group: group), child: const Text('Dauerhaft speichern')),
-          ]),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              TextButton(
+                onPressed: dirty == 0 ? null : () => controller.discardSettings(surface, group: group),
+                child: const Text('Entwurf zurücksetzen'),
+              ),
+              OutlinedButton(
+                onPressed: canSession ? () => controller.applySession(surface, group: group) : null,
+                child: const Text('Jetzt anwenden'),
+              ),
+              FilledButton(
+                onPressed: canPersistent ? () => controller.applyPersistent(surface, group: group) : null,
+                child: const Text('Dauerhaft speichern'),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _field(BuildContext context, String key, Map<String, dynamic> meta) {
+  Widget _settingField(
+    BuildContext context,
+    MessengerSurface surface,
+    String key,
+    Map<String, dynamic> meta,
+  ) {
     final label = (meta['label'] ?? key).toString();
     final description = (meta['description'] ?? '').toString();
-    final type = (meta['type'] ?? 'string').toString();
     final readonly = meta['readonly'] == true;
-    final value = controller.valueFor(key);
-    Widget input;
+    final value = controller.settingValue(surface, key);
+    final error = controller.validationErrorFor(surface, key);
+    final options = controller.optionItems(meta);
+    final type = (meta['type'] ?? 'string').toString().toLowerCase();
+    final sessionSupported = meta['session_apply_supported'] != false;
+
+    Widget editor;
     if (type == 'bool' || type == 'boolean') {
-      input = Switch(value: value == true, onChanged: readonly ? null : (v) => controller.updateDraft(key, v));
-    } else if (type == 'enum' && meta['options'] is List) {
-      final options = (meta['options'] as List).map((e) => e.toString()).toList();
-      input = DropdownButton<String>(value: options.contains(value?.toString()) ? value.toString() : null,
-          items: options.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-          onChanged: readonly ? null : (v) => controller.updateDraft(key, v));
+      editor = Switch(
+        value: value == true,
+        onChanged: readonly ? null : (next) => controller.updateSettingDraft(surface, key, next),
+      );
+    } else if (options.isNotEmpty) {
+      final selected = options.any((option) => _same(option.value, value)) ? value : null;
+      editor = SizedBox(
+        width: 280,
+        child: Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<dynamic>(
+                value: selected,
+                isExpanded: true,
+                decoration: InputDecoration(isDense: true, errorText: error),
+                hint: const Text('Auswahl'),
+                items: options
+                    .map((option) => DropdownMenuItem<dynamic>(value: option.value, child: Text(option.label)))
+                    .toList(),
+                onChanged: readonly ? null : (next) => controller.updateSettingDraft(surface, key, next),
+              ),
+            ),
+            if (surface == MessengerSurface.bot && key == 'group') ...[
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: 'Gruppenoptionen neu laden',
+                onPressed: controller.requestGroupOptions,
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ],
+        ),
+      );
     } else {
-      input = SizedBox(width: 220, child: TextFormField(
-        key: ValueKey('$key-$value'), initialValue: value?.toString() ?? '', readOnly: readonly,
-        decoration: InputDecoration(isDense: true, suffixText: meta['unit']?.toString()),
-        onChanged: (v) {
-          dynamic parsed = v;
-          if (type == 'int' || type == 'integer') parsed = int.tryParse(v) ?? v;
-          if (type == 'double' || type == 'number') parsed = double.tryParse(v) ?? v;
-          controller.updateDraft(key, parsed);
-        },
-      ));
+      editor = SizedBox(
+        width: 280,
+        child: TextFormField(
+          key: ValueKey('$surface-$key-${value.runtimeType}-$value'),
+          initialValue: value?.toString() ?? '',
+          readOnly: readonly,
+          keyboardType: type == 'int' || type == 'integer' ? TextInputType.number : TextInputType.text,
+          decoration: InputDecoration(
+            isDense: true,
+            suffixText: meta['unit']?.toString(),
+            errorText: error,
+          ),
+          onChanged: readonly
+              ? null
+              : (raw) {
+                  dynamic next = raw;
+                  if (type == 'int' || type == 'integer') next = int.tryParse(raw.trim()) ?? raw;
+                  controller.updateSettingDraft(surface, key, next);
+                },
+        ),
+      );
     }
+
+    final details = <String>[];
+    if (meta.containsKey('active')) details.add('Aktiv: ${meta['active']}');
+    if (meta.containsKey('persistent')) details.add('Gespeichert: ${meta['persistent']}');
+    if (meta['min'] != null || meta['max'] != null) details.add('Bereich: ${meta['min'] ?? '...'} bis ${meta['max'] ?? '...'}');
+
+    final info = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        if (description.isNotEmpty) ...[const SizedBox(height: 2), Text(description, style: Theme.of(context).textTheme.bodySmall)],
+        if (details.isNotEmpty) ...[const SizedBox(height: 4), Text(details.join(' - '), style: Theme.of(context).textTheme.bodySmall)],
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            if (controller.isSettingDirty(surface, key)) const Chip(label: Text('geändert'), visualDensity: VisualDensity.compact),
+            if (meta['different'] == true) const Chip(label: Text('Aktiv != gespeichert'), visualDensity: VisualDensity.compact),
+            if (meta['expert'] == true) const Chip(label: Text('Expert'), visualDensity: VisualDensity.compact),
+            if (readonly) const Chip(label: Text('Nur lesen'), visualDensity: VisualDensity.compact),
+            if (!sessionSupported) const Chip(label: Text('nur persistent'), visualDensity: VisualDensity.compact),
+            if (meta['restart_required'] == true) const Chip(label: Text('Neustart nötig'), visualDensity: VisualDensity.compact),
+          ],
+        ),
+      ],
+    );
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-          if (description.isNotEmpty) Text(description, style: Theme.of(context).textTheme.bodySmall),
-          if (meta['active'] != null || meta['persistent'] != null)
-            Text('Aktiv: ${meta['active']} · Persistent: ${meta['persistent']}', style: Theme.of(context).textTheme.bodySmall),
-        ])),
-        const SizedBox(width: 12), input,
-      ]),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 760) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [info, const SizedBox(height: 8), Align(alignment: Alignment.centerLeft, child: editor)],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [Expanded(child: info), const SizedBox(width: 16), editor],
+          );
+        },
+      ),
     );
   }
 
-  Widget _runtimeSection(BuildContext context) {
+  Widget _flowsSection(BuildContext context, bool expert) {
+    final flows = controller.flowsForBot().entries.where((entry) {
+      if (entry.value['show'] == false) return false;
+      if (!expert && entry.value['expert'] == true) return false;
+      return true;
+    }).toList()
+      ..sort((a, b) {
+        final ao = _asInt(a.value['order']) ?? 9999;
+        final bo = _asInt(b.value['order']) ?? 9999;
+        final order = ao.compareTo(bo);
+        return order == 0 ? a.key.compareTo(b.key) : order;
+      });
+    if (flows.isEmpty) return const SizedBox.shrink();
+
+    final canSession = controller.canApplySession(MessengerSurface.bot, group: '__flows__', includeFlows: true);
+    final canPersistent = controller.hasPersistentChanges(MessengerSurface.bot, group: '__flows__', includeFlows: true);
     return Card(
+      margin: const EdgeInsets.only(top: 8),
       child: ExpansionTile(
-        initiallyExpanded: true,
-        leading: const Icon(Icons.monitor_heart_outlined),
-        title: const Text('Betriebsstatus'),
-        subtitle: const Text('Live-Zustand von WAHA, Session, Bot, Gruppen und Statusmeldungen'),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        leading: const Icon(Icons.account_tree_outlined),
+        title: const Text('Flows'),
+        subtitle: Text('${flows.length} vorhandene Flow-Aktivierungen'),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         children: [
-          _statusTile('Messenger', controller.runtime['messenger/status/json']),
-          _statusTile('WAHA', controller.runtime['messenger/waha/json']),
-          _statusTile('Session', controller.runtime['messenger/waha/session/json']),
-          _qrCodeCard(context),
-          _statusTile('Mobert-Bot', controller.runtime['messenger/bot/json']),
-          _statusTile('Listener', controller.runtime['messenger/bot/listener/json']),
-          _statusTile('Gruppen', controller.runtime['messenger/waha/groups/json']),
-          _statusTile('Status-Push', controller.runtime['messenger/bot/status_push/json']),
-          _actions(context),
+          ...flows.map((entry) {
+            final meta = entry.value;
+            final readonly = meta['readonly'] == true;
+            return SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text((meta['label'] ?? entry.key).toString()),
+              subtitle: Text((meta['description'] ?? entry.key).toString()),
+              value: controller.flowValue(entry.key) == true,
+              onChanged: readonly ? null : (value) => controller.updateFlowDraft(entry.key, value),
+              secondary: controller.isFlowDirty(entry.key) ? const Icon(Icons.edit_outlined) : null,
+            );
+          }),
+          const Divider(),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              TextButton(
+                onPressed: controller.botDirtyFlows.isEmpty ? null : controller.discardFlows,
+                child: const Text('Entwurf zurücksetzen'),
+              ),
+              OutlinedButton(
+                onPressed: canSession
+                    ? () => controller.applySession(MessengerSurface.bot, group: '__flows__', includeFlows: true)
+                    : null,
+                child: const Text('Jetzt anwenden'),
+              ),
+              FilledButton(
+                onPressed: canPersistent
+                    ? () => controller.applyPersistent(MessengerSurface.bot, group: '__flows__', includeFlows: true)
+                    : null,
+                child: const Text('Dauerhaft speichern'),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _statusTile(String title, Map<String, dynamic>? value) {
-    if (value == null) return ListTile(title: Text(title), subtitle: const Text('Noch keine Daten empfangen'), leading: const Icon(Icons.cloud_off_outlined));
-    final summary = (value['text'] ?? value['summary'] ?? value['status'] ?? value['count'] ?? 'Daten vorhanden').toString();
-    return ExpansionTile(title: Text(title), subtitle: Text(summary), leading: const Icon(Icons.check_circle_outline),
-      children: [SelectableText(controller.prettyJson(value), style: const TextStyle(fontFamily: 'monospace', fontSize: 12))]);
-  }
-
-  Widget _qrCodeCard(BuildContext context) {
-    final session = controller.runtime['messenger/waha/session/json'] ?? const <String, dynamic>{};
-    final status = (session['status'] ?? '').toString();
-    final needsQr = status == 'SCAN_QR_CODE' || controller.hasQrCode;
-    if (!needsQr) return const SizedBox.shrink();
-
-    final data = controller.qrCode;
-    final raw = data['image_base64'] ?? data['base64'] ?? data['data'] ?? data['qr'] ?? data['qr_code'];
-    final imageUrl = (data['image_url'] ?? data['url'] ?? '').toString();
-    Uint8List? bytes;
-    if (raw is String && raw.trim().isNotEmpty) {
-      var encoded = raw.trim();
-      final comma = encoded.indexOf(',');
-      if (encoded.startsWith('data:image') && comma >= 0) encoded = encoded.substring(comma + 1);
-      try {
-        bytes = base64Decode(encoded);
-      } catch (_) {
-        bytes = null;
-      }
-    }
-    final dashboard = _dashboardUrl();
-
+  Widget _qrCard(BuildContext context) {
+    final raw = controller.qrCodeData;
+    if (raw == null) return const SizedBox.shrink();
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(Icons.qr_code_2, color: Theme.of(context).primaryColor, size: 30),
-            const SizedBox(width: 10),
-            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('WhatsApp koppeln', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
-              Text('QR-Code mit WhatsApp scannen, um die WAHA-Session zu verbinden.'),
-            ])),
-          ]),
-          const SizedBox(height: 14),
-          Center(
-            child: Container(
-              width: 280,
-              constraints: const BoxConstraints(minHeight: 220),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.qr_code_2, color: Theme.of(context).colorScheme.primary, size: 30),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('WhatsApp koppeln', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
+                      Text('Der QR-Code wird ausschließlich aus status.QR_Code_Data des aktuellen waha/json-Snapshots erzeugt.'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Center(
+              child: Container(
                 color: Colors.white,
-                border: Border.all(color: Theme.of(context).dividerColor),
-                borderRadius: BorderRadius.circular(12),
+                padding: const EdgeInsets.all(14),
+                child: QrImageView(
+                  data: raw,
+                  version: QrVersions.auto,
+                  size: 280,
+                  backgroundColor: Colors.white,
+                  semanticsLabel: 'WhatsApp QR-Code zur WAHA-Anmeldung',
+                  errorStateBuilder: (context, error) => const SizedBox(
+                    width: 260,
+                    height: 260,
+                    child: Center(child: Text('QR-Code konnte nicht erzeugt werden.', textAlign: TextAlign.center)),
+                  ),
+                ),
               ),
-              child: bytes != null
-                  ? Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true,
-                      errorBuilder: (_, __, ___) => _qrPlaceholder('QR-Bild konnte nicht dargestellt werden.'))
-                  : imageUrl.isNotEmpty
-                      ? Image.network(imageUrl, fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => _qrPlaceholder('QR-Bild konnte nicht geladen werden.'))
-                      : _qrPlaceholder('Noch kein QR-Code empfangen. Fordere ihn erneut an oder öffne das WAHA-Dashboard.'),
             ),
-          ),
-          const SizedBox(height: 12),
-          Wrap(spacing: 8, runSpacing: 8, children: [
-            FilledButton.icon(
-              onPressed: controller.requestQrCode,
-              icon: const Icon(Icons.refresh),
-              label: const Text('QR-Code anfordern'),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => controller.request(MessengerSurface.waha),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('WAHA neu laden'),
+                ),
+              ],
             ),
-            if (dashboard != null)
-              OutlinedButton.icon(
-                onPressed: () => launchUrl(dashboard, mode: LaunchMode.externalApplication),
-                icon: const Icon(Icons.open_in_new),
-                label: const Text('WAHA-Dashboard öffnen'),
-              ),
-          ]),
-          const SizedBox(height: 8),
-          Text(
-            'Der QR-Code sollte nur kurzfristig angezeigt und nach erfolgreicher Kopplung automatisch ausgeblendet werden.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ]),
+            const SizedBox(height: 8),
+            Text(
+              'QR-Rohdaten werden nicht in der Diagnoseansicht ausgegeben und nicht dauerhaft gespeichert. Sobald die Session verbunden ist, wird die Anzeige entfernt.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _qrPlaceholder(String text) => SizedBox(
-        height: 220,
-        child: Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.qr_code_scanner, size: 72, color: Colors.black54),
-            const SizedBox(height: 12),
-            Text(text, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black87)),
-          ]),
-        ),
-      );
-
-  Uri? _dashboardUrl() {
-    final status = controller.runtime['messenger/status/json'] ?? const <String, dynamic>{};
-    final description = status['description'];
-    String raw = '';
-    if (description is Map) raw = (description['waha_dashboard_url'] ?? '').toString();
-    if (raw.isEmpty) raw = (status['waha_dashboard_url'] ?? '').toString();
-    if (raw.isEmpty || raw.contains('<openmower-ip>')) return null;
-    return Uri.tryParse(raw);
-  }
-
-  Widget _actions(BuildContext context) {
-    if (controller.actions.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Align(alignment: Alignment.centerLeft, child: Wrap(spacing: 8, runSpacing: 8,
-        children: controller.actions.map((a) {
-          final enabled = a['enabled'] == true || a['enabled'] == 1;
-          return OutlinedButton.icon(
-            onPressed: enabled ? () => controller.runAction((a['action_id'] ?? '').toString()) : null,
-            icon: const Icon(Icons.play_arrow), label: Text((a['label'] ?? a['action_id']).toString()));
-        }).toList())),
-    );
-  }
-
-  Widget _diagnosticsSection(BuildContext context, bool expert) {
+  Widget _diagnostics(BuildContext context, bool expert) {
     return Card(
       child: ExpansionTile(
         initiallyExpanded: false,
-        leading: const Icon(Icons.troubleshoot),
-        title: const Text('Diagnose'),
-        subtitle: Text(expert ? 'Fehler, Reparatur, Validierung und MQTT-Rohdaten' : 'Technische Details im Expertenmodus'),
+        leading: const Icon(Icons.troubleshoot_outlined),
+        title: const Text('Diagnose und Validierung'),
+        subtitle: Text(expert ? 'Validierungen, redigierte Snapshots und Bot-Runtime-Kanäle' : 'Technische Rohdaten nur im Expertenmodus'),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         children: expert
             ? [
-                _statusTile('Session-Reparatur', controller.diagnostics['messenger/waha/session/repair/json']),
-                _statusTile('Kontakte', controller.diagnostics['messenger/waha/contacts/status/json']),
-                _statusTile('Nachrichten', controller.diagnostics['messenger/waha/messages/json']),
-                _statusTile('Bot-Konfiguration', controller.diagnostics['messenger/bot/commands/json']),
-                _statusTile('Validierung', controller.lastValidation),
+                _jsonTile('Bot-Validierung', controller.botValidation),
+                _jsonTile('WAHA-Validierung', controller.wahaValidation),
+                _jsonTile('Bot-Snapshot (QR-sicher)', controller.botSnapshot),
+                _jsonTile('WAHA-Snapshot (QR_Code_Data redigiert)', controller.wahaSnapshot),
+                _jsonTile('Bot-Ereignis', controller.botEvents),
+                _jsonTile('Ausstehende Bestätigungen', controller.botPendingConfirmations),
               ]
-            : const [Padding(padding: EdgeInsets.all(12), child: Text('Aktiviere den Expertenmodus, um Rohdaten und technische Diagnosewerte einzublenden.'))],
+            : const [
+                Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Text('Aktiviere den Expertenmodus, um technische JSON-Daten einzublenden.'),
+                ),
+              ],
       ),
     );
   }
+
+  Widget _jsonTile(String title, Map<String, dynamic> value) {
+    if (value.isEmpty) return ListTile(title: Text(title), subtitle: const Text('Noch keine Daten empfangen'));
+    return ExpansionTile(
+      title: Text(title),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          child: SelectableText(
+            controller.prettyJsonSafe(value),
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _displayState(String state) => state.trim().isEmpty ? 'unbekannt' : state;
+
+  bool _same(dynamic a, dynamic b) => a == b || a?.toString() == b?.toString();
+
+  int? _asInt(dynamic value) => value is num ? value.toInt() : int.tryParse(value?.toString() ?? '');
 }

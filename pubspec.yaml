@@ -46,6 +46,7 @@ dependencies:
   share_plus: ^10.1.4
   google_fonts: ^6.2.1
   url_launcher: ^6.3.1
+  qr_flutter: ^4.1.0
   web: ^1.1.1
 
   # The following adds the Cupertino Icons font to your application.
